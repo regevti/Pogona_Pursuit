@@ -1,0 +1,7 @@
+nb-conda==2.2.1
+numpy==1.18.4
+opencv-python==4.2.0.34
+pandas==1.0.3
+pyserial==3.4
+python-dateutil==2.8.1
+spinnaker-python==2.0.0.109
