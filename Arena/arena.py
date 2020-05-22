@@ -66,8 +66,8 @@ class SpinCamera:
 
     def configure_video_out(self, dir_path):
         if dir_path:
-            fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-            return cv2.VideoWriter(f'{dir_path}/{self.device_id}.mp4', fourcc, FPS, SAVED_FRAME_RESOLUTION)
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            return cv2.VideoWriter(f'{dir_path}/{self.device_id}.avi', fourcc, FPS, SAVED_FRAME_RESOLUTION)
 
     def acquire(self):
         """Acquire images and measure FPS"""
