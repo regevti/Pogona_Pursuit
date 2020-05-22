@@ -195,7 +195,7 @@ def wait_for_streaming(results: list):
     If keyboard interrupt turn all is_ready to false, so acquisition will not start"""
     serializer = None
     try:
-        key = input(f'\nThere are {len([sc for sc in results if sc.is_ready])} ready for streaming.\n'
+        key = input(f'\nThere are {len([sc for sc in results if sc.is_ready])} cameras ready for streaming.\n'
                     f'Press any key for sending TTL serial to start streaming.\n'
                     f"If you like to start TTL manually press 'm'\n>> ")
         if not key == 'm':
@@ -244,7 +244,7 @@ def main():
             with Pool(len(filtered)) as pool:
                 results = pool.starmap(start_camera, filtered)
                 results, serializer = wait_for_streaming(results)
-                pool.starmap(start_streaming, results)
+                pool.starmap(start_streaming, [(sc,) for sc in results])
                 if serializer:
                     serializer.stop_acquisition()
         del filtered  # must delete this list in order to destroy all pointers to cameras.
