@@ -171,13 +171,15 @@ class Serializer:
 def display_info(cam_list):
     """Function for displaying info of all FireFly cameras detected"""
     df = []
+    index = []
     for cam in cam_list:
         sc = SpinCamera(cam)
         if not sc.is_firefly():
             continue
         df.append(sc.info())
+        index.append(sc.device_id)
 
-    df = pd.DataFrame(df, columns=INFO_FIELDS)
+    df = pd.DataFrame(df, columns=INFO_FIELDS, index=index)
     print(f'\nCameras Info:\n\n{df}\n')
 
 
