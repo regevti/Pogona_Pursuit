@@ -183,9 +183,9 @@ def display_info(cam_list):
     print(f'\nCameras Info:\n\n{df}\n')
 
 
-def start_camera(cam):
+def start_camera(cam, dir_path, num_frames):
     """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam)
+    sc = SpinCamera(cam, dir_path, num_frames)
     sc.begin_acquisition()
     return sc
 
