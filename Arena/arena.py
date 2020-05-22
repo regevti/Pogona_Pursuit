@@ -244,10 +244,11 @@ def main():
             with Pool(len(filtered)) as pool:
                 results = pool.starmap(start_camera, filtered)
                 results, serializer = wait_for_streaming(results)
-                pool.starmap(start_streaming, [(sc,) for sc in results])
+                results = [(sc,) for sc in results]
+                pool.starmap(start_streaming, results)
                 if serializer:
                     serializer.stop_acquisition()
-        del filtered  # must delete this list in order to destroy all pointers to cameras.
+        del filtered, results  # must delete this list in order to destroy all pointers to cameras.
 
     cam_list.Clear()
     system.ReleaseInstance()
