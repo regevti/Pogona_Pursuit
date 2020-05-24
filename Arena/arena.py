@@ -164,6 +164,7 @@ class SpinCamera:
 class Serializer:
     def __init__(self):
         self.ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+        time.sleep(0.5)
 
     def start_acquisition(self):
         self.ser.write(b'H')
