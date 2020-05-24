@@ -14,7 +14,7 @@ DEFAULT_NUM_FRAMES = 1000
 OUTPUT_DIR = 'output'
 FPS = 60
 SAVED_FRAME_RESOLUTION = (640, 480)
-SERIAL_PORT = '/dev/bus/usb/001/002'
+SERIAL_PORT = '/dev/ttyACM0'
 SERIAL_BAUD = 9600
 INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
                'PayloadSize', 'EventSelector', 'LineStatus',
