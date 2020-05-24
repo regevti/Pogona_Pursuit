@@ -28,10 +28,10 @@ class SpinCamera:
         self.num_frames = num_frames
         self.is_ready = False  # ready for acquisition
         self.dir_path = dir_path
+        self.video_out = None
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path)
-        self.video_out = self.configure_video_out(dir_path)
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
