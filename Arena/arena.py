@@ -11,6 +11,7 @@ import PySpin
 from utils import get_logger, calculate_fps, mkdir
 
 DEFAULT_NUM_FRAMES = 1000
+EXPOSURE_TIME = 15000
 OUTPUT_DIR = 'output'
 FPS = 60
 SAVED_FRAME_RESOLUTION = (1440, 1088)
@@ -26,15 +27,16 @@ class SpinCamera:
         self.cam = cam
         self.num_frames = num_frames
         self.is_ready = False  # ready for acquisition
+        self.dir_path = dir_path
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path)
         self.video_out = self.configure_video_out(dir_path)
 
-    def begin_acquisition(self):
+    def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
         try:
-            self.configure_camera()
+            self.configure_camera(exposure)
             self.cam.BeginAcquisition()
             self.is_ready = True
             self.logger.info('Entering to trigger mode')
@@ -43,10 +45,8 @@ class SpinCamera:
 
     def __del__(self):
         self.cam.DeInit()
-        if self.video_out:
-            self.video_out.release()
 
-    def configure_camera(self):
+    def configure_camera(self, exposure):
         """Configure camera for trigger mode before acquisition"""
         try:
             self.cam.AcquisitionFrameRateEnable.SetValue(True)
@@ -58,16 +58,11 @@ class SpinCamera:
             self.cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
             self.cam.DeviceLinkThroughputLimit.SetValue(94578303)
             self.cam.AcquisitionFrameRate.SetValue(60)
-            self.cam.ExposureTime.SetValue(15000)
+            self.cam.ExposureTime.SetValue(exposure)
             self.logger.info(f'Finished Configuration')
 
         except PySpin.SpinnakerException as exc:
             self.logger.error(f'(configure_images); {exc}')
-
-    def configure_video_out(self, dir_path):
-        if dir_path:
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
-            return cv2.VideoWriter(f'{dir_path}/{self.device_id}.avi', fourcc, FPS, SAVED_FRAME_RESOLUTION)
 
     def acquire(self):
         """Acquire images and measure FPS"""
@@ -95,10 +90,19 @@ class SpinCamera:
             self.logger.info(f'Calculated FPS: {calculate_fps(frame_times)}')
 
         self.cam.EndAcquisition()  # End acquisition
+        if self.video_out:
+            self.video_out.release()
         self.is_ready = False
 
     def image_handler(self, image_result: PySpin.ImagePtr):
         img = image_result.GetNDArray()
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        if self.dir_path and self.video_out == None:
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            h, w = img.shape[:2]
+            self.video_out = cv2.VideoWriter(f'{self.dir_path}/{self.device_id}.avi', fourcc, FPS, (w, h), True)
+
         self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
 
@@ -183,10 +187,10 @@ def display_info(cam_list):
     print(f'\nCameras Info:\n\n{df}\n')
 
 
-def start_camera(cam, dir_path, num_frames):
+def start_camera(cam, dir_path, num_frames, exposure):
     """Thread function for configuring and starting spin cameras"""
     sc = SpinCamera(cam, dir_path, num_frames)
-    sc.begin_acquisition()
+    sc.begin_acquisition(exposure)
     return sc
 
 
@@ -223,13 +227,17 @@ def main():
                     help=f"Specify Number of Frames. Default={DEFAULT_NUM_FRAMES}")
     ap.add_argument("-o", "--output", type=str, default=OUTPUT_DIR,
                     help=f"Specify output directory path. Default={OUTPUT_DIR}")
+    ap.add_argument("-e", "--exposure", type=int, default=EXPOSURE_TIME,
+                    help=f"Specify cameras exposure time. Default={EXPOSURE_TIME}")
     ap.add_argument("-i", "--info", action="store_true", default=False,
                     help=f"Show cameras information")
+
     args = vars(ap.parse_args())
 
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
     num_frames = args.get('num_frames')
+    exposure = args.get('exposure')
 
     if args.get('info'):
         display_info([c for c in cam_list])
@@ -238,7 +246,7 @@ def main():
         label = datetime.now().strftime('%Y%m%d-%H%M%S')
         dir_path = mkdir(f"{args.get('output')}/{label}")
 
-        filtered = [(cam, dir_path, num_frames) for cam in cam_list]
+        filtered = [(cam, dir_path, num_frames, exposure) for cam in cam_list]
         print(f'\nCameras detected: {len(filtered)}\nNumber of Frames to take: {num_frames}\n')
         if filtered:
             with Pool(len(filtered)) as pool:
