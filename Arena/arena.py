@@ -13,7 +13,7 @@ from utils import get_logger, calculate_fps, mkdir
 DEFAULT_NUM_FRAMES = 1000
 OUTPUT_DIR = 'output'
 FPS = 60
-SAVED_FRAME_RESOLUTION = (640, 480)
+SAVED_FRAME_RESOLUTION = (1440, 1088)
 SERIAL_PORT = '/dev/ttyACM0'
 SERIAL_BAUD = 9600
 INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
