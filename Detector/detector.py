@@ -1,5 +1,5 @@
 import torch
-from models import Darknet
+from Detector.models import Darknet
 from utils.utils import load_classes, non_max_suppression
 
 default_model_def = "config/yolov3-custom.cfg"

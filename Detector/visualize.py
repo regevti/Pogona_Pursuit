@@ -254,10 +254,10 @@ def save_pred_video(video_path,
         
         if detections_xyxy is not None:
             detections = xyxy_to_xywh(detections_xyxy, detector.img_size, frame_rgb.shape)
-            update_centroids(detections,detections_xyxy,centroids,frameCounter)
+            detections = update_centroids(detections,detections_xyxy,centroids,frameCounter)
             draw_bounding_boxes(frame, detections, detector, colors)
 
-        draw_k_arrows(frame,frameCounter-k,arrowWindow,centroids,windowSize,scale=5)
+        draw_k_arrows(frame,frameCounter,arrowWindow,centroids,windowSize,scale=5)
 
         times['Detect_draw'][frameCounter] = time.time() - start_time ##
         
