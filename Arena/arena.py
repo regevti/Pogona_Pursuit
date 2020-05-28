@@ -9,6 +9,7 @@ import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
 from utils import get_logger, calculate_fps, mkdir
+from Detector.detector import Detector
 
 DEFAULT_NUM_FRAMES = 1000
 EXPOSURE_TIME = 15000
@@ -105,6 +106,31 @@ class SpinCamera:
 
         self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+
+    def image_handler_detect(self, image_result: PySpin.ImagePtr,
+                             detector,
+                             action,
+                             action_func ):
+        # TODO: locations and/or velocities data structures?
+
+        img = image_result.GetNDArray()
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        detections = detector.detect_image(img)
+
+        #TODO: do stuff with detections:
+        """
+        - update centroids and velocity in array (?)
+        - save to file along with detections: can call draw bounding box and/or arrow
+        - maybe put in another module (?)
+        """
+        if self.dir_path and self.video_out == None:
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            h, w = img.shape[:2]
+            self.video_out = cv2.VideoWriter(f'{self.dir_path}/{self.device_id}.avi', fourcc, FPS, (w, h), True)
+
+        self.video_out.write(img)
+         
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
