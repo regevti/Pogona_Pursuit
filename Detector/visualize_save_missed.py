@@ -6,6 +6,7 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 from torchvision import transforms
+import re
 
 
 def xyxy_to_xywh(xyxy, input_size, output_shape):
@@ -29,8 +30,8 @@ def xyxy_to_xywh(xyxy, input_size, output_shape):
     box_w = ((x2 - x1) / unpad_w) * output_shape[1]
     y1 = ((y1 - pad_y // 2) / unpad_h) * output_shape[0]
     x1 = ((x1 - pad_x // 2) / unpad_w) * output_shape[1]
-
-    return torch.cat([torch.stack([x1, y1, box_w, box_h], dim=1), xyxy[:, 4:]], dim=1)
+    
+    return torch.stack([x1, y1, box_w, box_h], dim=1)
 
 
 def calc_centroid(pred_tensor):
@@ -42,10 +43,11 @@ def calc_centroid(pred_tensor):
     return torch.stack([x1+(box_w//2), y1+(box_h//2)], dim=1).numpy()
 
 
-def hsv_to_rgb(H,S,V):
-    C = S*V
+def hsv_to_rgb(H):
+    # assumes saturation (S) is 1 and value (V) is 1
+    C = 1
     X = C*(1-np.abs((H/60)%2-1))
-    m=V-C 
+    m=1-C 
     
     if H >= 0 and H < 60:
         r,g,b = C,X,0
@@ -66,7 +68,15 @@ def hsv_to_rgb(H,S,V):
     return roun((b+m)*255),roun((g+m)*255),roun((r+m)*255)
 
 
-
+def vec_to_bgr(vec):
+    # takes 2d vector, returns bgr color using HSV formula +++remember OPENCV is BGR
+    
+    # transform to [-pi,pi] and then to degrees
+    angle = np.arctan2(vec[1],vec[0])*180/np.pi
+    
+    # transform to [0,360]
+    angle = (angle + 360) % 360
+    return hsv_to_rgb(angle)
 
 def compose_torch_transform(width,height,detector):
     img_size = detector.img_size
@@ -88,32 +98,7 @@ def resize_image(img, img_transforms):
     return img_transforms(img)
 
 
-def vec_to_bgr(vec):
-    # takes 2d vector, returns bgr color using HSV formula +++remember OPENCV is BGR
-    
-    # transform to [-pi,pi] and then to degrees
-    angle = np.arctan2(vec[1],vec[0])*180/np.pi
-    
-    # transform to [0,360]
-    angle = (angle + 360) % 360
-    return hsv_to_rgb(angle,1,1)
-
-
-def time_to_bgr(k,arrowWindow): # DOES NOT WORK - TODO 
-    # map the relative position of the frame to [0,360] angle and then to hue
-    rel = (arrowWindow-k)/arrowWindow
-    return hsv_to_rgb(0,1,rel)
-    
-
-
-def draw_arrow(frame,
-               frameCounter,
-               centroids,
-               arrowWindow,
-               k,
-               vis_angle=True,
-               windowSize=1,
-               scale=4):
+def draw_arrow(frame, frameCounter, centroids, windowSize=1, scale=4):
     # initial arrow
     if frameCounter<windowSize:
         return
@@ -144,11 +129,7 @@ def draw_arrow(frame,
     
     arrowHead = (new_x,new_y)
     
-    
-    if vis_angle:
-        vec_color = vec_to_bgr([arrowHead[0]-arrowBase[0],arrowHead[1]-arrowBase[1]])
-    else:
-        vec_color = time_to_bgr(k,arrowWindow)
+    vec_color = vec_to_bgr([arrowHead[0]-arrowBase[0],arrowHead[1]-arrowBase[1]])
     
     cv.arrowedLine(frame,arrowBase,arrowHead,color=vec_color, thickness=2,tipLength=0.2)
 
@@ -178,7 +159,9 @@ def draw_bounding_boxes(frame, detections, detector, colors):
             cv.putText(frame, text, (x1, end_y - margin), font, scale, (255,255,255), 1, cv.LINE_AA)
 
 
-def update_centroids(detections,centroids,frameCounter):
+def update_centroids(detections,detections_xyxy,centroids,frameCounter):
+
+    detections = torch.cat([detections, detections_xyxy[:, 4:]], dim=1)
 
     if detections.shape[0] > 1 and frameCounter > 1:
         prev = centroids[frameCounter - 1]
@@ -187,20 +170,18 @@ def update_centroids(detections,centroids,frameCounter):
         dists = np.linalg.norm(deltas, axis=1)
         arg_best = np.argmin(dists)
         centroid = detected_centroids[arg_best]
-        detection = detections[arg_best:arg_best+1]
     else:
         centroid = calc_centroid(detections)[0]
-        detection = detections
 
     centroids[frameCounter][0] = centroid[0]
     centroids[frameCounter][1] = centroid[1]
 
-    return detection
+    return detections
 
 
-def draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,scale=5):
+def draw_k_arrows(frame,frameCounter,arrowWindow,centroids,windowSize,scale=5):
     for k in range(arrowWindow):
-        draw_arrow(frame,frameCounter-k,centroids,arrowWindow,k,visAngle,windowSize,scale)
+        draw_arrow(frame,frameCounter-k,centroids,windowSize,scale)
 
 def save_pred_video(video_path,
                     output_path,
@@ -210,8 +191,7 @@ def save_pred_video(video_path,
                     start_frame=0,
                     num_frames=None,
                     windowSize=1,
-                    arrowWindow=20,
-                   visAngle=True):
+                    arrowWindow=20):
     print("saving to: ",output_path)
     vcap = cv.VideoCapture(video_path)
 
@@ -227,14 +207,17 @@ def save_pred_video(video_path,
 
     img_transforms = compose_torch_transform(width,height,detector)
     
-    videowriter = cv.VideoWriter(output_path, cv.VideoWriter_fourcc(*'mp4v'),
-                                 frame_rate, (width, height))
+    #videowriter = cv.VideoWriter(output_path, cv.VideoWriter_fourcc(*'mp4v'),
+                                 #frame_rate, (width, height))
 
     frameCounter = 0
     cmap = plt.get_cmap('tab20b')
     colors = [cmap(i)[:3] for i in np.linspace(0, 1, 20)]
     
-
+    # TODO delete
+    missed_counter = 0
+    vid_time = re.search('20200521-(\d+)',output_path).group(1)
+    
     # while vcap.isOpened(): # while the stream is open
     #inference_time = np.zeros(num_frames)
     centroids = np.zeros((num_frames,2))
@@ -275,24 +258,30 @@ def save_pred_video(video_path,
         start_time = time.time() ##
         
         if detections_xyxy is not None:
+            """
             detections = xyxy_to_xywh(detections_xyxy, detector.img_size, frame_rgb.shape)
-            detection = update_centroids(detections,centroids,frameCounter)
+            detections = update_centroids(detections,detections_xyxy,centroids,frameCounter)
             draw_bounding_boxes(frame, detections, detector, colors)
+            draw_k_arrows(frame,frameCounter,arrowWindow,centroids,windowSize,scale=5)
+            """
+        else:
+            cv.imwrite('./21_05_missed/21_05_'+vid_time+'_'+str(missed_counter)+'.jpg',frame_rgb)
+            missed_counter+=1
         
-        draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,scale=5)
 
         times['Detect_draw'][frameCounter] = time.time() - start_time ##
         
         
         start_time = time.time()##
-        videowriter.write(frame)
+        #videowriter.write(frame)
         times['Write'][frameCounter] = time.time() - start_time ##
     
     #######################################
-    for key in times.keys():
-        print(key,': ',times[key].mean())
+    #for key in times.keys():
+    #    print(key,': ',times[key].mean())
     ########################################
+    print("missed: ",missed_counter)
     vcap.release()
-    videowriter.release()
+    #videowriter.release()
 
     return times
