@@ -6,6 +6,7 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 
 
@@ -89,7 +90,7 @@ def draw_arrow(frame,
                k,
                vis_angle=True,
                windowSize=1,
-               scale=4):
+               scale=2.5):
     # initial arrow
     if frameCounter<windowSize:
         return
@@ -126,7 +127,7 @@ def draw_arrow(frame,
     else:
         vec_color = time_to_bgr(k,arrowWindow)
     
-    cv.arrowedLine(frame,arrowBase,arrowHead,color=vec_color, thickness=2,tipLength=0.2)
+    cv.arrowedLine(frame,arrowBase,arrowHead,color=vec_color, thickness=2,tipLength=0.2,line_type=cv.LINE_AA)
 
     
 def draw_bounding_boxes(frame, detections, detector, colors):
@@ -142,6 +143,11 @@ def draw_bounding_boxes(frame, detections, detector, colors):
 
         # browse detections and draw bounding boxes
         for x1, y1, box_w, box_h, conf in detections:
+            x1 = int(x1)
+            y1 = int(y1)
+            box_w = int(box_w)
+            box_h = int(box_h)
+            
             color = colors[int(0) % len(colors)]
             color = [i * 255 for i in color]
             text = str(round(conf, 2))
@@ -181,6 +187,23 @@ def draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,s
     for k in range(arrowWindow):
         draw_arrow(frame,frameCounter-k,centroids,arrowWindow,k,visAngle,windowSize,scale)
 
+        
+        
+def draw_k_centroids(frame,frameCounter,centroids,k):
+    for j in range(k):
+        if centroids[frameCounter-j][0] == 0:
+            continue
+        x = int(centroids[frameCounter-j][0])
+        y = int(centroids[frameCounter-j][1])
+        cv.circle(frame,
+                  center = (x,y),
+                  radius=2,
+                  color= (0,0,255),
+                  thickness=-1,
+                  lineType=cv.LINE_AA)
+        
+    
+    
 def save_pred_video(video_path,
                     output_path,
                     detector,
@@ -190,7 +213,8 @@ def save_pred_video(video_path,
                     num_frames=None,
                     windowSize=1,
                     arrowWindow=20,
-                   visAngle=True):
+                   visAngle=True,
+                   dots=False):
     print("saving to: ",output_path)
     vcap = cv.VideoCapture(video_path)
 
@@ -205,7 +229,7 @@ def save_pred_video(video_path,
     print(f'width: {width}, height: {height}')
     frame_rate = vcap.get(cv.CAP_PROP_FPS)
 
-    img_transforms = compose_torch_transform(width,height,detector)
+
     
     videowriter = cv.VideoWriter(output_path, cv.VideoWriter_fourcc(*'mp4v'),
                                  frame_rate, (width, height))
@@ -222,7 +246,7 @@ def save_pred_video(video_path,
     
     ###############################
     times = dict()
-    for key in ['Read','BGR2RGB','fromarray','resize_image','Inference','Detect_draw','Write']:
+    for key in ['Read','Rsz_inf','Write']:
         times[key] = np.zeros(num_frames)    
     ################################
     
@@ -234,33 +258,21 @@ def save_pred_video(video_path,
         if not ret:
             print("error reading frame")
             break
-        
+                
         start_time = time.time() ##
-        frame_rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-        times['BGR2RGB'][frameCounter] = time.time() - start_time ##
+        detections = detector.detect_image(frame,width,height, conf_thres=conf_thres, nms_thres=nms_thres)
+        times['Rsz_inf'][frameCounter] = time.time() - start_time ##
         
-        start_time = time.time() ##
-        PIL_im = Image.fromarray(frame_rgb)
-        times['fromarray'][frameCounter] = time.time() - start_time ##
-        
-        start_time = time.time() ##
-        resized_frame = resize_image(PIL_im, img_transforms)
-        times['resize_image'][frameCounter] = time.time() - start_time ##
-        
-        
-        start_time = time.time() ##
-        detections = detector.detect_image(resized_frame,width,height, conf_thres=conf_thres, nms_thres=nms_thres)
-        times['Inference'][frameCounter] = time.time() - start_time ##
-        
-        start_time = time.time() ##
-        
+       
         if detections is not None:
             detection = update_centroids(detections,centroids,frameCounter)
             draw_bounding_boxes(frame, detections, detector, colors)
         
-        draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,scale=5)
+        if not dots:
+            draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,scale=5)
+        else:
+            draw_k_centroids(frame,frameCounter,centroids,frameCounter)
 
-        times['Detect_draw'][frameCounter] = time.time() - start_time ##
         
         
         start_time = time.time()##

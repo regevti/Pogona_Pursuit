@@ -1,14 +1,28 @@
 import torch
+import Detector.Yolo4.darknet as darknet4
 from Detector.models import Darknet
 from utils.utils import load_classes, non_max_suppression
+import cv2 as cv
+from ctypes import c_int, pointer
+import numpy as np
 
 """
 - All detectors implement the function detect_image(), that return a (number of detections) X 5 Numpy array.
 The (row - single detection) array format is left_x-left_y-width-height-confidence.
 """
 
+class Detector:
+    def detect_image(self, img, orig_width, orig_height, conf_thres=0.8, nms_thres=0.5):
+        """
+        Return detection array for the supplied image.
+        img - The image as a pytorch tensor. Expecting img_size x img_size dimensions.
+        conf_thres - confidence threshold for detection
+        nms_thres - threshold for non-max suppression
+        """
+        pass
 
-class Detector_v3:
+
+class Detector_v3(Detector):
     def __init__(self,
                  model_def="Detector/Yolo3/config/yolov3-custom.cfg",
                  weights_path="Detector/Yolo3/weights/yolov3-pogonahead.pth",
@@ -34,14 +48,27 @@ class Detector_v3:
         self.model.eval()
         self.classes = load_classes(class_path)
      
+    def set_input_size(width, height):
+        self.input_width = width
+        self.input_height = height
+        
+        # update transforms: scale and pad image
+        ratio = min(img_size/width, img_size/height)
+        imw = round(width * ratio)
+        imh = round(height * ratio)
+        # resize + pad can be done with open cv and numpy!!
+        self.resize_transform = transforms.Compose([transforms.Resize((imh, imw)),
+                                                    transforms.Pad((max(int((imh-imw)/2),0), 
+                                                                    max(int((imw-imh)/2),0), max(int((imh-imw)/2),0),
+                                                                    max(int((imw-imh)/2),0)), (128,128,128)),
+                                                    transforms.ToTensor()])
     
     def xyxy_to_xywh(self,xyxy, output_shape):
         """
         xyxy - an array of xyxy detections in input_size x input_size coordinates.
         output_shape - shape of output array (height, width)
         """
-
-        
+ 
         input_size = self.img_size
         
         pad_x = max(output_shape[0] - output_shape[1], 0) * (input_size / max(output_shape))
@@ -64,15 +91,19 @@ class Detector_v3:
         # format xywh-conf
         return torch.stack([x1, y1, box_w, box_h,xyxy[:,4]], dim=1)
     
-    def detect_image(self, img,orig_width,orig_height, conf_thres=0.8, nms_thres=0.5):
+    def detect_image(self, img, orig_width, orig_height, conf_thres=0.8, nms_thres=0.5):
         """
         Return yolo detection array for the supplied image.
-        img - The image as a pytorch tensor. Expecting img_size x img_size dimensions.
+        img - The image as numpy array.
         conf_thres - confidence threshold for detection
         nms_thres - threshold for non-max suppression
         """
-        #image_tensor = torch.from_numpy(img)
-        image_tensor = img.unsqueeze(0)
+
+        img_rgb = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+        PIL_img = Image.fromarray(img_rgb)
+        self.set_input_size(orig_width, orig_height)
+        image_tensor = self.resize_transform(PIL_img).unsqueeze(0)
+
         if torch.cuda.is_available():
             input_img = image_tensor.type(torch.Tensor).cuda()
         else:
@@ -91,6 +122,53 @@ class Detector_v3:
         return None
     
 
+class Detector_v4:
+    def __init__(self,
+                 cfg_path="Detector/Yolo4/yolo-obj.cfg",
+                 weights_path="Detector/Yolo4/yolo-obj_best.weights",
+                 meta_path="Detector/Yolo4/obj.data"):
+        self.net = darknet4.load_net_custom(cfg_path.encode("ascii"),
+                                            weights_path.encode("ascii"),
+                                            0, 1)
+        self.meta = darknet4.load_meta(meta_path.encode("ascii"))
+        self.model_width = darknet4.lib.network_width(self.net)
+        self.model_height = darknet4.lib.network_height(self.net)
+        print("YOlO-V4 Model loaded")
+  
+    def detect_image(self, img, orig_width, orig_height, conf_thres=0.8, nms_thres=0.5):
+        """
+        Receive an image as numpy array. Resize image to model size using open-cv.
+        Run the image through the network and collect detections.
+        Return a numpy array of detections. Each row is x, y, w, h (top-left corner).
+        """
+        image = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+        image = cv.resize(image, (self.model_width, self.model_height), interpolation=cv.INTER_LINEAR)
+        image, arr = darknet4.array_to_image(image)
+        
+        num = c_int(0)
+        pnum = pointer(num)
+        darknet4.predict_image(self.net, image)
+              
+        dets = darknet4.get_network_boxes(self.net, orig_width, orig_height, conf_thres, conf_thres, None, 0, pnum, 0)
+               
+        num = pnum[0]
+        if nms_thres:
+            darknet4.do_nms_sort(dets, num, self.meta.classes, nms_thres)
+        
+        
+        res = np.zeros((num, 5))
+        for i in range(num):
+            b = dets[i].bbox
+            res[i] = [b.x-b.w/2, b.y-b.h/2, b.w, b.h, dets[i].prob[0]]
+        nonzero = res[:, 4] > 0
+        res = res[nonzero]
+            
+        darknet4.free_detections(dets, num)
+        #darknet4.free_image(image) # no allocation of memory
+        
+        
+        if res.shape[0] == 0:
+            return None
+        else:
+            return res
 
-    
-    
