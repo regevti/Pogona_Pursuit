@@ -1,8 +1,15 @@
 # Created by .ignore support plugin (hsz.mobi)
 .idea/*
-weights/
-labelled/
-data/
 __pycache__/
 .ipynb_checkpoints/
+*.weights
+*.avi
+*.mp4
+*.pth
+*.jpg
+*.png
+*.txt
+*.conv.74
+
+
 

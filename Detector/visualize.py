@@ -8,30 +8,6 @@ from PIL import Image
 from torchvision import transforms
 
 
-def xyxy_to_xywh(xyxy, input_size, output_shape):
-    """
-    xyxy - an array of xyxy detections in input_size x input_size coordinates.
-    input_size - length of each input dimension.
-    output_shape - shape of output array (height, width)
-    """
-
-    pad_x = max(output_shape[0] - output_shape[1], 0) * (input_size / max(output_shape))
-    pad_y = max(output_shape[1] - output_shape[0], 0) * (input_size / max(output_shape))
-    unpad_h = input_size - pad_y
-    unpad_w = input_size - pad_x
-
-    x1 = xyxy[:, 0]
-    y1 = xyxy[:, 1]
-    x2 = xyxy[:, 2]
-    y2 = xyxy[:, 3]
-
-    box_h = ((y2 - y1) / unpad_h) * output_shape[0]
-    box_w = ((x2 - x1) / unpad_w) * output_shape[1]
-    y1 = ((y1 - pad_y // 2) / unpad_h) * output_shape[0]
-    x1 = ((x1 - pad_x // 2) / unpad_w) * output_shape[1]
-
-    return torch.cat([torch.stack([x1, y1, box_w, box_h], dim=1), xyxy[:, 4:]], dim=1)
-
 
 def calc_centroid(pred_tensor):
     x1 = pred_tensor[:, 0]
@@ -39,7 +15,7 @@ def calc_centroid(pred_tensor):
     box_w = pred_tensor[:, 2]
     box_h = pred_tensor[:, 3]
 
-    return torch.stack([x1+(box_w//2), y1+(box_h//2)], dim=1).numpy()
+    return np.stack([x1+(box_w//2), y1+(box_h//2)], axis=1)
 
 
 def hsv_to_rgb(H,S,V):
@@ -162,19 +138,22 @@ def draw_bounding_boxes(frame, detections, detector, colors):
     margin = 4
 
     if detections is not None:
-        unique_labels = detections[:, -1].cpu().unique()
+        unique_labels = np.unique(detections[:, -1])
 
         # browse detections and draw bounding boxes
-        for x1, y1, box_w, box_h, conf, cls_conf, cls_pred in detections:
-            cls = detector.classes[int(cls_pred)]
-            color = colors[int(cls_pred) % len(colors)]
+        for x1, y1, box_w, box_h, conf in detections:
+            color = colors[int(0) % len(colors)]
             color = [i * 255 for i in color]
-            text = cls + " " + str(round(conf.item(), 2))
+            text = str(round(conf, 2))
             txt_size = cv.getTextSize(text, font, scale, thickness)
-            end_x = x1 + txt_size[0][0] + margin
-            end_y = y1 + txt_size[0][1] + margin
-            cv.rectangle(frame,(x1,y1),(x1+box_w, y1+box_h),color,2)
-            cv.rectangle(frame, (x1, y1), (end_x, end_y), color, thickness)
+            end_x = int(x1 + txt_size[0][0] + margin)
+            end_y = int(y1 + txt_size[0][1] + margin)
+                       
+            
+            cv.rectangle(frame, (x1, y1), (end_x, end_y),(0,0,255), thickness)
+            
+            cv.rectangle(frame,(x1,y1),(x1+box_w, y1+box_h),(0,0,255),2)
+
             cv.putText(frame, text, (x1, end_y - margin), font, scale, (255,255,255), 1, cv.LINE_AA)
 
 
@@ -223,6 +202,7 @@ def save_pred_video(video_path,
 
     width  = int(vcap.get(3))
     height = int(vcap.get(4))
+    print(f'width: {width}, height: {height}')
     frame_rate = vcap.get(cv.CAP_PROP_FPS)
 
     img_transforms = compose_torch_transform(width,height,detector)
@@ -269,13 +249,12 @@ def save_pred_video(video_path,
         
         
         start_time = time.time() ##
-        detections_xyxy = detector.detect_image(resized_frame, conf_thres=conf_thres, nms_thres=nms_thres)
+        detections = detector.detect_image(resized_frame,width,height, conf_thres=conf_thres, nms_thres=nms_thres)
         times['Inference'][frameCounter] = time.time() - start_time ##
         
         start_time = time.time() ##
         
-        if detections_xyxy is not None:
-            detections = xyxy_to_xywh(detections_xyxy, detector.img_size, frame_rgb.shape)
+        if detections is not None:
             detection = update_centroids(detections,centroids,frameCounter)
             draw_bounding_boxes(frame, detections, detector, colors)
         
