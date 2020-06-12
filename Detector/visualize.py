@@ -336,8 +336,6 @@ def overlay_video(input_path, output_path, detector, overlay_fn, draw_bbox=True,
     
     overlay = np.zeros((height, width, 4), np.uint8)
 
-    # the problem is drawing on the overlay with an alpha channel!
-
     for frame_num in tqdm(range(num_frames)):
         ret, frame = vcap.read()
 
@@ -359,7 +357,6 @@ def overlay_video(input_path, output_path, detector, overlay_fn, draw_bbox=True,
             frame[:, :, c] = (alpha_s * overlay[:, :, c] +
                               alpha_l * frame[:, :, c])
 
-        # use addweighted to overlay with alpha
         videowriter.write(frame)
     
     vcap.release()
