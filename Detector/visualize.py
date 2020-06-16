@@ -20,6 +20,9 @@ def calc_centroid(pred_tensor):
 
 
 def hsv_to_rgb(H,S,V):
+    """
+    transform angle to BGR color as 3-tuple
+    """
     C = S*V
     X = C*(1-np.abs((H/60)%2-1))
     m=V-C 
@@ -57,7 +60,10 @@ def torch_resize_transform(width, height, detector):
 
 
 def vec_to_bgr(vec):
-    # takes 2d vector, returns bgr color using HSV formula +++remember OPENCV is BGR
+    """
+    input: 2D vector
+    return: 3-tuple, specifying BGR color using HSV formula as
+    """
     
     # transform to [-pi,pi] and then to degrees
     angle = np.arctan2(vec[1], vec[0])*180/np.pi
@@ -81,11 +87,17 @@ def draw_arrow(frame,
                vis_angle=True,
                windowSize=1,
                scale=2.5):
+    """
+    draws the direction of the velocity vector from (arrowWindow) frames back
+    directions based on the first discrete derivative of the 2D coordinates of
+    windowSize consecutive centroids of the detecions, if both exist
+    """
+    
     # initial arrow
     if frameCounter<windowSize:
         return
     
-    # no prediction at t - windowSize
+    # if no prediction at t - windowSize, bo drawing
     if np.isnan(centroids[frameCounter-windowSize, 0]) or np.isnan(centroids[frameCounter, 0]):
         return
 
@@ -111,7 +123,7 @@ def draw_arrow(frame,
     
     arrowHead = (new_x,new_y)
     
-    
+    # compute color based on angle or time
     if vis_angle:
         vec_color = vec_to_bgr([arrowHead[0]-arrowBase[0],arrowHead[1]-arrowBase[1]])
     else:
@@ -121,7 +133,6 @@ def draw_arrow(frame,
 
 
 def draw_bounding_boxes(frame, detections, detector, color=(0, 0, 255)):
-    # Get bounding-box colors
 
     font = cv.FONT_HERSHEY_COMPLEX
     scale = 0.4
@@ -150,9 +161,11 @@ def draw_bounding_boxes(frame, detections, detector, color=(0, 0, 255)):
 
 
 def update_centroids(detections, centroids, frameCounter):
-
+    """
+    update the detection centroids array
+    """
     if detections.shape[0] > 1 and frameCounter > 1:
-        prev = centroids[frameCounter - 1]
+        prev = centroids[frameCounter - 1][:2]
         detected_centroids = calc_centroid(detections)
         deltas = prev - detected_centroids
         dists = np.linalg.norm(deltas, axis=1)
@@ -165,6 +178,7 @@ def update_centroids(detections, centroids, frameCounter):
 
     centroids[frameCounter][0] = centroid[0]
     centroids[frameCounter][1] = centroid[1]
+    centroids[frameCounter][2] = detection[0][4]
 
     return detection
 
@@ -175,6 +189,9 @@ def draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,s
 
 
 def draw_k_centroids(frame,frameCounter,centroids,k):
+    if k > frameCounter:
+        k = frameCounter-1
+    
     for j in range(k):
         if np.isnan(centroids[frameCounter-j][0]):
             continue
@@ -225,7 +242,7 @@ def save_pred_video(video_path,
 
     # while vcap.isOpened(): # while the stream is open
     #inference_time = np.zeros(num_frames)
-    centroids = np.empty((num_frames,2))
+    centroids = np.empty((num_frames,3))
     centroids[:] = np.nan
 
     ###############################
@@ -254,7 +271,7 @@ def save_pred_video(video_path,
         if not dots:
             draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,scale=5)
         else:
-            draw_k_centroids(frame,frameCounter,centroids,frameCounter)
+            draw_k_centroids(frame,frameCounter,centroids,arrowWindow)
 
         start_time = time.time()##
         videowriter.write(frame)
@@ -361,3 +378,128 @@ def overlay_video(input_path, output_path, detector, overlay_fn, draw_bbox=True,
     
     vcap.release()
     videowriter.release()
+
+    
+def plot_no_video(centroids, num_frames,vid_name,
+                  width=1440,
+                  height=1080,
+                  draw_window=240,
+                  frame_rate=60):
+    
+    videowriter = cv.VideoWriter(vid_name, cv.VideoWriter_fourcc(*'mp4v'),
+                                 frame_rate, (width, height))
+    
+    frame = 255 * np.ones((height,width,3)).astype('uint8')
+    for frameCounter in tqdm(range(num_frames)):
+        frame.fill(255)
+        draw_k_centroids(frame,frameCounter,centroids,draw_window)
+        
+        videowriter.write(frame)
+    
+    videowriter.release()
+    
+    
+def plot_with_figure(input_name,
+                     output_name,
+                     centroids,
+                     num_frames,
+                     width=1440,
+                     height=1080,
+                     draw_window=240,
+                     frame_rate=60):
+    
+    FIG_WID_EXT = 960
+    
+    vcap = cv.VideoCapture(input_name)
+    
+    if num_frames is None:
+        num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT))
+
+    width = int(vcap.get(3))
+    height = int(vcap.get(4))
+
+    print(f'width: {width}, height: {height}')
+    if frame_rate is None:
+        frame_rate = vcap.get(cv.CAP_PROP_FPS)
+
+    videowriter = cv.VideoWriter(output_name, cv.VideoWriter_fourcc(*'mp4v'),
+                                 frame_rate, (width+FIG_WID_EXT, height))
+
+    velocities_mag = compute_velocity(centroids)
+    confies = centroids[:,2]
+    
+    write_frame = 255 * np.ones((height,width+FIG_WID_EXT,3)).astype('uint8')
+    for frameCounter in tqdm(range(num_frames)):
+        ret, frame = vcap.read()
+
+        if not ret:
+            print("error reading frame")
+            break
+        
+        draw_k_centroids(frame,frameCounter,centroids,draw_window)
+        
+        draw_figure_on_frame(write_frame,frame,frameCounter,velocities_mag,confies,num_frames)
+        
+        videowriter.write(write_frame)
+    
+    videowriter.release()
+
+def draw_figure_on_frame(write_frame,
+                         vid_frame,
+                         frameCounter,
+                         velocities,
+                         confidences,
+                         total_frames):
+    """
+    draw updating data beside video
+    """
+    WIDTH_INCH = 10
+    HEIGHT_INCH = 5
+    DPI = 96
+    MARKER_SIZE = 50
+    
+    
+    PLOT_BACK = 300
+    
+    fig = plt.figure(figsize=(WIDTH_INCH,HEIGHT_INCH),dpi=DPI)
+    
+    start_range = max(frameCounter-PLOT_BACK,0)
+    end_range = frameCounter
+    
+    plt.scatter(np.arange(start_range,end_range),
+                confidences[start_range:end_range],s=MARKER_SIZE,c='r')
+    plt.scatter(np.arange(start_range,end_range),
+                velocities[start_range:end_range],s=MARKER_SIZE,c='b')
+    plt.xlim(start_range-10,end_range+10)
+    plt.ylim(0,1)
+    plt.rcParams.update({'font.size':14})
+    fig.canvas.draw()
+    width, height = fig.get_size_inches() * fig.get_dpi()
+    width, height = int(width), int(height)
+    
+    fig_image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8').reshape(height, width, 3)
+    plt.clf()
+    plt.close()
+    """
+    print(f'fig_image shape: {fig_image.shape}')
+    print(f'vid_frame shape: {vid_frame.shape}')
+    print(f'frame shape: {write_frame.shape}')
+    """
+    
+    write_frame[:,:vid_frame.shape[1],:] = vid_frame
+    write_frame[240:240+480,vid_frame.shape[1]:,:] = fig_image
+    
+    
+    
+
+def compute_velocity(centroids):
+    """
+    computes normalized magnitude of velocity (divided by max value of array)
+    """
+    veloc = np.diff(centroids,axis=0)
+    veloc = np.apply_along_axis(np.linalg.norm,1,veloc)
+    norm_speed = np.percentile(veloc[~np.isnan(veloc)],99) # reject top 5% outliers
+    veloc[veloc>norm_speed] = np.nan
+    veloc = veloc /norm_speed 
+    
+    return veloc

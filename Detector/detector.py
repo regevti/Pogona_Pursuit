@@ -9,7 +9,7 @@ from ctypes import c_int, pointer
 import numpy as np
 
 """
-- All detectors implement the function detect_image(), that return a (number of detections) X 5 Numpy array.
+All detectors implement the function detect_image(), that return a (number of detections) X 5 Numpy array.
 The (row - single detection) array format is left_x-left_y-width-height-confidence.
 """
 
@@ -24,6 +24,12 @@ class Detector:
 
 
 class Detector_v3(Detector):
+    """
+    Yolo-V3 detector implemented in Pytorch. Training and model code taken from https://github.com/eriklindernoren/PyTorch-YOLOv3.
+    based on original paper "YOLOv3: An Incremental Improvement".
+    This model training was done without non-examples, i.e, images that do not contain any ground truth detection
+    """
+    
     def __init__(self,
                  model_def="Detector/Yolo3/config/yolov3-custom.cfg",
                  weights_path="Detector/Yolo3/weights/yolov3-pogonahead.pth",
@@ -99,7 +105,9 @@ class Detector_v3(Detector):
         conf_thres - confidence threshold for detection
         nms_thres - threshold for non-max suppression
         """
-
+        
+        # TODO - could be updated to be done without conversion to PIL image
+        # might be faster
         img_rgb = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         PIL_img = Image.fromarray(img_rgb)
         image_tensor = self.resize_transform(PIL_img).unsqueeze(0)
@@ -124,6 +132,11 @@ class Detector_v3(Detector):
 
 
 class Detector_v4:
+    """
+    Version 4 of the YOLO algorithm, based on the paper "YOLOv4: Optimal Speed and Accuracy of Object Detection"
+    Code from: https://github.com/AlexeyAB/darknet, including a python wrapper for the C modules
+    Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images
+    """
     def __init__(self,
                  cfg_path="Detector/Yolo4/yolo-obj.cfg",
                  weights_path="Detector/Yolo4/yolo-obj_best.weights",
@@ -139,11 +152,16 @@ class Detector_v4:
         self.model_height = darknet4.lib.network_height(self.net)
         self.conf_thres = conf_thres
         self.nms_thres = nms_thres
+        print("Detector initiated successfully")
   
     def set_input_size(self, width, height):
         self.input_width = width
         self.input_height = height
-
+    
+    def set_conf_and_nms(self,new_conf_thres=0.9,new_nms_thres=0.6):
+        self.conf_thres = new_conf_thres
+        self.nms_thres = new_nms_thres
+    
     def detect_image(self, img):
         """
         Receive an image as numpy array. Resize image to model size using open-cv.
