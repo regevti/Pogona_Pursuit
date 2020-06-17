@@ -7,6 +7,7 @@ from tqdm import tqdm
 from PIL import Image
 from torchvision import transforms
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 
@@ -408,14 +409,14 @@ def plot_with_figure(input_name,
                      draw_window=240,
                      frame_rate=60):
     
-    FIG_WID_EXT = 960
+    FIG_WID_EXT = 0
     
     vcap = cv.VideoCapture(input_name)
     
     if num_frames is None:
         num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT))
 
-    width = int(vcap.get(3))
+    width = int(vcap.get(3))+FIG_WID_EXT
     height = int(vcap.get(4))
 
     print(f'width: {width}, height: {height}')
@@ -423,12 +424,13 @@ def plot_with_figure(input_name,
         frame_rate = vcap.get(cv.CAP_PROP_FPS)
 
     videowriter = cv.VideoWriter(output_name, cv.VideoWriter_fourcc(*'mp4v'),
-                                 frame_rate, (width+FIG_WID_EXT, height))
+                                 frame_rate, (width, height))
+    
 
-    velocities_mag = compute_velocity(centroids)
+    velocities_mag = compute_velocity(centroids,to_norm=True)
     confies = centroids[:,2]
     
-    write_frame = 255 * np.ones((height,width+FIG_WID_EXT,3)).astype('uint8')
+    write_frame = 255 * np.ones((height,width,3)).astype('uint8')
     for frameCounter in tqdm(range(num_frames)):
         ret, frame = vcap.read()
 
@@ -444,42 +446,96 @@ def plot_with_figure(input_name,
     
     videowriter.release()
 
-def draw_figure_on_frame(write_frame,
+def draw_figure_beside_frame(write_frame,
                          vid_frame,
                          frameCounter,
                          velocities,
                          confidences,
-                         total_frames):
+                         total_frames,
+                         width_inch = 10,
+                         height_inch = 5,
+                         dpi = 96,
+                         marker_size = 50,
+                         plot_back = 180):
     """
-    draw updating data beside video
+    draw updating data on video, in the upper left corner
+    TODO: combine to a generic function, selecting if on frame or beside frame
     """
-    WIDTH_INCH = 10
-    HEIGHT_INCH = 5
-    DPI = 96
-    MARKER_SIZE = 50
     
+    fig,axes = plt.subplots(1,2,figsize=(width_inch,height_inch),dpi=dpi)      
     
-    PLOT_BACK = 300
-    
-    fig = plt.figure(figsize=(WIDTH_INCH,HEIGHT_INCH),dpi=DPI)
-    
-    start_range = max(frameCounter-PLOT_BACK,0)
+    start_range = max(frameCounter-plot_back,0)
     end_range = frameCounter
     
-    plt.scatter(np.arange(start_range,end_range),
-                confidences[start_range:end_range],s=MARKER_SIZE,c='r')
-    plt.scatter(np.arange(start_range,end_range),
-                velocities[start_range:end_range],s=MARKER_SIZE,c='b')
-    plt.xlim(start_range-10,end_range+10)
-    plt.ylim(0,1)
-    plt.rcParams.update({'font.size':14})
+    axes[0].scatter(np.arange(start_range,end_range),
+                confidences[start_range:end_range],s=marker_size,c='r')
+    axes[1].scatter(np.arange(start_range,end_range),
+                velocities[start_range:end_range,0],s=marker_size,c='b')
+    axes[0].set_xlim(start_range-10,end_range+10)
+    axes[0].set_ylim(0,1)
+    axes[1].set_xlim(start_range-10,end_range+10)
+    plt.rcParams.update({'font.size':10})
     fig.canvas.draw()
     width, height = fig.get_size_inches() * fig.get_dpi()
     width, height = int(width), int(height)
     
     fig_image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8').reshape(height, width, 3)
     plt.clf()
-    plt.close()
+    plt.close('all')
+    """
+    print(f'fig_image shape: {fig_image.shape}')
+    print(f'vid_frame shape: {vid_frame.shape}')
+    print(f'frame shape: {write_frame.shape}')
+    """
+
+    
+    write_frame[:,:vid_frame.shape[1],:] = vid_frame
+    write_frame[(height_inch*dpi)//2:(height_inch*dpi)//2+height_inch*dpi,vid_frame.shape[1]:,:] = fig_image
+    
+    
+
+def draw_figure_on_frame(write_frame,
+                         vid_frame,
+                         frameCounter,
+                         velocities,
+                         confidences,
+                         total_frames,
+                         width_inch = 10,
+                         height_inch = 5,
+                         dpi = 96,
+                         marker_size = 50,
+                         plot_back = 180):
+    """
+    draw updating data on video, in the upper left corner
+    !!!!!!! Subplots insted of one frame somehow halves running time
+    """
+    
+    if frameCounter==0:
+        return
+    
+    fig,axes = plt.subplots(1,2,figsize=(width_inch,height_inch),dpi=dpi)      
+    
+    start_range = max(frameCounter-plot_back,0)
+    end_range = frameCounter
+    
+    axes[0].scatter(np.arange(start_range,end_range),
+                confidences[start_range:end_range],s=marker_size,c='r')
+    axes[1].scatter(np.arange(start_range,end_range),
+                velocities[start_range:end_range,0],s=marker_size,c='b')
+    axes[1].plot(np.arange(start_range,end_range),
+                velocities[start_range:end_range,1],c='r')
+    axes[0].set_xlim(start_range-10,end_range+10)
+    axes[0].set_ylim(0,1)
+    axes[1].set_xlim(start_range-10,end_range+10)
+    axes[1].set_ylim(0,1)
+    plt.rcParams.update({'font.size':10})
+    fig.canvas.draw()
+    width, height = fig.get_size_inches() * fig.get_dpi()
+    width, height = int(width), int(height)
+    
+    fig_image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8').reshape(height, width, 3)
+    plt.clf()
+    plt.close('all')
     """
     print(f'fig_image shape: {fig_image.shape}')
     print(f'vid_frame shape: {vid_frame.shape}')
@@ -487,19 +543,21 @@ def draw_figure_on_frame(write_frame,
     """
     
     write_frame[:,:vid_frame.shape[1],:] = vid_frame
-    write_frame[240:240+480,vid_frame.shape[1]:,:] = fig_image
-    
-    
-    
+    write_frame[:fig_image.shape[0],:fig_image.shape[1],:] = fig_image
 
-def compute_velocity(centroids):
+def compute_velocity(centroids,to_norm=False,mov_avg=2):
     """
-    computes normalized magnitude of velocity (divided by max value of array)
+    computes  magnitude of velocity
     """
     veloc = np.diff(centroids,axis=0)
     veloc = np.apply_along_axis(np.linalg.norm,1,veloc)
-    norm_speed = np.percentile(veloc[~np.isnan(veloc)],99) # reject top 5% outliers
-    veloc[veloc>norm_speed] = np.nan
-    veloc = veloc /norm_speed 
     
-    return veloc
+    if to_norm:
+        norm_speed = np.percentile(veloc[~np.isnan(veloc)],99) # reject top 5% outliers
+        veloc[veloc>norm_speed] = np.nan
+        veloc = veloc /norm_speed 
+    
+    veloc_ma = pd.Series(veloc).rolling(window=mov_avg).mean().to_numpy()
+    
+    
+    return np.stack([veloc,veloc_ma],axis=1)
