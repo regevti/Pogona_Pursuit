@@ -57,7 +57,7 @@ class SpinCamera:
             self.cam.LineMode.SetValue(PySpin.LineMode_Input)
             self.cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
             self.cam.DeviceLinkThroughputLimit.SetValue(94578303)
-            self.cam.AcquisitionFrameRate.SetValue(60)
+            # self.cam.AcquisitionFrameRate.SetValue(60)
             self.cam.ExposureTime.SetValue(exposure)
             self.logger.info(f'Finished Configuration')
 
@@ -98,7 +98,7 @@ class SpinCamera:
         img = image_result.GetNDArray()
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        if self.dir_path and self.video_out == None:
+        if self.dir_path and self.video_out is None:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
             h, w = img.shape[:2]
             self.video_out = cv2.VideoWriter(f'{self.dir_path}/{self.device_id}.avi', fourcc, FPS, (w, h), True)
