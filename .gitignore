@@ -1,2 +1,17 @@
 # Created by .ignore support plugin (hsz.mobi)
+.idea/*
+__pycache__/
+.ipynb_checkpoints/
+*.weights
+*.avi
+*.mp4
+*.pth
+*.jpg
+*.png
+*.txt
+*.conv.74
+*.*~
+*.log
+*.DS_Store
+
 Archive/
