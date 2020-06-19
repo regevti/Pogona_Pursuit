@@ -1,3 +1,5 @@
+import os
+import re
 import numpy as np
 import cv2 as cv
 import time
@@ -8,6 +10,7 @@ from PIL import Image
 from torchvision import transforms
 import matplotlib.pyplot as plt
 import pandas as pd
+import scipy.stats as st
 
 
 
@@ -280,7 +283,7 @@ def save_pred_video(video_path,
     
     #######################################
     for key in times.keys():
-        print(key,': ',times[key].mean())
+        print(f'{key}: {times[key].mean()*1000:2.2f} ms')
     ########################################
     vcap.release()
     videowriter.release()
@@ -561,3 +564,138 @@ def compute_velocity(centroids,to_norm=False,mov_avg=2):
     
     
     return np.stack([veloc,veloc_ma],axis=1)
+
+
+
+def save_missed_frames(video_path,
+                    output_dir,
+                    detector,
+                    save_thresh=0.8,
+                    start_frame=0,
+                    num_frames=None,
+                    save_max=200,
+                    above=False):
+    print("saving to: ",output_dir)
+    vcap = cv.VideoCapture(video_path)
+
+    if start_frame != 0:
+        vcap.set(cv.CAP_PROP_POS_FRAMES, start_frame)
+        
+    if num_frames is None:
+        num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT)) - start_frame
+
+    width  = int(vcap.get(3))
+    height = int(vcap.get(4))
+    frame_rate = vcap.get(cv.CAP_PROP_FPS)
+    
+    missed_counter = 0
+    saved_counter=0
+    vid_time = re.search('-(\d+)',video_path).group(1)
+    yyyymmdd = re.search('output/(\d+)-',video_path).group(1)
+    
+    if not above:
+        save_func = lambda detec,save_thres: (detec is None) or (detec[0][4]<save_thres)
+    else:
+        save_func = lambda detec,save_thres: (detec is not None) and (detec[0][4]>save_thres)
+    
+    
+    for frameCounter in tqdm(range(num_frames)):
+        ret, frame = vcap.read()
+        if not ret:
+            print("error reading frame")
+            vcap.release()
+            break
+                
+        detections = detector.detect_image(frame)     
+
+        if save_func(detections,save_thresh):
+            missed_counter+=1
+            if detections is not None:
+                prob = str(round(detections[0][4],3))
+            else:
+                prob='0'
+            if missed_counter%(num_frames//save_max)==0:
+                save_path = os.path.join(output_dir,yyyymmdd+'_'+vid_time+'_'+prob+'_'+str(saved_counter)+'.jpg')
+                
+                cv.imwrite(save_path,frame)
+                saved_counter+=1
+        
+    
+    print(f'missed saved: {saved_counter}')
+    vcap.release()
+
+    return
+
+
+def cf(num1,num2):
+    from math import gcd
+    n=[]
+    g=gcd(num1, num2)
+    for i in range(1, g+1): 
+        if g%i==0: 
+            n.append(i)
+    return n
+
+def gkern(kernlen=21, nsig=3):
+    """Returns a 2D Gaussian kernel."""
+
+    x = np.linspace(-nsig, nsig, kernlen+1)
+    kern1d = np.diff(st.norm.cdf(x))
+    kern2d = np.outer(kern1d, kern1d)
+    kern2d = kern2d/kern2d.sum()
+    kern2d = kern2d/np.max(kern2d)
+    
+    return np.stack([kern2d for k in range(3)],axis=0).T
+
+
+def ablation_heatmap(img,detector,color=128): #add detector
+    """
+    Performs occlusion test: slides a grey (128) square window over the image,
+    and run through the detector. Write the confidence returned by the detector
+    in the center of the window
+    """
+
+    poss_strides = cf(img.shape[1],img.shape[0])
+    print(f'Possible stride sizes are {poss_strides}')
+    print('Please choose stride from the list:')
+    stride = input()
+    if (stride =='') or (int(stride) not in poss_strides):
+        print('error, stride not available for dimensions')
+        return
+    stride=int(stride)
+    strides_x = img.shape[1] //stride
+    strides_y = img.shape[0] //stride
+    print(f'strides x: {strides_x}, strides y: {strides_y}, total of {strides_x*strides_y} iterations. Continue [y/n]?')
+        print(f'strides x: {strides_x}, strides y: {strides_y}, total of {strides_x*strides_y} iterations. Continue [y/n]?')
+    inp = input()
+    if inp!='y':
+        print('exiting')
+        return
+    
+    kern = 1-gkern(stride,2)
+    conf_map = np.zeros((2*strides_y,2*strides_x))
+    #conf_map = np.zeros((strides_y,strides_x))
+    
+    # NOTICE: Lazy design of iterations. does include edges, as they are less important
+    # assumes reasonable square size
+    # TODO: Fix square sized and stride size, and edsges
+    for i in tqdm(range(2*strides_y-1),desc='Rows'):
+        for j in range(2*strides_x-1):
+            ablated_img = np.copy(img)
+            try:
+                ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] = \
+                ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] * kern
+                #ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] = \
+                #ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] * color
+            except ValueError as e:
+                print(f'skipped i:{i},j:{j}')
+                print(e)
+                print("exiting")
+                #continue
+                return
+            detection = detector.detect_image(ablated_img)
+            if detection is not None:
+                #print(detection[0][4])
+                conf_map[i,j] = detection[0][4]
+    
+    return conf_map

@@ -155,8 +155,8 @@ class Detector_v4:
         print("Detector initiated successfully")
   
     def set_input_size(self, width, height):
-        self.input_width = width
-        self.input_height = height
+        self.model_width = width
+        self.model_height = height
     
     def set_conf_and_nms(self,new_conf_thres=0.9,new_nms_thres=0.6):
         self.conf_thres = new_conf_thres
@@ -176,7 +176,7 @@ class Detector_v4:
         pnum = pointer(num)
         darknet4.predict_image(self.net, image)
 
-        dets = darknet4.get_network_boxes(self.net, self.input_width, self.input_height,
+        dets = darknet4.get_network_boxes(self.net, self.model_width, self.model_height,
                                           self.conf_thres, self.conf_thres, None, 0, pnum, 0)
 
         num = pnum[0]
