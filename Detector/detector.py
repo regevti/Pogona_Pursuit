@@ -1,12 +1,15 @@
+import numpy as np
+import cv2 as cv
+from ctypes import c_int, pointer
 import torch
 from torchvision import transforms
 from PIL import Image
 import Detector.Yolo4.darknet as darknet4
 from Detector.models import Darknet
 from utils.utils import load_classes, non_max_suppression
-import cv2 as cv
-from ctypes import c_int, pointer
-import numpy as np
+
+
+
 
 """
 All detectors implement the function detect_image(), that return a (number of detections) X 5 Numpy array.
@@ -139,7 +142,7 @@ class Detector_v4:
     """
     def __init__(self,
                  cfg_path="Detector/Yolo4/yolo-obj.cfg",
-                 weights_path="Detector/Yolo4/yolo-obj_best.weights",
+                 weights_path="Detector/Yolo4/yolo4_all_dataset_best.weights",
                  meta_path="Detector/Yolo4/obj.data",
                  conf_thres=0.9,
                  nms_thres=0.6):
@@ -155,8 +158,8 @@ class Detector_v4:
         print("Detector initiated successfully")
   
     def set_input_size(self, width, height):
-        self.model_width = width
-        self.model_height = height
+        self.input_width = width
+        self.input_height = height
     
     def set_conf_and_nms(self,new_conf_thres=0.9,new_nms_thres=0.6):
         self.conf_thres = new_conf_thres
@@ -176,7 +179,7 @@ class Detector_v4:
         pnum = pointer(num)
         darknet4.predict_image(self.net, image)
 
-        dets = darknet4.get_network_boxes(self.net, self.model_width, self.model_height,
+        dets = darknet4.get_network_boxes(self.net, self.input_width, self.input_height,
                                           self.conf_thres, self.conf_thres, None, 0, pnum, 0)
 
         num = pnum[0]

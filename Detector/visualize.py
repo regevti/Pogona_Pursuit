@@ -9,6 +9,7 @@ from tqdm import tqdm
 from PIL import Image
 from torchvision import transforms
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import pandas as pd
 import scipy.stats as st
 
@@ -648,54 +649,91 @@ def gkern(kernlen=21, nsig=3):
     return np.stack([kern2d for k in range(3)],axis=0).T
 
 
-def ablation_heatmap(img,detector,color=128): #add detector
+def ablation_heatmap(img,detector,square_size=None,color=0):
     """
-    Performs occlusion test: slides a grey (128) square window over the image,
+    Performs occlusion test: slides a WHITE (0) square window over the image,
     and run through the detector. Write the confidence returned by the detector
     in the center of the window
+    
+    Sqaure color - white squares worked the best for some reason.
+    
+    
     """
 
-    poss_strides = cf(img.shape[1],img.shape[0])
-    print(f'Possible stride sizes are {poss_strides}')
-    print('Please choose stride from the list:')
-    stride = input()
-    if (stride =='') or (int(stride) not in poss_strides):
-        print('error, stride not available for dimensions')
+    poss_cells = cf(img.shape[1],img.shape[0])
+    print(f'Possible cell sizes are {poss_cells}')
+    print('Please choose cell size from the list:')
+    cell = input()
+    if (cell =='') or (int(cell) not in poss_cells):
+        print('error, cell not available for dimensions')
         return
-    stride=int(stride)
-    strides_x = img.shape[1] //stride
-    strides_y = img.shape[0] //stride
-    print(f'strides x: {strides_x}, strides y: {strides_y}, total of {strides_x*strides_y} iterations. Continue [y/n]?')
-        print(f'strides x: {strides_x}, strides y: {strides_y}, total of {strides_x*strides_y} iterations. Continue [y/n]?')
+    cell=int(cell)
+    cells_x = img.shape[1] // cell
+    cells_y = img.shape[0] // cell
+    print(f'cells x: {cells_x}, cells y: {cells_y}, total of {cells_x*cells_y} iterations. Continue [y/n]?')
     inp = input()
     if inp!='y':
         print('exiting')
         return
+
+    conf_map = np.ones((img.shape[0],img.shape[1]))
     
-    kern = 1-gkern(stride,2)
-    conf_map = np.zeros((2*strides_y,2*strides_x))
-    #conf_map = np.zeros((strides_y,strides_x))
+    if square_size is None:
+        square_size = cell
     
-    # NOTICE: Lazy design of iterations. does include edges, as they are less important
-    # assumes reasonable square size
-    # TODO: Fix square sized and stride size, and edsges
-    for i in tqdm(range(2*strides_y-1),desc='Rows'):
-        for j in range(2*strides_x-1):
+    for i in tqdm(range(cells_y),desc='Rows'):
+        for j in range(cells_x):
             ablated_img = np.copy(img)
             try:
-                ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] = \
-                ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] * kern
-                #ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] = \
-                #ablated_img[i*stride//2:i*stride//2+stride,j*stride//2:j*stride//2+stride,:] * color
-            except ValueError as e:
-                print(f'skipped i:{i},j:{j}')
-                print(e)
+                ind_i = i*cell
+                ind_j = j*cell
+                end_i = min(ind_i + square_size,img.shape[0])
+                end_j = min(ind_j + square_size,img.shape[1])
+                ablated_img[ind_i : end_i, ind_j :end_j, : ] = color
+                
+            except Exception as e:
+                print(f'indexing problem at i:{i},j:{j}\n',e)
                 print("exiting")
-                #continue
                 return
             detection = detector.detect_image(ablated_img)
             if detection is not None:
-                #print(detection[0][4])
-                conf_map[i,j] = detection[0][4]
-    
+                conf = detection[0][4]
+            else:
+                conf = 0.0
+            
+            conf_i = ind_i
+            end_conf_i = conf_i + square_size
+            conf_j = ind_j
+            end_conf_j = conf_j + square_size
+            
+            conf_map[conf_i : end_conf_i, conf_j :end_conf_j] = conf
+            
+
+    #return np.roll(conf_map,shift=(square_size//2,square_size//2),axis=(0,1))
     return conf_map
+
+
+
+
+def plot_image(detections, img, detector, output_path=None):
+    plt.figure()
+    fig, ax = plt.subplots(1, figsize=(12,9))
+    ax.imshow(img)
+
+    if detections is not None:
+        # browse detections and draw bounding boxes
+        for x1, y1, box_w, box_h, conf in detections:
+            color = (0,0,1,1)
+            bbox = patches.Rectangle((x1, y1), box_w, box_h,
+                 linewidth=2, edgecolor=color, facecolor='none')
+            ax.add_patch(bbox)
+            plt.text(x1, y1, s=str(round(conf,2)), 
+                    color='white', verticalalignment='top',
+                    bbox={'color': color, 'pad': 0})
+    plt.axis('off')
+    # save image
+    # plt.savefig(img_path.replace(".jpg", "-det.jpg"),        
+    #                   bbox_inches='tight', pad_inches=0.0)
+    if output_path is not None:
+        plt.savefig(output_path)
+    plt.show()
