@@ -7,9 +7,12 @@ import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
 from PIL import Image
+from PIL import ImageEnhance
 from torchvision import transforms
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from matplotlib.colors import TwoSlopeNorm
+import matplotlib.cm as cm
 import pandas as pd
 import scipy.stats as st
 
@@ -651,22 +654,26 @@ def gkern(kernlen=21, nsig=3):
 
 def ablation_heatmap(img,detector,square_size=None,color=0):
     """
-    Performs occlusion test: slides a WHITE (0) square window over the image,
+    Performs ablation (occlusion) test: slides a WHITE (0) square window over the image,
     and run through the detector. Write the confidence returned by the detector
     in the center of the window
     
-    Sqaure color - white squares worked the best for some reason.
+    Sqaure color - white squares worked the best for some reason
+    Possible to change the square size, and the grid size and area being occluded
+    are different. Not sure how it would work with respect to the
     
-    
+    Grid cell size of 45, 60, 72 or 90 are working best with arena images
     """
-
+    
+    
+    # compute possible cell sizes for ablation grid
     poss_cells = cf(img.shape[1],img.shape[0])
     print(f'Possible cell sizes are {poss_cells}')
     print('Please choose cell size from the list:')
     cell = input()
     if (cell =='') or (int(cell) not in poss_cells):
         print('error, cell not available for dimensions')
-        return
+        return None,None
     cell=int(cell)
     cells_x = img.shape[1] // cell
     cells_y = img.shape[0] // cell
@@ -674,13 +681,16 @@ def ablation_heatmap(img,detector,square_size=None,color=0):
     inp = input()
     if inp!='y':
         print('exiting')
-        return
-
+        return None, None
+    
+    
+    # initialize confidence map with image shape
     conf_map = np.ones((img.shape[0],img.shape[1]))
     
     if square_size is None:
         square_size = cell
     
+    # for each cell, get preditcion and write confidence in conf_map
     for i in tqdm(range(cells_y),desc='Rows'):
         for j in range(cells_x):
             ablated_img = np.copy(img)
@@ -708,10 +718,84 @@ def ablation_heatmap(img,detector,square_size=None,color=0):
             
             conf_map[conf_i : end_conf_i, conf_j :end_conf_j] = conf
             
+    detection = detector.detect_image(img)
+    if detection is None:
+        base_conf = 0
+    else:
+        base_conf = detection[0][4]
+    
+    return conf_map,base_conf
 
-    #return np.roll(conf_map,shift=(square_size//2,square_size//2),axis=(0,1))
-    return conf_map
+def f_title(x): 
+    return 'None' if x==0 else f'{x:0.2f}'
 
+def visualize_ablation_heatmap(img,
+                               detector,
+                               alpha = .5,
+                               cmap = 'PiYG',
+                               zero_cmap = 'Greens',
+                               ones_cmap = 'Reds_r',
+                               enhance_fact = 3,
+                               epsi = 1e-1,
+                               square_size=None,
+                               base_thresh=0.05,
+                               color=0):
+    """
+    Get ablation confidence map, and visualize with the original image.
+    
+    """
+    # compute ablation heatmap
+    old_conf_thresh = detector.conf_thres
+    detector.set_conf_and_nms(new_conf_thres=0.01)
+    conf_map, base_conf = ablation_heatmap(img,detector)
+    detector.set_conf_and_nms(new_conf_thres=old_conf_thresh)
+    if conf_map is None:
+        return
+    
+    # subtract confidence of prediction without any ablation
+    conf_map-=base_conf
+    
+    # replace close to zero values with zero
+    conf_map[np.abs(conf_map)<epsi] = 0.0
+    
+    # enhance contrast of image so it will be more clear with overlay
+    img = np.array(ImageEnhance.Contrast(Image.fromarray(img))\
+                   .enhance(enhance_fact))
+    
+    fig, axes = plt.subplots(1,1,figsize=(19,10))
+    
+    # plot heatmap
+    if base_conf<base_thresh or 1-base_conf<base_thresh:
+        # if base prediction is very high or low, set 1-way color scale
+        if base_conf<base_thresh:
+            cmap = zero_cmap
+            vmin = 0
+            vmax = 1
+        else:
+            cmap = ones_cmap
+            vmin = -1
+            vmax = 0
+        axes.imshow(conf_map,alpha=1-alpha,cmap=cmap)
+    else:
+        # if there are both cells that increase or decrease, set 2-way color sclae
+        axes.imshow(conf_map,alpha=1-alpha,cmap=cmap,norm=TwoSlopeNorm(0))
+        vmin = -1
+        vmax = 1
+    
+    # plot enhanced image
+    axes.imshow(img,alpha=alpha)
+    
+    # set colorbar values
+    scal_map = cm.ScalarMappable()
+    scal_map.set_cmap(cmap)
+    #scal_map.set_clim(vmin=np.min(conf_map),vmax=np.max(conf_map))
+    scal_map.set_clim(vmin=vmin,vmax=vmax)
+    cbar = plt.colorbar(mappable=scal_map,ax=axes)
+    cbar.set_label('$\Delta$ Conf.',rotation=0,labelpad=25,fontsize=18)
+
+    axes.set_title(f'Confidence without occlusion: {f_title(base_conf)}',
+                  fontsize=18)
+    axes.axis('off')
 
 
 
@@ -737,3 +821,7 @@ def plot_image(detections, img, detector, output_path=None):
     if output_path is not None:
         plt.savefig(output_path)
     plt.show()
+    
+    
+    
+    

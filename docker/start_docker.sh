@@ -7,4 +7,5 @@ docker run -itd --gpus all --name ${container_name} -p 2350:8888 --restart alway
       -v /media/sil2/regev/:/app/ \
       -v /etc/udev/:/etc/udev/ \
       -v /dev/bus/usb/:/dev/bus/usb/ \
-      pogona_pursuit:0.1
+      pogona_pursuit_yolo4:latest
+
