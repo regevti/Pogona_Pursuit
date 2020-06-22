@@ -1,0 +1,26 @@
+version: '3'
+
+services:
+#  arena:
+#    image: pogona_pursuit_yolo4
+#    container_name: arena
+#    privileged: true
+#    runtime: nvidia
+#    restart: always
+#    ports:
+#      - 3350:8888
+
+  app:
+    build: Dockerfile-app
+    container_name: pogona_hunter
+    restart: always
+    ports:
+     - 8080:8080
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
