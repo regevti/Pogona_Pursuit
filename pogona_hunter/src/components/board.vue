@@ -28,7 +28,7 @@
 
 <script>
   import bug from './bug'
-  import {distance, randomRange} from '../js/helpers'
+  import {distance, randomRange} from '@/js/helpers'
   import {mapState} from 'vuex'
 
   export default {

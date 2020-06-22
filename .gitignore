@@ -6,8 +6,6 @@ __pycache__/
 *.avi
 *.mp4
 *.pth
-*.jpg
-*.png
 *.txt
 *.conv.74
 *.*~

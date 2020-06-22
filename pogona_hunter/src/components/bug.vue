@@ -3,7 +3,7 @@
 </template>
 
 <script>
-  import {distance, randomRange} from '../js/helpers'
+  import {distance, randomRange} from '@/js/helpers'
   import {mapState} from 'vuex'
 
   export default {
@@ -37,7 +37,7 @@
     },
     methods: {
       getImageSrc(fileName) {
-        return require('../assets' + fileName)
+        return require('@/assets' + fileName)
       },
       getDeadImage() {
         let img = new Image()
