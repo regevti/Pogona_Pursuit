@@ -11,6 +11,7 @@ import PySpin
 from utils import get_logger, calculate_fps, mkdir
 
 DEFAULT_NUM_FRAMES = 1000
+DEFAULT_MAX_THROUGHPUT = 94578303
 EXPOSURE_TIME = 5000
 OUTPUT_DIR = 'output'
 FPS = 60
@@ -23,12 +24,13 @@ INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'Trig
 
 
 class SpinCamera:
-    def __init__(self, cam, dir_path=None, num_frames=None):
+    def __init__(self, cam, dir_path=None, num_frames=None, is_stream=False):
         self.cam = cam
         self.num_frames = num_frames
         self.is_ready = False  # ready for acquisition
         self.dir_path = dir_path
         self.video_out = None
+        self.is_stream = is_stream
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path)
@@ -48,13 +50,13 @@ class SpinCamera:
 
     def get_max_throuput(self):
         try:
-            max_throuhput = int(self.cam.DeviceMaxThroughput.GetValue())
+            max_throughput = int(self.cam.DeviceMaxThroughput.GetValue())
         except Exception as exc:
             self.logger.warning(exc)
-            max_throuhput = 94578303
+            max_throughput = DEFAULT_MAX_THROUGHPUT
 
-        self.logger.info(f'max throughput: {max_throuhput}')
-        return max_throuhput
+        self.logger.info(f'max throughput: {max_throughput}')
+        return max_throughput
 
     def configure_camera(self, exposure):
         """Configure camera for trigger mode before acquisition"""
@@ -67,7 +69,6 @@ class SpinCamera:
             self.cam.LineMode.SetValue(PySpin.LineMode_Input)
             self.cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
             self.cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throuput())
-            # self.cam.AcquisitionFrameRate.SetValue(60)
             self.cam.ExposureTime.SetValue(exposure)
             self.logger.info(f'Finished Configuration')
 
@@ -106,7 +107,7 @@ class SpinCamera:
 
     def image_handler(self, image_result: PySpin.ImagePtr):
         img = image_result.GetNDArray()
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         if self.dir_path and self.video_out is None:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
@@ -115,6 +116,18 @@ class SpinCamera:
 
         self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+
+    def web_stream(self):
+        while True:
+            image_result = self.cam.GetNextImage()
+            img = image_result.GetNDArray()
+            (flag, encodedImage) = cv2.imencode(".jpg", img)
+
+            if not flag:
+                continue
+
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
@@ -231,7 +244,7 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def main():
+def main(is_web_stream=False):
     """Main function for Arena capture"""
     ap = argparse.ArgumentParser(description="Tool for capturing multiple cameras streams in the arena.")
     ap.add_argument("-n", "--num_frames", type=int, default=DEFAULT_NUM_FRAMES,

@@ -8,6 +8,7 @@ services:
     container_name: arena
     privileged: true
     restart: always
+    command: "flask run --host=0.0.0.0"
     ports:
       - 3350:8888
       - 3351:5000
