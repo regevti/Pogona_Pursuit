@@ -11,7 +11,7 @@ import PySpin
 from utils import get_logger, calculate_fps, mkdir
 
 DEFAULT_NUM_FRAMES = 1000
-EXPOSURE_TIME = 15000
+EXPOSURE_TIME = 5000
 OUTPUT_DIR = 'output'
 FPS = 60
 SAVED_FRAME_RESOLUTION = (1440, 1088)
@@ -46,6 +46,16 @@ class SpinCamera:
     def __del__(self):
         self.cam.DeInit()
 
+    def get_max_throuput(self):
+        try:
+            max_throuhput = int(self.cam.DeviceMaxThroughput.GetValue())
+        except Exception as exc:
+            self.logger.warning(exc)
+            max_throuhput = 94578303
+
+        self.logger.info(f'max throughput: {max_throuhput}')
+        return max_throuhput
+
     def configure_camera(self, exposure):
         """Configure camera for trigger mode before acquisition"""
         try:
@@ -56,7 +66,7 @@ class SpinCamera:
             self.cam.LineSelector.SetValue(PySpin.LineSelector_Line1)
             self.cam.LineMode.SetValue(PySpin.LineMode_Input)
             self.cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
-            self.cam.DeviceLinkThroughputLimit.SetValue(94578303)
+            self.cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throuput())
             # self.cam.AcquisitionFrameRate.SetValue(60)
             self.cam.ExposureTime.SetValue(exposure)
             self.logger.info(f'Finished Configuration')
