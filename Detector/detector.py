@@ -141,8 +141,8 @@ class Detector_v4:
     Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images
     """
     def __init__(self,
-                 cfg_path="Detector/Yolo4/yolo-obj.cfg",
-                 weights_path="Detector/Yolo4/yolo4_all_dataset_best.weights",
+                 cfg_path="Detector/Yolo4/yolo4_rgb.cfg",
+                 weights_path="Detector/Yolo4/yolo4_best_rgb.weights",
                  meta_path="Detector/Yolo4/obj.data",
                  conf_thres=0.9,
                  nms_thres=0.6):
