@@ -11,7 +11,9 @@ services:
 #      - 3350:8888
 
   app:
-    build: Dockerfile-app
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-app
     container_name: pogona_hunter
     restart: always
     ports:

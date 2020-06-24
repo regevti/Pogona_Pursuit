@@ -82,7 +82,7 @@
         console.log(x, y)
 
         for (let i = 0; i < this.$refs.bugChild.length; i++) {
-          if (distance(x, y, this.$refs.bugChild[i].x, this.$refs.bugChild[i].y) <= this.$refs.bugChild[i].radius / 2) {
+          if (distance(x, y, this.$refs.bugChild[i].x, this.$refs.bugChild[i].y) <= this.$refs.bugChild[i].radius / 1.5) {
             this.destruct(i)
           }
         }

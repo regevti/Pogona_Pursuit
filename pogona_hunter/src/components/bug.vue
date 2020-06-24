@@ -134,8 +134,8 @@
       escape(xe, ye) {
         let dist = distance(this.x, this.y, xe, ye)
         if (dist < this.canvas.height / 1.5) {
-            this.dx = Math.abs(this.dx) * Math.sign(this.x - xe)
-            this.dy = Math.abs(this.dy) * Math.sign(this.y - ye)
+          this.dx = Math.abs(this.dx) * Math.sign(this.x - xe)
+          this.dy = Math.abs(this.dy) * Math.sign(this.y - ye)
         }
       },
       rotate(dx, dy, angle) {
