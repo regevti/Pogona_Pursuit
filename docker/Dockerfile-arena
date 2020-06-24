@@ -6,6 +6,6 @@ WORKDIR /arena
 COPY ./requirements/arena.txt .
 RUN pip install -r arena.txt
 
-COPY ./arena .
+COPY ./Arena .
 RUN pip install spinnaker_python-2.0.0.147-cp37-cp37m-linux_x86_64.whl
 
