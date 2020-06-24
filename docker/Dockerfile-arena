@@ -1,9 +1,11 @@
-FROM nablascom/cuda-pytorch
+FROM adnrv/opencv
 
-USER root
+RUN mkdir /arena
+WORKDIR /arena
 
-ENV TZ=Asia/Jerusalem
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-RUN echo "alias ll='ls -lah'" >> ~/.bashrc
+COPY ./requirements/arena.txt .
+RUN pip install -r arena.txt
 
-CMD bash -c "jupyter lab --ip 0.0.0.0 --allow-root"
+COPY ./arena .
+RUN pip install spinnaker_python-2.0.0.147-cp37-cp37m-linux_x86_64.whl
+

@@ -1,14 +1,16 @@
 version: '3'
 
 services:
-#  arena:
-#    image: pogona_pursuit_yolo4
-#    container_name: arena
-#    privileged: true
-#    runtime: nvidia
-#    restart: always
-#    ports:
-#      - 3350:8888
+  arena:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-arena
+    container_name: arena
+    privileged: true
+    restart: always
+    ports:
+      - 3350:8888
+      - 3351:5000
 
   app:
     build:
