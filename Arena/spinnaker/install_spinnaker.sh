@@ -41,8 +41,8 @@ echo "  If a udev entry is not added, your cameras may only be accessible by run
 #read confirm
 #if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || [ "$confirm" = "yes" ] || [ "$confirm" = "Yes" ] || [ "$confirm" = "" ]
 #then
-    echo "Launching udev configuration script..."
-    sh configure_spinnaker.sh
+#    echo "Launching udev configuration script..."
+#    sh configure_spinnaker.sh
 #fi
 
 echo
