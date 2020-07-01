@@ -72,10 +72,10 @@ RUN mkdir /arena
 WORKDIR /arena
 
 COPY ./requirements/arena.txt .
-RUN pip install -r arena.txt
+RUN pip3 install -r arena.txt
 
 COPY ./Arena .
-RUN pip install spinnaker_python-2.0.0.147-cp37-cp37m-linux_x86_64.whl
+RUN pip3 install spinnaker_python-2.0.0.147-cp37-cp37m-linux_x86_64.whl
 
 RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker_*.deb
 RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker-dev_*.deb
