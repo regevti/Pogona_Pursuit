@@ -68,7 +68,7 @@ then
                 if ( [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || [ "$confirm" = "yes" ] || [ "$confirm" = "Yes" ] || [ "$confirm" = "" ] )
                 then
                     # -i modifies the file and creates a backup, -r enables extended regex, -n suppresses output
-                    sudo sed -i.backup -r "s/$USBFS_COMMAND_PATTERN/\1$USBFS_DEFAULT_VALUE\3/" "$RCLOCAL_PATH"
+                    sed -i.backup -r "s/$USBFS_COMMAND_PATTERN/\1$USBFS_DEFAULT_VALUE\3/" "$RCLOCAL_PATH"
                     echo "Changed USB-FS memory to $USBFS_DEFAULT_VALUE MB and created $RCLOCAL_PATH.backup."
                 else
                     echo "No changes were made."
@@ -91,16 +91,16 @@ then
             USBFS_EXIT_LINE=${USBFS_GREP_LAST_EXIT%:*}
 
             # Insert usbfs command right before the `exit 0`
-            sudo sed -i.backup -r "${USBFS_EXIT_LINE}i ${USBFS_COMMAND}" "$RCLOCAL_PATH"
+            sed -i.backup -r "${USBFS_EXIT_LINE}i ${USBFS_COMMAND}" "$RCLOCAL_PATH"
         else # Otherwise, append command to end of file
-            sudo sed -i.backup -r "\$a${USBFS_COMMAND}\nexit 0" "$RCLOCAL_PATH"
+            sed -i.backup -r "\$a${USBFS_COMMAND}\nexit 0" "$RCLOCAL_PATH"
         fi
         echo "Set USB-FS memory to $USBFS_DEFAULT_VALUE MB and created $RCLOCAL_PATH.backup."
     fi
 else
     # Using tee to redirect standard output with superuser rights
-    echo "$DEFAULT_RCLOCAL" | sudo tee --append "$RCLOCAL_PATH" >/dev/null
-    sudo chmod 744 "$RCLOCAL_PATH"
+    echo "$DEFAULT_RCLOCAL" | tee --append "$RCLOCAL_PATH" >/dev/null
+    chmod 744 "$RCLOCAL_PATH"
     echo "Created /etc/rc.local and set USB-FS memory to $USBFS_DEFAULT_VALUE MB."
 fi
 
@@ -118,10 +118,10 @@ then
     read confirm
     if ( [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || [ "$confirm" = "yes" ] || [ "$confirm" = "Yes" ] || [ "$confirm" = "" ] )
     then
-        sudo chmod 744 "$RCLOCAL_PATH"
+        chmod 744 "$RCLOCAL_PATH"
         echo "Changed $RCLOCAL_PATH permissions to 744."
     else
-        echo "No changes were made. You may have to manually run 'sudo chmod 744 $RCLOCAL_PATH'."
+        echo "No changes were made. You may have to manually run 'chmod 744 $RCLOCAL_PATH'."
     fi
 fi
 

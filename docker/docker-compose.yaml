@@ -7,6 +7,8 @@ services:
       dockerfile: ./docker/Dockerfile-arena
     container_name: arena
     privileged: true
+    volumes:
+    - Arena:/Arena
 #    restart: always
     command: "flask run --host=0.0.0.0"
     ports:
