@@ -77,7 +77,7 @@ RUN pip3 install -r arena.txt
 COPY ./Arena .
 RUN pip3 install spinnaker_python-2.0.0.147-cp36-cp36m-linux_x86_64.whl
 
-RUN apt-get -qq install -y lsb-release \
+RUN apt-get -qq update && apt-get -qq install -y lsb-release \
   libusb-1.0.0
 
 RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker_*.deb
