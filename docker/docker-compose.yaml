@@ -14,8 +14,8 @@ services:
       - 3351:5000
     environment:
       - FLASK_APP=api.py
-      - LC_ALL=en_US.utf-8
-      - LANG=en_US.utf-8
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
 
   app:
     build:
