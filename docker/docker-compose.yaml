@@ -13,7 +13,7 @@ services:
       - 3350:8888
       - 3351:5000
     environment:
-      - FLASK_APP: api.py
+      - FLASK_APP=api.py
 
   app:
     build:
