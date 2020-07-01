@@ -80,17 +80,17 @@ RUN pip3 install spinnaker_python-2.0.0.147-cp36-cp36m-linux_x86_64.whl
 RUN apt-get -qq update && apt-get -qq install -y lsb-release \
   libusb-1.0.0
 
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker-dev_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker-c_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker-c-dev_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo-dev_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo-c_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo-c-dev_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/spinview-qt_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/spinview-qt-dev_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/spinupdate_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/spinupdate-dev_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/spinnaker_*.deb
-RUN dpkg -i spinnaker-2.0.0.147-amd64/spinnaker-doc_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker-dev_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker-c_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinnaker-c-dev_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo-dev_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo-c_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/libspinvideo-c-dev_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/spinview-qt_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/spinview-qt-dev_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/spinupdate_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/spinupdate-dev_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/spinnaker_*.deb
+#RUN dpkg -i spinnaker-2.0.0.147-amd64/spinnaker-doc_*.deb
