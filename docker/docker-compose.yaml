@@ -7,13 +7,15 @@ services:
       dockerfile: ./docker/Dockerfile-arena
     container_name: arena
     privileged: true
-    restart: always
+#    restart: always
     command: "flask run --host=0.0.0.0"
     ports:
       - 3350:8888
       - 3351:5000
     environment:
       - FLASK_APP=api.py
+      - LC_ALL=en_US.utf-8
+      - LANG=en_US.utf-8
 
   app:
     build:
