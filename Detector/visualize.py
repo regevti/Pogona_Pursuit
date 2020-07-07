@@ -4,18 +4,15 @@ import numpy as np
 import cv2 as cv
 import time
 import matplotlib.pyplot as plt
-import torch
 from tqdm import tqdm
 from PIL import Image
 from PIL import ImageEnhance
 from torchvision import transforms
-import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.colors import TwoSlopeNorm
 import matplotlib.cm as cm
 import pandas as pd
 import scipy.stats as st
-
 
 
 def calc_centroid(pred_tensor):
@@ -27,13 +24,13 @@ def calc_centroid(pred_tensor):
     return np.stack([x1+(box_w//2), y1+(box_h//2)], axis=1)
 
 
-def hsv_to_rgb(H,S,V):
+def hsv_to_rgb(H, S, V):
     """
     transform angle to BGR color as 3-tuple
     """
     C = S*V
     X = C*(1-np.abs((H/60)%2-1))
-    m=V-C 
+    m=V-C
     
     if H >= 0 and H < 60:
         r,g,b = C,X,0
@@ -54,23 +51,10 @@ def hsv_to_rgb(H,S,V):
     return roun((b+m)*255),roun((g+m)*255),roun((r+m)*255)
 
 
-def torch_resize_transform(width, height, detector):
-    img_size = detector.img_size
-    # scale and pad image
-    ratio = min(img_size/width, img_size/height)
-    imw = round(width * ratio)
-    imh = round(height * ratio)
-    return transforms.Compose([transforms.Resize((imh, imw)),
-                               transforms.Pad((max(int((imh-imw)/2), 0),
-                                               max(int((imw-imh)/2), 0), max(int((imh-imw)/2), 0),
-                                               max(int((imw-imh)/2), 0)), (128, 128, 128)),
-                               transforms.ToTensor()])
-
-
 def vec_to_bgr(vec):
     """
     input: 2D vector
-    return: 3-tuple, specifying BGR color using HSV formula as
+    return: 3-tuple, specifying BGR color selected using HSV formula.
     """
     
     # transform to [-pi,pi] and then to degrees
@@ -135,12 +119,18 @@ def draw_arrow(frame,
     if vis_angle:
         vec_color = vec_to_bgr([arrowHead[0]-arrowBase[0],arrowHead[1]-arrowBase[1]])
     else:
-        vec_color = time_to_bgr(k,arrowWindow)
+        vec_color = time_to_bgr(k, arrowWindow)
     
     cv.arrowedLine(frame,arrowBase,arrowHead,color=vec_color, thickness=2,tipLength=0.2,line_type=cv.LINE_AA)
 
 
-def draw_bounding_boxes(frame, detections, detector, color=(0, 0, 255)):
+def draw_bounding_boxes(frame, detections, color=(0, 0, 255)):
+    """
+    frame - a numpy array representing the image.
+    detections - [(x, y, w, h, conf)...] bounding boxes array.
+    
+    draws bounding boxes on frame (in place).
+    """
 
     font = cv.FONT_HERSHEY_COMPLEX
     scale = 0.4
@@ -148,9 +138,6 @@ def draw_bounding_boxes(frame, detections, detector, color=(0, 0, 255)):
     margin = 4
 
     if detections is not None:
-        unique_labels = np.unique(detections[:, -1])
-
-        # browse detections and draw bounding boxes
         for x1, y1, box_w, box_h, conf in detections:
             x1 = int(x1)
             y1 = int(y1)
@@ -274,7 +261,7 @@ def save_pred_video(video_path,
                
         if detections is not None:
             detection = update_centroids(detections,centroids,frameCounter)
-            draw_bounding_boxes(frame, detections, detector)
+            draw_bounding_boxes(frame, detections)
         
         if not dots:
             draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,scale=5)
@@ -296,6 +283,10 @@ def save_pred_video(video_path,
 
 
 def dots_overlay(overlay, centroids):
+    """
+    overlay function for overlay_video().
+    draws a circle for each centroid, fading over time.
+    """
     fade = 0.99
     overlay[:, :, 3] = (overlay[:, :, 3] * fade).astype(np.uint8)
 
@@ -312,6 +303,11 @@ def dots_overlay(overlay, centroids):
 
 
 def arrows_overlay(overlay, centroids):
+    """
+    overlay function for overlay_video().
+    draws an arrow between each centroid pair, fading over time.
+    """
+
     fade = 0.99
     overlay[:, :, 3] = (overlay[:, :, 3] * fade).astype(np.uint8)
     if (centroids.shape[0] < 2):
@@ -337,7 +333,10 @@ def arrows_overlay(overlay, centroids):
 
 def overlay_video(input_path, output_path, detector, overlay_fn, draw_bbox=True,
                   start_frame=0, num_frames=None, frame_rate=None):
-
+    """
+    Output a video file containing the video at input_path including an overlay generated according to 
+    detections.
+    """
     vcap = cv.VideoCapture(input_path)
 
     if start_frame != 0:
@@ -373,7 +372,7 @@ def overlay_video(input_path, output_path, detector, overlay_fn, draw_bbox=True,
         if detections is not None:
             detection = update_centroids(detections, centroids, frame_num)
             if draw_bbox:
-                draw_bounding_boxes(frame, detections, detector)
+                draw_bounding_boxes(frame, detections)
 
         overlay_fn(overlay, centroids[:frame_num+1, :])
         alpha_s = overlay[:, :, 3] / 255.0
@@ -386,26 +385,7 @@ def overlay_video(input_path, output_path, detector, overlay_fn, draw_bbox=True,
     
     vcap.release()
     videowriter.release()
-
-    
-def plot_no_video(centroids, num_frames,vid_name,
-                  width=1440,
-                  height=1080,
-                  draw_window=240,
-                  frame_rate=60):
-    
-    videowriter = cv.VideoWriter(vid_name, cv.VideoWriter_fourcc(*'mp4v'),
-                                 frame_rate, (width, height))
-    
-    frame = 255 * np.ones((height,width,3)).astype('uint8')
-    for frameCounter in tqdm(range(num_frames)):
-        frame.fill(255)
-        draw_k_centroids(frame,frameCounter,centroids,draw_window)
-        
-        videowriter.write(frame)
-    
-    videowriter.release()
-    
+ 
     
 def plot_with_figure(input_name,
                      output_name,
@@ -453,6 +433,7 @@ def plot_with_figure(input_name,
     
     videowriter.release()
 
+
 def draw_figure_beside_frame(write_frame,
                          vid_frame,
                          frameCounter,
@@ -495,7 +476,6 @@ def draw_figure_beside_frame(write_frame,
     print(f'frame shape: {write_frame.shape}')
     """
 
-    
     write_frame[:,:vid_frame.shape[1],:] = vid_frame
     write_frame[(height_inch*dpi)//2:(height_inch*dpi)//2+height_inch*dpi,vid_frame.shape[1]:,:] = fig_image
     
@@ -552,6 +532,7 @@ def draw_figure_on_frame(write_frame,
     write_frame[:,:vid_frame.shape[1],:] = vid_frame
     write_frame[:fig_image.shape[0],:fig_image.shape[1],:] = fig_image
 
+
 def compute_velocity(centroids,to_norm=False,mov_avg=2):
     """
     computes  magnitude of velocity
@@ -560,25 +541,23 @@ def compute_velocity(centroids,to_norm=False,mov_avg=2):
     veloc = np.apply_along_axis(np.linalg.norm,1,veloc)
     
     if to_norm:
-        norm_speed = np.percentile(veloc[~np.isnan(veloc)],99) # reject top 5% outliers
-        veloc[veloc>norm_speed] = np.nan
-        veloc = veloc /norm_speed 
+        norm_speed = np.percentile(veloc[~np.isnan(veloc)],99) # reject top 1% outliers
+        veloc[veloc > norm_speed] = np.nan
+        veloc = veloc / norm_speed
     
     veloc_ma = pd.Series(veloc).rolling(window=mov_avg).mean().to_numpy()
-    
-    
+
     return np.stack([veloc,veloc_ma],axis=1)
 
 
-
 def save_missed_frames(video_path,
-                    output_dir,
-                    detector,
-                    save_thresh=0.8,
-                    start_frame=0,
-                    num_frames=None,
-                    save_max=200,
-                    above=False):
+                       output_dir,
+                       detector,
+                       save_thresh=0.8,
+                       start_frame=0,
+                       num_frames=None,
+                       save_max=200,
+                       above=False):
     print("saving to: ",output_dir)
     vcap = cv.VideoCapture(video_path)
 
@@ -593,7 +572,7 @@ def save_missed_frames(video_path,
     frame_rate = vcap.get(cv.CAP_PROP_FPS)
     
     missed_counter = 0
-    saved_counter=0
+    saved_counter = 0
     vid_time = re.search('-(\d+)',video_path).group(1)
     yyyymmdd = re.search('output/(\d+)-',video_path).group(1)
     
@@ -610,7 +589,7 @@ def save_missed_frames(video_path,
             vcap.release()
             break
                 
-        detections = detector.detect_image(frame)     
+        detections = detector.detect_image(frame)
 
         if save_func(detections,save_thresh):
             missed_counter+=1
@@ -632,27 +611,19 @@ def save_missed_frames(video_path,
 
 
 def cf(num1,num2):
+    """
+    Return all integers that divide both arguments.
+    """
     from math import gcd
     n=[]
     g=gcd(num1, num2)
-    for i in range(1, g+1): 
-        if g%i==0: 
+    for i in range(1, g+1):
+        if g%i==0:
             n.append(i)
     return n
 
-def gkern(kernlen=21, nsig=3):
-    """Returns a 2D Gaussian kernel."""
 
-    x = np.linspace(-nsig, nsig, kernlen+1)
-    kern1d = np.diff(st.norm.cdf(x))
-    kern2d = np.outer(kern1d, kern1d)
-    kern2d = kern2d/kern2d.sum()
-    kern2d = kern2d/np.max(kern2d)
-    
-    return np.stack([kern2d for k in range(3)],axis=0).T
-
-
-def ablation_heatmap(img,detector,square_size=None,color=0):
+def ablation_heatmap(img, detector, color=0):
     """
     Performs ablation (occlusion) test: slides a WHITE (0) square window over the image,
     and run through the detector. Write the confidence returned by the detector
@@ -665,31 +636,26 @@ def ablation_heatmap(img,detector,square_size=None,color=0):
     Grid cell size of 45, 60, 72 or 90 are working best with arena images
     """
     
-    
     # compute possible cell sizes for ablation grid
-    poss_cells = cf(img.shape[1],img.shape[0])
+    poss_cells = cf(img.shape[1], img.shape[0])
     print(f'Possible cell sizes are {poss_cells}')
     print('Please choose cell size from the list:')
     cell = input()
-    if (cell =='') or (int(cell) not in poss_cells):
+    if (cell == '') or (int(cell) not in poss_cells):
         print('error, cell not available for dimensions')
-        return None,None
-    cell=int(cell)
+        return None, None
+    cell = int(cell)
     cells_x = img.shape[1] // cell
     cells_y = img.shape[0] // cell
     print(f'cells x: {cells_x}, cells y: {cells_y}, total of {cells_x*cells_y} iterations. Continue [y/n]?')
     inp = input()
-    if inp!='y':
+    if inp != 'y':
         print('exiting')
         return None, None
     
-    
     # initialize confidence map with image shape
     conf_map = np.ones((img.shape[0],img.shape[1]))
-    
-    if square_size is None:
-        square_size = cell
-    
+        
     # for each cell, get preditcion and write confidence in conf_map
     for i in tqdm(range(cells_y),desc='Rows'):
         for j in range(cells_x):
@@ -697,9 +663,9 @@ def ablation_heatmap(img,detector,square_size=None,color=0):
             try:
                 ind_i = i*cell
                 ind_j = j*cell
-                end_i = min(ind_i + square_size,img.shape[0])
-                end_j = min(ind_j + square_size,img.shape[1])
-                ablated_img[ind_i : end_i, ind_j :end_j, : ] = color
+                end_i = min(ind_i + cell, img.shape[0])
+                end_j = min(ind_j + cell, img.shape[1])
+                ablated_img[ind_i:end_i, ind_j:end_j, :] = color
                 
             except Exception as e:
                 print(f'indexing problem at i:{i},j:{j}\n',e)
@@ -711,12 +677,7 @@ def ablation_heatmap(img,detector,square_size=None,color=0):
             else:
                 conf = 0.0
             
-            conf_i = ind_i
-            end_conf_i = conf_i + square_size
-            conf_j = ind_j
-            end_conf_j = conf_j + square_size
-            
-            conf_map[conf_i : end_conf_i, conf_j :end_conf_j] = conf
+            conf_map[ind_i:end_i, ind_j:end_j] = conf
             
     detection = detector.detect_image(img)
     if detection is None:
@@ -724,10 +685,8 @@ def ablation_heatmap(img,detector,square_size=None,color=0):
     else:
         base_conf = detection[0][4]
     
-    return conf_map,base_conf
+    return conf_map, base_conf
 
-def f_title(x): 
-    return 'None' if x==0 else f'{x:0.2f}'
 
 def visualize_ablation_heatmap(img,
                                detector,
@@ -737,7 +696,6 @@ def visualize_ablation_heatmap(img,
                                ones_cmap = 'Reds_r',
                                enhance_fact = 3,
                                epsi = 1e-1,
-                               square_size=None,
                                base_thresh=0.05,
                                color=0):
     """
@@ -793,13 +751,19 @@ def visualize_ablation_heatmap(img,
     cbar = plt.colorbar(mappable=scal_map,ax=axes)
     cbar.set_label('$\Delta$ Conf.',rotation=0,labelpad=25,fontsize=18)
 
+    def f_title(x):
+        return 'None' if x==0 else f'{x:0.2f}'
+
     axes.set_title(f'Confidence without occlusion: {f_title(base_conf)}',
-                  fontsize=18)
+                   fontsize=18)
     axes.axis('off')
 
 
-
 def plot_image(detections, img, detector, output_path=None):
+    """
+    Run the detector on img and plot the image with bounding boxes.
+    """
+
     plt.figure()
     fig, ax = plt.subplots(1, figsize=(12,9))
     ax.imshow(img)
@@ -821,7 +785,3 @@ def plot_image(detections, img, detector, output_path=None):
     if output_path is not None:
         plt.savefig(output_path)
     plt.show()
-    
-    
-    
-    
