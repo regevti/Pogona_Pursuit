@@ -9,7 +9,7 @@ services:
     privileged: true
     volumes:
     - ../Arena:/arena
-#    restart: always
+    restart: always
     command: "flask run --host=0.0.0.0"
     ports:
       - 3350:8888
