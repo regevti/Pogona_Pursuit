@@ -11,7 +11,7 @@
             <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
         </div>
         <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"
-                v-on:touchstart="setCanvasClick($event)"
+                v-on:touchend="setCanvasClick($event)"
                 v-on:click.right="changeTrajectory($event)" oncontextmenu="return false;">
             <bug v-for="(value, index) in bugsProps"
                  :key="index"
