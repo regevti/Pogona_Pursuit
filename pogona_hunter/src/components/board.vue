@@ -10,6 +10,7 @@
             <label for="numOfBugs">Number of Bugs: </label>
             <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
         </div>
+        <h3 style="margin: 10px auto 0">SCORE: {{$store.state.score}}</h3>
         <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"
                 v-on:touchstart="setCanvasClick($event)">
 <!--            v-on:click.right="changeTrajectory($event)"-->
@@ -22,7 +23,6 @@
                  ref="bugChild">
             </bug>
         </canvas>
-        <h3 style="margin: 10px auto 0">SCORE: {{$store.state.score}}</h3>
     </div>
 </template>
 
