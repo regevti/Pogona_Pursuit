@@ -75,9 +75,13 @@
         }
       },
       setCanvasClick(event) {
-        console.log(event)
-        let x = event.x
-        let y = event.y
+        for (let touch of event.touches) {
+            this.handleTouchEvent(touch)
+        }
+      },
+      handleTouchEvent(touch) {
+        let x = touch.clientX
+        let y = touch.clientY
         x -= this.canvas.offsetLeft
         y -= this.canvas.offsetTop
         console.log(x, y)
