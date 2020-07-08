@@ -80,8 +80,8 @@
         }
       },
       handleTouchEvent(touch) {
-        let x = touch.clientX
-        let y = touch.clientY
+        let x = touch.screenX
+        let y = touch.screenY
         x -= this.canvas.offsetLeft
         y -= this.canvas.offsetTop
         console.log(x, y)
