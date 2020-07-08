@@ -19,12 +19,12 @@ export default new Vuex.Store({
       max: 2
     },
     radiusRange: {
-      min: 90,
-      max: 100
+      min: 120,
+      max: 140
     },
     canvasParams: {
-      width: 1500,
-      height: 800
+      width: window.innerWidth,
+      height: window.innerHeight
     }
   },
   mutations: {
