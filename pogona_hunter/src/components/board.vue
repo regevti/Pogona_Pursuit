@@ -1,19 +1,29 @@
 <template>
     <div class="board-canvas-wrapper" oncontextmenu="return false;">
-        <div v-on:change="initBoard">
-            <label for="bugType">Bug Type:</label>
-            <select id="bugType" v-model="bugType">
-                <option v-for="option in bugTypeOptions" v-bind:value="option.value" v-bind:key="option.value">
-                    {{ option.text }}
-                </option>
-            </select>
-            <label for="numOfBugs">Number of Bugs: </label>
-            <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
-        </div>
-        <h3 style="margin: 10px auto 0">SCORE: {{$store.state.score}}</h3>
+        <Slide style="z-index: 20;">
+            <h1>Pogona Hunter</h1>
+            <p>Written by Reggev Eyal</p>
+            <div id='game-configuration' v-on:change="initBoard">
+                <div>
+                    <label for="bugType">Bug Type:</label>
+                    <select id="bugType" v-model="bugType">
+                        <option v-for="option in bugTypeOptions" v-bind:value="option.value"
+                                v-bind:key="option.value">
+                            {{ option.text }}
+                        </option>
+                    </select>
+                </div>
+                <div>
+                    <label for="numOfBugs">Number of Bugs: </label>
+                    <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
+                </div>
+
+            </div>
+            <h3 style="margin: 10px auto 0">SCORE: {{$store.state.score}}</h3>
+        </Slide>
         <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"
-                v-on:touchstart="setCanvasClick($event)">
-<!--            v-on:click.right="changeTrajectory($event)"-->
+                v-on:touchstart="setCanvasClick($event)" style="z-index: 10;">
+            <!--            v-on:click.right="changeTrajectory($event)"-->
             <bug v-for="(value, index) in bugsProps"
                  :key="index"
                  :x0="value.x"
@@ -30,10 +40,11 @@
   import bug from './bug'
   import {distance, randomRange} from '@/js/helpers'
   import {mapState} from 'vuex'
+  import {Slide} from 'vue-burger-menu'
 
   export default {
     name: 'board',
-    components: {bug},
+    components: {bug, Slide},
     data() {
       return {
         bugsProps: [],
@@ -76,7 +87,7 @@
       },
       setCanvasClick(event) {
         for (let touch of event.touches) {
-            this.handleTouchEvent(touch)
+          this.handleTouchEvent(touch)
         }
       },
       handleTouchEvent(touch) {
@@ -148,7 +159,7 @@
 
     canvas {
         padding: 0;
-        margin: 20px auto 0;
+        /*margin: 20px auto 0;*/
         display: block;
         background: #e8eaf6;
     }
