@@ -107,7 +107,7 @@ class SpinCamera:
 
     def image_handler(self, image_result: PySpin.ImagePtr):
         img = image_result.GetNDArray()
-        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         if self.dir_path and self.video_out is None:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
