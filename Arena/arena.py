@@ -23,8 +23,8 @@ INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'Trig
                'PayloadSize', 'EventSelector', 'LineStatus',
                'DeviceLinkCurrentThroughput', 'DeviceLinkThroughputLimit', 'DeviceMaxThroughput', 'DeviceLinkSpeed']
 CAMERA_NAMES = {
-    'realtime': 19506468,
-    'right': 19506475
+    'realtime': '19506468',
+    'right': '19506475'
 }
 
 
@@ -185,6 +185,7 @@ class Serializer:
         self.ser.write(b'L')
 
 ############################################################################################################
+
 
 def get_device_id(cam) -> str:
     """Get the camera device ID of the cam instance"""
