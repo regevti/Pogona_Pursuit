@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import time
+import re
 import cv2
 import argparse
 import serial
@@ -21,6 +22,10 @@ SERIAL_BAUD = 9600
 INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
                'PayloadSize', 'EventSelector', 'LineStatus',
                'DeviceLinkCurrentThroughput', 'DeviceLinkThroughputLimit', 'DeviceMaxThroughput', 'DeviceLinkSpeed']
+CAMERA_NAMES = {
+    'realtime': 19506468,
+    'right': 19506475
+}
 
 
 class SpinCamera:
@@ -159,29 +164,7 @@ class SpinCamera:
 
     @property
     def device_id(self):
-        nodemap_tldevice = self.cam.GetTLDeviceNodeMap()
-        return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
-
-
-# def save_list_to_avi(images, fps, device_id, dir_path):
-#     try:
-#         avi_recorder = PySpin.SpinVideo()
-#         avi_filename = f'{dir_path}/{device_id}'
-#         option = PySpin.MJPGOption()
-#         option.frameRate = fps
-#         option.quality = 75
-#
-#         avi_recorder.Open(avi_filename, option)
-#         for img in images:
-#             avi_recorder.Append(img)
-#         avi_recorder.Close()
-#
-#         print(f'<CAM {device_id}>: Video saved at {avi_filename}-0000.avi , FPS: {fps:.2f}')
-#         return True
-#
-#     except PySpin.SpinnakerException as exc:
-#         print(f'<CAM {device_id}>: ERROR (save_list_to_avi); {exc}')
-#         return
+        return get_device_id(self.cam)
 
 
 class Serializer:
@@ -194,6 +177,28 @@ class Serializer:
 
     def stop_acquisition(self):
         self.ser.write(b'L')
+
+
+def get_device_id(cam) -> str:
+    """Get the camera device ID of the cam instance"""
+    nodemap_tldevice = cam.GetTLDeviceNodeMap()
+    return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
+
+
+def filter_cameras(cam_list: PySpin.CameraList, camera_label: str) -> None:
+    """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
+    devices2remove = []
+    device_ids = [get_device_id(c) for c in cam_list]
+    if re.match(r'[a-zA-z]+', camera_label):
+        device = CAMERA_NAMES.get(camera_label)
+        if device and device in device_ids:
+            devices2remove = [d for d in device_ids if d != device]
+    elif re.match(r'[0-9]+', camera_label):
+        devices = [d for d in device_ids if d[-len(camera_label):] == camera_label]
+        if devices:
+            devices2remove = [d for d in device_ids if d not in devices]
+    for d in devices2remove:
+        cam_list.RemoveBySerial(d)
 
 
 def display_info(cam_list):
@@ -253,6 +258,8 @@ def main(is_web_stream=False):
                     help=f"Specify output directory path. Default={OUTPUT_DIR}")
     ap.add_argument("-e", "--exposure", type=int, default=EXPOSURE_TIME,
                     help=f"Specify cameras exposure time. Default={EXPOSURE_TIME}")
+    ap.add_argument("-c", "--camera", type=int, required=False,
+                    help=f"filter cameras by last digits or according to CAMERA_NAMES.")
     ap.add_argument("-i", "--info", action="store_true", default=False,
                     help=f"Show cameras information")
 
@@ -265,7 +272,8 @@ def main(is_web_stream=False):
 
     if args.get('info'):
         display_info([c for c in cam_list])
-
+    elif args.get('camera'):
+        filter_cameras(cam_list, args['camera'])
     else:
         label = datetime.now().strftime('%Y%m%d-%H%M%S')
         dir_path = mkdir(f"{args.get('output')}/{label}")

@@ -28,27 +28,30 @@ services:
     ports:
      - 8080:8080
 
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq
+  mosquitto:
+    image: eclipse-mosquitto:1.6
     restart: always
     ports:
-      - 5672:5672
-      - 15672:15672
+      - 1883:1883
+      - 0.0.0.0:9001:9001
+    volumes:
+      - ../mosquitto/:/mosquitto/config/
 
-  mongo:
-    image: mongo
-    restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+#  rabbitmq:
+#    image: rabbitmq:3-management
+#    container_name: rabbitmq
+#    restart: always
+#    ports:
+#      - 5672:5672
+#      - 15672:15672
 
-  mongo-express:
-    image: mongo-express
-    restart: always
-    ports:
-      - 27017:27017
-      - 8081:8081
-    environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: root
-      ME_CONFIG_MONGODB_ADMINPASSWORD: example
+#  mongo:
+#    image: mongo
+#    restart: always
+#
+#  mongo-express:
+#    image: mongo-express
+#    restart: always
+#    ports:
+#      - 27017:27017
+#      - 8081:8081
