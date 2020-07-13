@@ -53,12 +53,25 @@
       }
     },
     mounted() {
+      this.$mqtt.subscribe('event/detect/+')
+      this.$mqtt.subscribe('event/command/+')
       this.canvas = document.getElementById('canvas')
       this.ctx = this.canvas.getContext('2d')
       this.initBoard()
       window.addEventListener('keypress', e => {
         this.changeTrajectory(e.code)
       })
+    },
+    mqtt: {
+      'event/command/hide_bugs' (data) {
+        this.numOfBugs = 0
+        this.initBoard()
+      },
+      'event/command/init_bugs' (numOfBugs) {
+        numOfBugs = Number(numOfBugs) ? Number(numOfBugs) : 1
+        this.numOfBugs = numOfBugs
+        this.initBoard()
+      }
     },
     computed: {
       ...mapState(['timeBetweenTrial', 'bloodDuration', 'canvasParams', 'radiusRange', 'bugTypeOptions'])
