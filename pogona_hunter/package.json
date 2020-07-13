@@ -12,7 +12,6 @@
     "build": "node build/build.js"
   },
   "dependencies": {
-    "amqplib": "^0.5.6",
     "vue": "^2.5.2",
     "vue-burger-menu": "^2.0.5",
     "vue-mqtt": "^2.0.3",
