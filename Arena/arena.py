@@ -107,6 +107,7 @@ class SpinCamera:
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
+            self.logger.info(f'Video path: {self.video_path}')
             self.video_out.release()
         self.is_ready = False
 
@@ -117,7 +118,7 @@ class SpinCamera:
         if self.dir_path and self.video_out is None:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
             h, w = img.shape[:2]
-            self.video_out = cv2.VideoWriter(f'{self.dir_path}/{self.device_id}.avi', fourcc, FPS, (w, h), True)
+            self.video_out = cv2.VideoWriter(self.video_path, fourcc, FPS, (w, h), True)
 
         self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
@@ -163,9 +164,14 @@ class SpinCamera:
             return True
 
     @property
+    def video_path(self):
+        return f'{self.dir_path}/{self.device_id}.avi'
+
+    @property
     def device_id(self):
         return get_device_id(self.cam)
 
+############################################################################################################
 
 class Serializer:
     def __init__(self):
@@ -178,6 +184,7 @@ class Serializer:
     def stop_acquisition(self):
         self.ser.write(b'L')
 
+############################################################################################################
 
 def get_device_id(cam) -> str:
     """Get the camera device ID of the cam instance"""
@@ -258,7 +265,7 @@ def main(is_web_stream=False):
                     help=f"Specify output directory path. Default={OUTPUT_DIR}")
     ap.add_argument("-e", "--exposure", type=int, default=EXPOSURE_TIME,
                     help=f"Specify cameras exposure time. Default={EXPOSURE_TIME}")
-    ap.add_argument("-c", "--camera", type=int, required=False,
+    ap.add_argument("-c", "--camera", type=str, required=False,
                     help=f"filter cameras by last digits or according to CAMERA_NAMES.")
     ap.add_argument("-i", "--info", action="store_true", default=False,
                     help=f"Show cameras information")
@@ -272,9 +279,10 @@ def main(is_web_stream=False):
 
     if args.get('info'):
         display_info([c for c in cam_list])
-    elif args.get('camera'):
-        filter_cameras(cam_list, args['camera'])
     else:
+        if args.get('camera'):
+            filter_cameras(cam_list, args['camera'])
+
         label = datetime.now().strftime('%Y%m%d-%H%M%S')
         dir_path = mkdir(f"{args.get('output')}/{label}")
 
