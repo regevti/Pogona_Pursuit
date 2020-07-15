@@ -1,7 +1,7 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
 import PySpin
 import cv2
-from arena import SpinCamera, Serializer, EXPOSURE_TIME
+from arena import SpinCamera, Serializer, EXPOSURE_TIME, filter_cameras
 
 app = Flask(__name__)
 
@@ -24,6 +24,7 @@ class VideoStream:
     def __init__(self):
         self.system = PySpin.System.GetInstance()
         self.cam_list = self.system.GetCameras()
+        filter_cameras(self.cam_list, 'realtime')
         if len(self.cam_list) == 0:
             self.clear()
             raise Exception('No cameras were found')
@@ -40,6 +41,7 @@ class VideoStream:
 
     def clear(self):
         self.cam_list.Clear()
+        del self.sc
         self.system.ReleaseInstance()
         if getattr(self, 'serializer', None):
             self.serializer.stop_acquisition()
