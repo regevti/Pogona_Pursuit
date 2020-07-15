@@ -39,8 +39,8 @@ class VideoStream:
         if getattr(self, 'serializer', None):
             self.serializer.stop_acquisition()
 
-    def __del__(self):
-        self.clear()
+    # def __del__(self):
+    #     self.clear()
 
 
 def gen(vc):
