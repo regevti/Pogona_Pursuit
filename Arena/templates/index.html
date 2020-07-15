@@ -3,9 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <title>Arena</title>
+    <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}">
 </head>
+
 <body>
-    <h1>Welcome to Pogona Arena!</h1>
-    <img id="bg" src="{{ url_for('video_feed') }}">
+    <h1>Pogona Pursuit</h1>
+    <button id="stream" class="btn btn-lg btn-primary">Stream</button>
+    <img id="stream_img" src="" width="640" height="480">
 </body>
+
+<script>
+
+    $(function(){
+        var isTouchDevice = "ontouchstart" in document.documentElement ? true : false;
+        var BUTTON_DOWN   = isTouchDevice ? "touchstart" : "mousedown";
+        var BUTTON_UP     = isTouchDevice ? "touchend"   : "mouseup";
+
+        $("#stream").bind(BUTTON_DOWN,function(){
+            $.get("/video_feed", function(data, status){
+              $("#stream_img").src("{{ url_for('video_feed') }}")
+            });
+        });
+
+    });
+
+</script>
+
+<style>
+    body {
+        padding: 10px;
+    }
+</style>
+
 </html>
