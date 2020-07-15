@@ -33,10 +33,13 @@ class VideoStream:
         self.serializer = Serializer()
         self.serializer.start_acquisition()
 
+    def get_frame(self):
+        image_result = self.sc.cam.GetNextImage()
+        img = image_result.GetNDArray()
+        return cv2.imencode(".jpg", img)
+
     def clear(self):
         self.cam_list.Clear()
-        del self.sc
-        del self.cam_list
         self.system.ReleaseInstance()
         if getattr(self, 'serializer', None):
             self.serializer.stop_acquisition()
@@ -45,14 +48,11 @@ class VideoStream:
         self.clear()
 
 
-def gen(vc):
+def gen(vc: VideoStream):
     """Video streaming generator function."""
-    sc = vc.sc
     print('start web streaming')
     while True:
-        image_result = sc.cam.GetNextImage()
-        img = image_result.GetNDArray()
-        (flag, encodedImage) = cv2.imencode(".jpg", img)
+        (flag, encodedImage) = vc.get_frame()
 
         if not flag:
             continue
