@@ -14,20 +14,15 @@
 </body>
 
 <script>
-
     $(function(){
         var isTouchDevice = "ontouchstart" in document.documentElement ? true : false;
         var BUTTON_DOWN   = isTouchDevice ? "touchstart" : "mousedown";
         var BUTTON_UP     = isTouchDevice ? "touchend"   : "mouseup";
 
         $("#stream").bind(BUTTON_DOWN,function(){
-            $.get("/video_feed", function(data, status){
-              $("#stream_img").src("{{ url_for('video_feed') }}")
-            });
+          $("#stream_img").src("{{ url_for('video_feed') }}")
         });
-
     });
-
 </script>
 
 <style>
