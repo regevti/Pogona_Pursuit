@@ -20,7 +20,7 @@ SAVED_FRAME_RESOLUTION = (1440, 1088)
 SERIAL_PORT = '/dev/ttyACM0'
 SERIAL_BAUD = 9600
 INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
-               'PayloadSize', 'EventSelector', 'LineStatus',
+               'PayloadSize', 'EventSelector', 'LineStatus', 'ExposureTime',
                'DeviceLinkCurrentThroughput', 'DeviceLinkThroughputLimit', 'DeviceMaxThroughput', 'DeviceLinkSpeed']
 CAMERA_NAMES = {
     'realtime': '19506468',
@@ -76,6 +76,7 @@ class SpinCamera:
             self.cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throuput())
             self.cam.ExposureTime.SetValue(exposure)
             self.logger.info(f'Finished Configuration')
+            self.log_info()
 
         except PySpin.SpinnakerException as exc:
             self.logger.error(f'(configure_images); {exc}')
@@ -134,6 +135,13 @@ class SpinCamera:
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
+
+    def log_info(self):
+        """Print into logger the info of the camera"""
+        st = ''
+        for k, v in zip(INFO_FIELDS, self.info()):
+            st += f'{k}: {v}\n'
+        self.logger.info(st)
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
