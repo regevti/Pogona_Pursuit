@@ -34,13 +34,14 @@ class VideoStream:
         self.serializer.start_acquisition()
 
     def clear(self):
+        del self.sc
         self.cam_list.Clear()
         self.system.ReleaseInstance()
         if getattr(self, 'serializer', None):
             self.serializer.stop_acquisition()
 
-    # def __del__(self):
-    #     self.clear()
+    def __del__(self):
+        self.clear()
 
 
 def gen(vc):
