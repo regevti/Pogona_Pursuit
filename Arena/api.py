@@ -1,5 +1,6 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
 import PySpin
+import cv2
 from arena import SpinCamera, Serializer, EXPOSURE_TIME
 
 app = Flask(__name__)
@@ -14,7 +15,8 @@ def index():
 @app.route('/video_feed')
 def video_feed():
     """Video streaming route. Put this in the src attribute of an img tag."""
-    return Response(gen(),
+    vc = VideoStream()
+    return Response(gen(vc),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -31,9 +33,6 @@ class VideoStream:
         self.serializer = Serializer()
         self.serializer.start_acquisition()
 
-    def get_frame(self):
-        self.sc.web_stream()
-
     def clear(self):
         self.cam_list.Clear()
         self.system.ReleaseInstance()
@@ -44,10 +43,17 @@ class VideoStream:
         self.clear()
 
 
-def gen():
+def gen(vc):
     """Video streaming generator function."""
-    vc = VideoStream()
-    try:
-        vc.get_frame()
-    except Exception:
-        vc.clear()
+    sc = vc.sc
+    print('start web streaming')
+    while True:
+        image_result = sc.cam.GetNextImage()
+        img = image_result.GetNDArray()
+        (flag, encodedImage) = cv2.imencode(".jpg", img)
+
+        if not flag:
+            continue
+
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')

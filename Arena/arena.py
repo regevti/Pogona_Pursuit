@@ -124,18 +124,6 @@ class SpinCamera:
         self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
 
-    def web_stream(self):
-        while True:
-            image_result = self.cam.GetNextImage()
-            img = image_result.GetNDArray()
-            (flag, encodedImage) = cv2.imencode(".jpg", img)
-
-            if not flag:
-                continue
-
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
-
     def log_info(self):
         """Print into logger the info of the camera"""
         st = ''
