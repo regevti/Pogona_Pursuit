@@ -12,6 +12,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/stream')
+def stream():
+    """Video streaming ."""
+    return render_template('stream.html')
+
+
 @app.route('/video_feed')
 def video_feed():
     """Video streaming route. Put this in the src attribute of an img tag."""
