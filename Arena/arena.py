@@ -174,20 +174,21 @@ def get_device_id(cam) -> str:
     return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
 
 
-def filter_cameras(cam_list: PySpin.CameraList, camera_label: str) -> None:
+def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
     """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
-    devices2remove = []
-    device_ids = [get_device_id(c) for c in cam_list]
-    if re.match(r'[a-zA-z]+', camera_label):
-        device = CAMERA_NAMES.get(camera_label)
-        if device and device in device_ids:
-            devices2remove = [d for d in device_ids if d != device]
-    elif re.match(r'[0-9]+', camera_label):
-        devices = [d for d in device_ids if d[-len(camera_label):] == camera_label]
-        if devices:
-            devices2remove = [d for d in device_ids if d not in devices]
-    for d in devices2remove:
-        cam_list.RemoveBySerial(d)
+    current_devices = [get_device_id(c) for c in cam_list]
+    chosen_devices = []
+    for cam_id in cameras_string.split(','):
+        if re.match(r'[a-zA-z]+', cam_id):
+            device = CAMERA_NAMES.get(cam_id)
+            if device and device in current_devices:
+                chosen_devices.append(device)
+        elif re.match(r'[0-9]+', cam_id):
+            chosen_devices.extend([d for d in current_devices if d[-len(cam_id):] == cam_id])
+
+    for d in current_devices:
+        if d not in chosen_devices:
+            cam_list.RemoveBySerial(d)
 
 
 def display_info():
@@ -243,7 +244,7 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False) -> None:
+def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False) -> str:
     """
     Record videos from Arena's cameras
     :param num_frames: Number of frames to be captures by each camera
@@ -271,9 +272,12 @@ def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_au
             pool.starmap(start_streaming, results)
             # if serializer:
             #     serializer.stop_acquisition()
-    del filtered, results  # must delete this list in order to destroy all pointers to cameras.
+        del filtered, results  # must delete this list in order to destroy all pointers to cameras.
+
     cam_list.Clear()
     system.ReleaseInstance()
+
+    return dir_path
 
 
 def main():

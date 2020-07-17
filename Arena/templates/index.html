@@ -31,7 +31,7 @@
                     <div class="col-sm-4">Cameras</div>
                     <div class="col-sm-4">
                         {% for cam in cameras %}
-                        <div class="row">
+                        <div class="row" id="cams-checkboxes">
                             <input class="form-check-input" type="checkbox" id="{{cam}}" checked>
                             <label class="form-check-label" for="{{cam}}">{{cam}}</label>
                         </div>
@@ -83,17 +83,31 @@
       $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
     });
     $("form").submit(function (event) {
-      $.post("/record", {
-        num_frames: Number($("#numOfFrames").val()),
-        exposure: Number($("#exposure").val()),
-        is_auto_start: true
-      }).done(function (result, status, xhr) {
-        $("#record-output").html(result)
-      }).fail(function (xhr, status, error) {
-          $("#message").html("Result: " + status + " " + error + " " + xhr.status + " " + xhr.statusText)
+      $.ajax({
+        url: "/record",
+        type: "POST",
+        data: JSON.stringify({
+          num_frames: Number($("#numOfFrames").val()),
+          exposure: Number($("#exposure").val()),
+          camera: getCheckedCameras(),
+          is_auto_start: true
+        }),
+        contentType: "application/json",
+        complete: function (data) {
+            console.log(data)
+        }
+      })
+    });
+    function getCheckedCameras() {
+        let a = []
+        $("#cams-checkboxes input").each(function(e) {
+            if (this.checked) {
+                a.push(this.id)
+            }
         });
-    })
-  });
+        return a.join(',')
+    }
+  })
 </script>
 
 <style>
