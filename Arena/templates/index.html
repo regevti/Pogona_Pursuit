@@ -96,7 +96,7 @@
           $("#record-output").text('recording...')
         },
         complete: function (res) {
-          $("#record-output").text(res.statusText)
+          $("#record-output").text(res.responseText)
         }
       })
     });
