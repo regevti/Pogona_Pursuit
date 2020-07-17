@@ -1,7 +1,7 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
 import PySpin
 import cv2
-import json
+from mqtt import publish_event
 from arena import SpinCamera, record, filter_cameras, \
     CAMERA_NAMES, DEFAULT_NUM_FRAMES, EXPOSURE_TIME
 
@@ -29,6 +29,16 @@ def video_feed():
     vc = VideoStream()
     return Response(gen(vc),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@app.route('/init_bugs')
+def init_bugs():
+    publish_event('event/command/init_bugs', 1)
+
+
+@app.route('/hide_bugs')
+def hide_bugs():
+    publish_event('event/command/hide_bugs', '')
 
 
 class VideoStream:
