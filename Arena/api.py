@@ -34,11 +34,13 @@ def video_feed():
 @app.route('/init_bugs')
 def init_bugs():
     publish_event('event/command/init_bugs', 1)
+    return Response('ok')
 
 
 @app.route('/hide_bugs')
 def hide_bugs():
     publish_event('event/command/hide_bugs', '')
+    return Response('ok')
 
 
 class VideoStream:
