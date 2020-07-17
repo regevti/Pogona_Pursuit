@@ -100,14 +100,20 @@
         }
       })
     });
+    $("#init_bugs").click(function (e) {
+        $.get('/init_bugs')
+    })
+    $("#hide_bugs").click(function (e) {
+        $.get('/hide_bugs')
+    })
     function getCheckedCameras() {
-        let a = []
-        $("#cams-checkboxes input").each(function(e) {
-            if (this.checked) {
-                a.push(this.id)
-            }
-        });
-        return a.join(',')
+      let a = []
+      $("#cams-checkboxes input").each(function (e) {
+        if (this.checked) {
+          a.push(this.id)
+        }
+      });
+      return a.join(',')
     }
   })
 </script>
