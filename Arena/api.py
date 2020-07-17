@@ -1,7 +1,8 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
 import PySpin
 import cv2
-from arena import SpinCamera, Serializer, EXPOSURE_TIME, filter_cameras
+from arena import SpinCamera, record, filter_cameras, \
+    CAMERA_NAMES, DEFAULT_NUM_FRAMES, EXPOSURE_TIME
 
 app = Flask(__name__)
 
@@ -9,13 +10,16 @@ app = Flask(__name__)
 @app.route('/')
 def index():
     """Video streaming ."""
-    return render_template('index.html')
+    return render_template('index.html', cameras=CAMERA_NAMES.keys(), exposure=EXPOSURE_TIME,
+                           num_frames=DEFAULT_NUM_FRAMES)
 
 
-@app.route('/stream')
-def stream():
-    """Video streaming ."""
-    return render_template('stream.html')
+@app.route('/record', methods=['POST'])
+def record_video():
+    """Record video"""
+    if request.method == 'POST':
+        data = request.form
+        return Response(record(**data))
 
 
 @app.route('/video_feed')
@@ -37,8 +41,8 @@ class VideoStream:
 
         self.sc = SpinCamera(self.cam_list[0], None, None, is_stream=True)
         self.sc.begin_acquisition(EXPOSURE_TIME)
-        self.serializer = Serializer()
-        self.serializer.start_acquisition()
+        # self.serializer = Serializer()
+        # self.serializer.start_acquisition()
 
     def get_frame(self):
         image_result = self.sc.cam.GetNextImage()
