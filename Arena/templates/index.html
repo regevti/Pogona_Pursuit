@@ -54,9 +54,7 @@
                 </div>
             </div>
         </div>
-        <div class="row" id="record-output">
-
-        </div>
+        <div class="row" id="record-output"></div>
     </div>
 
     <div class="col">
@@ -83,6 +81,7 @@
       $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
     });
     $("form").submit(function (event) {
+      event.preventDefault();
       $.ajax({
         url: "/record",
         type: "POST",
@@ -93,8 +92,11 @@
           is_auto_start: true
         }),
         contentType: "application/json",
-        complete: function (data) {
-            console.log(data)
+        beforeSend: function () {
+          $("#record-output").text('recording...')
+        },
+        complete: function (res) {
+          $("#record-output").text(res.statusText)
         }
       })
     });
