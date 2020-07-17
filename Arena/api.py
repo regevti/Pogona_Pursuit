@@ -1,6 +1,7 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
 import PySpin
 import cv2
+import json
 from arena import SpinCamera, record, filter_cameras, \
     CAMERA_NAMES, DEFAULT_NUM_FRAMES, EXPOSURE_TIME
 
@@ -18,7 +19,7 @@ def index():
 def record_video():
     """Record video"""
     if request.method == 'POST':
-        data = request.form
+        data = request.json
         return Response(record(**data))
 
 
