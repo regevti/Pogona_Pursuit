@@ -9,7 +9,7 @@ from datetime import datetime
 import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
-from utils import get_logger, calculate_fps, mkdir
+from utils import get_logger, calculate_fps, mkdir, log_stream
 
 DEFAULT_NUM_FRAMES = 1000
 DEFAULT_MAX_THROUGHPUT = 94578303
@@ -277,7 +277,7 @@ def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_au
     cam_list.Clear()
     system.ReleaseInstance()
 
-    return dir_path
+    return log_stream.getvalue()
 
 
 def main():

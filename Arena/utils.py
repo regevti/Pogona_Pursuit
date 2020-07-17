@@ -1,6 +1,9 @@
 import logging
 from pathlib import Path
 from numpy import mean
+from io import StringIO
+
+log_stream = StringIO()
 
 
 def get_logger(device_id: str, dir_path: str) -> logging.Logger:
@@ -24,6 +27,11 @@ def get_logger(device_id: str, dir_path: str) -> logging.Logger:
     ch.setLevel(logging.INFO)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
+
+    sh = logging.StreamHandler(log_stream)
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
 
     return logger
 
