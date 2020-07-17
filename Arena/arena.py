@@ -4,7 +4,7 @@ import time
 import re
 import cv2
 import argparse
-import serial
+
 from datetime import datetime
 import pandas as pd
 from multiprocessing.dummy import Pool
@@ -17,8 +17,6 @@ EXPOSURE_TIME = 6000
 OUTPUT_DIR = 'output'
 FPS = 60
 SAVED_FRAME_RESOLUTION = (1440, 1088)
-SERIAL_PORT = '/dev/ttyACM0'
-SERIAL_BAUD = 9600
 INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
                'PayloadSize', 'EventSelector', 'LineStatus', 'ExposureTime',
                'DeviceLinkCurrentThroughput', 'DeviceLinkThroughputLimit', 'DeviceMaxThroughput', 'DeviceLinkSpeed']
@@ -169,19 +167,6 @@ class SpinCamera:
 
 ############################################################################################################
 
-class Serializer:
-    def __init__(self):
-        self.ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
-        time.sleep(0.5)
-
-    def start_acquisition(self):
-        self.ser.write(b'H')
-
-    def stop_acquisition(self):
-        self.ser.write(b'L')
-
-############################################################################################################
-
 
 def get_device_id(cam) -> str:
     """Get the camera device ID of the cam instance"""
@@ -205,10 +190,12 @@ def filter_cameras(cam_list: PySpin.CameraList, camera_label: str) -> None:
         cam_list.RemoveBySerial(d)
 
 
-def display_info(cam_list):
+def display_info():
     """Function for displaying info of all FireFly cameras detected"""
     df = []
     index = []
+    system = PySpin.System.GetInstance()
+    cam_list = system.GetCameras()
     for cam in cam_list:
         sc = SpinCamera(cam)
         if not sc.is_firefly():
@@ -218,6 +205,8 @@ def display_info(cam_list):
 
     df = pd.DataFrame(df, columns=INFO_FIELDS, index=index)
     print(f'\nCameras Info:\n\n{df}\n')
+    cam_list.Clear()
+    system.ReleaseInstance()
 
 
 def start_camera(cam, dir_path, num_frames, exposure):
@@ -227,17 +216,18 @@ def start_camera(cam, dir_path, num_frames, exposure):
     return sc
 
 
-def wait_for_streaming(results: list):
+def wait_for_streaming(results: list, is_auto_start=False):
     """Wait for user approval for start streaming and send serial for Arduino to start TTL.
     If keyboard interrupt turn all is_ready to false, so acquisition will not start"""
     serializer = None
     try:
-        key = input(f'\nThere are {len([sc for sc in results if sc.is_ready])} cameras ready for streaming.\n'
-                    f'Press any key for sending TTL serial to start streaming.\n'
-                    f"If you like to start TTL manually press 'm'\n>> ")
-        if not key == 'm':
-            serializer = Serializer()
-            serializer.start_acquisition()
+        if not is_auto_start:
+            key = input(f'\nThere are {len([sc for sc in results if sc.is_ready])} cameras ready for streaming.\n'
+                        f'Press any key for sending TTL serial to start streaming.\n'
+                        f"If you like to start TTL manually press 'm'\n>> ")
+            # if not key == 'm':
+            #     serializer = Serializer()
+            #     serializer.start_acquisition()
 
     except Exception as exc:
         print(f'Error: {exc}')
@@ -253,7 +243,40 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def main(is_web_stream=False):
+def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False) -> None:
+    """
+    Record videos from Arena's cameras
+    :param num_frames: Number of frames to be captures by each camera
+    :param exposure: The exposure time to be set to the cameras
+    :param camera: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
+    :param output: The output folder for saving the records and log
+    :param is_auto_start: Start record automatically or wait for user input
+    """
+    system = PySpin.System.GetInstance()
+    cam_list = system.GetCameras()
+
+    if camera:
+        filter_cameras(cam_list, camera)
+
+    label = datetime.now().strftime('%Y%m%d-%H%M%S')
+    dir_path = mkdir(f"{output}/{label}")
+
+    filtered = [(cam, dir_path, num_frames, exposure) for cam in cam_list]
+    print(f'\nCameras detected: {len(filtered)}\nNumber of Frames to take: {num_frames}\n')
+    if filtered:
+        with Pool(len(filtered)) as pool:
+            results = pool.starmap(start_camera, filtered)
+            results, serializer = wait_for_streaming(results, is_auto_start)
+            results = [(sc,) for sc in results]
+            pool.starmap(start_streaming, results)
+            # if serializer:
+            #     serializer.stop_acquisition()
+    del filtered, results  # must delete this list in order to destroy all pointers to cameras.
+    cam_list.Clear()
+    system.ReleaseInstance()
+
+
+def main():
     """Main function for Arena capture"""
     ap = argparse.ArgumentParser(description="Tool for capturing multiple cameras streams in the arena.")
     ap.add_argument("-n", "--num_frames", type=int, default=DEFAULT_NUM_FRAMES,
@@ -263,40 +286,16 @@ def main(is_web_stream=False):
     ap.add_argument("-e", "--exposure", type=int, default=EXPOSURE_TIME,
                     help=f"Specify cameras exposure time. Default={EXPOSURE_TIME}")
     ap.add_argument("-c", "--camera", type=str, required=False,
-                    help=f"filter cameras by last digits or according to CAMERA_NAMES.")
+                    help=f"filter cameras by last digits or according to CAMERA_NAMES (for more than one use ',').")
     ap.add_argument("-i", "--info", action="store_true", default=False,
                     help=f"Show cameras information")
 
     args = vars(ap.parse_args())
 
-    system = PySpin.System.GetInstance()
-    cam_list = system.GetCameras()
-    num_frames = args.get('num_frames')
-    exposure = args.get('exposure')
-
     if args.get('info'):
-        display_info([c for c in cam_list])
+        display_info()
     else:
-        if args.get('camera'):
-            filter_cameras(cam_list, args['camera'])
-
-        label = datetime.now().strftime('%Y%m%d-%H%M%S')
-        dir_path = mkdir(f"{args.get('output')}/{label}")
-
-        filtered = [(cam, dir_path, num_frames, exposure) for cam in cam_list]
-        print(f'\nCameras detected: {len(filtered)}\nNumber of Frames to take: {num_frames}\n')
-        if filtered:
-            with Pool(len(filtered)) as pool:
-                results = pool.starmap(start_camera, filtered)
-                results, serializer = wait_for_streaming(results)
-                results = [(sc,) for sc in results]
-                pool.starmap(start_streaming, results)
-                if serializer:
-                    serializer.stop_acquisition()
-        del filtered, results  # must delete this list in order to destroy all pointers to cameras.
-
-    cam_list.Clear()
-    system.ReleaseInstance()
+        record(args.get('num_frames'), args.get('exposure'), args.get('camera'), args.get('output'))
 
 
 if __name__ == '__main__':
