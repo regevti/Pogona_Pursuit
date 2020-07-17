@@ -6,9 +6,9 @@ from io import StringIO
 log_stream = StringIO()
 
 
-def init_log_stream():
-    global log_stream
-    log_stream = StringIO()
+def clear_log_stream():
+    log_stream.truncate(0)
+    log_stream.seek(0)
 
 
 def get_logger(device_id: str, dir_path: str) -> logging.Logger:
