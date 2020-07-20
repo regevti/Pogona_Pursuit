@@ -11,25 +11,49 @@
 
 <div class="row">
     <div class="col">
-        <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 1em">Pogona Pursuit</h1>
-        <div class="row">
-            <form class="col-md-6">
+        <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0.5em">Pogona Pursuit</h1>
+        <div class="row" id="controls-panel">
+            <form class="col-md-5" id="experiment_column">
+                <h3>Start Experiment</h3>
+                <div class="form-group row pr-3">
+                    <label for="experimentName" class="col col-form-label">Experiment Name</label>
+                    <div class="col-sm-7">
+                        <input type="text" class="form-control" id="experimentName" value="{{experiment_name}}" required>
+                    </div>
+                </div>
+                <div class="form-group row pr-3">
+                    <label for="experimentTimeout" class="col col-form-label">Experiment Time [minutes]</label>
+                    <div class="col-sm-5">
+                        <input type="number" class="form-control" id="experimentTimeout" value="{{experiment_timeout}}" required>
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-sm-10">
+                        <button type="submit" class="btn btn-primary">Start</button>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="row"><b>Current Experiment Name:</b></div>
+                    <div class="row" id="currentExperimentName"></div>
+                </div>
+            </form>
+            <form class="col-md-4" id="record_column">
                 <h3>Record</h3>
                 <div class="form-group row">
-                    <label for="numOfFrames" class="col-sm-5 col-form-label">Number of Frames</label>
-                    <div class="col-sm-4">
+                    <label for="numOfFrames" class="col col-form-label">Number of Frames</label>
+                    <div class="col-sm-5">
                         <input type="number" class="form-control" id="numOfFrames" value="{{num_frames}}">
                     </div>
                 </div>
                 <div class="form-group row">
-                    <label for="exposure" class="col-sm-5 col-form-label">Exposure Time</label>
-                    <div class="col-sm-4">
+                    <label for="exposure" class="col col-form-label">Exposure Time</label>
+                    <div class="col-sm-5">
                         <input type="number" class="form-control" id="exposure" value="{{exposure}}">
                     </div>
                 </div>
                 <div class="form-group row">
-                    <div class="col-sm-4">Cameras</div>
-                    <div class="col-sm-4">
+                    <div class="col">Cameras</div>
+                    <div class="col-sm-5">
                         {% for cam in cameras %}
                         <div class="row" id="cams-checkboxes">
                             <input class="form-check-input" type="checkbox" id="{{cam}}" checked>
@@ -44,7 +68,7 @@
                     </div>
                 </div>
             </form>
-            <div class="col-md-4">
+            <div class="col-md-3" id="events_column">
                 <h3 style="text-align: center; margin-bottom: 1em">Events</h3>
                 <div class="row mb-2">
                     <button id="init_bugs" class="btn btn-lg btn-primary mx-auto">Start Bugs</button>
@@ -80,7 +104,25 @@
     $("#stream").bind('click', function () {
       $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
     });
-    $("form").submit(function (event) {
+    $("#experiment_column").submit(function (event) {
+      event.preventDefault();
+      $.ajax({
+        url: "/start_experiment",
+        type: "POST",
+        data: JSON.stringify({
+          name: $("#experimentName").val(),
+          time: Number($("#experimentTimeout").val()) * 60,
+        }),
+        contentType: "application/json",
+        beforeSend: function () {
+          $("#record-output").text('initializing experiment...')
+        },
+        complete: function (res) {
+          $("#record-output").text(res.responseText)
+        }
+      })
+    });
+    $("#record_column").submit(function (event) {
       event.preventDefault();
       $.ajax({
         url: "/record",
@@ -101,11 +143,15 @@
       })
     });
     $("#init_bugs").click(function (e) {
-        $.get('/init_bugs')
+      $.get('/init_bugs')
     })
     $("#hide_bugs").click(function (e) {
-        $.get('/hide_bugs')
+      $.get('/hide_bugs')
     })
+    $.get('/get_experiment', function (data) {
+        $("#currentExperimentName").text(data)
+    })
+
     function getCheckedCameras() {
       let a = []
       $("#cams-checkboxes input").each(function (e) {
@@ -129,6 +175,13 @@
         bottom: 0;
         text-align: center;
         padding: 1em;
+    }
+
+    #controls-panel {
+        border-top: 1.5px solid black;
+        border-bottom: 1.5px solid black;
+        padding-top: 1em;
+        padding-bottom: 1em;
     }
 </style>
 

@@ -2,8 +2,14 @@ import logging
 from pathlib import Path
 from numpy import mean
 from io import StringIO
+from datetime import datetime
+from enum import Enum
 
 log_stream = StringIO()
+
+
+class CacheColumns(Enum):
+    EXPERIMENT_NAME = 'experiment_name'
 
 
 def clear_log_stream():
@@ -49,3 +55,7 @@ def calculate_fps(frame_times):
 def mkdir(path):
     Path(path).mkdir(parents=True, exist_ok=True)
     return path
+
+
+def get_datetime_string():
+    return datetime.now().strftime('%Y%m%dT%H%M%S')
