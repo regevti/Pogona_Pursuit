@@ -1,11 +1,16 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
+from flask_caching import Cache
 import PySpin
 import cv2
-from mqtt import publish_event
+from mqtt import MQTTClient
+from utils import get_datetime_string, CacheColumns
 from arena import SpinCamera, record, filter_cameras, \
     CAMERA_NAMES, DEFAULT_NUM_FRAMES, EXPOSURE_TIME
 
+
 app = Flask(__name__)
+cache = Cache(app, config={'CACHE_TYPE': 'simple'})
+mqtt_client = MQTTClient(cache)
 
 
 @app.route('/')
@@ -23,6 +28,22 @@ def record_video():
         return Response(record(**data))
 
 
+@app.route('/start_experiment', methods=['POST'])
+def start_experiment():
+    """Set Experiment Name"""
+    if request.method == 'POST':
+        data = request.json
+        experiment_name = f'{data.get("name")}_{get_datetime_string()}'
+        timeout = data.get('time')
+        cache.set(CacheColumns.EXPERIMENT_NAME, experiment_name, timeout=timeout)
+        return f'Experiment {experiment_name} started for {timeout/60} minutes'
+
+
+@app.route('/get_experiment')
+def get_experiment():
+    return cache.get(CacheColumns.EXPERIMENT_NAME)
+
+
 @app.route('/video_feed')
 def video_feed():
     """Video streaming route. Put this in the src attribute of an img tag."""
@@ -33,13 +54,13 @@ def video_feed():
 
 @app.route('/init_bugs')
 def init_bugs():
-    publish_event('event/command/init_bugs', 1)
+    mqtt_client.publish_event('event/command/init_bugs', 1)
     return Response('ok')
 
 
 @app.route('/hide_bugs')
 def hide_bugs():
-    publish_event('event/command/hide_bugs', '')
+    mqtt_client.publish_event('event/command/hide_bugs', '')
     return Response('ok')
 
 
