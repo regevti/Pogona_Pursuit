@@ -209,7 +209,7 @@
 
     function getAcquireStop() {
       let d = {};
-      d[$("#acquireStopSelect").val()] = $("#acquireStopValue").val();
+      d[$("#acquireStopSelect").val()] = Number($("#acquireStopValue").val());
       return d;
     }
   })
