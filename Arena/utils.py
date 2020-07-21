@@ -8,6 +8,7 @@ log_stream = StringIO()
 
 
 def clear_log_stream():
+    global log_stream
     log_stream.truncate(0)
     log_stream.seek(0)
 
