@@ -25,6 +25,7 @@ def record_video():
     """Record video"""
     if request.method == 'POST':
         data = request.json
+        data['cache'] = cache
         return Response(record(**data))
 
 
