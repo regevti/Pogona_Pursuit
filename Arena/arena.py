@@ -142,7 +142,7 @@ class SpinCamera:
             if ACQUIRE_STOP_OPTIONS[key] == 'cache':
                 assert self.cache is not None
             else:
-                assert isinstance(value, int)
+                assert isinstance(value, int), f'acquire stop {key}: expected type int, received {type(value)}'
 
     def is_acquire_allowed(self, iteration):
         """Check all given acquire_stop conditions"""
