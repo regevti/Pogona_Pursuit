@@ -130,8 +130,6 @@
         $.get('/get_experiment', function (data) {
           $("#currentExperimentName").text(data)
         });
-      }).beforeSend(function () {
-        $("#record-output").text('stopping experiment...')
       })
     });
     $("#experiment_form").submit(function (event) {
