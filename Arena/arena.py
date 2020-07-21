@@ -10,7 +10,7 @@ import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
-from utils import get_logger, calculate_fps, mkdir, log_stream, clear_log_stream
+from utils import get_logger, calculate_fps, mkdir, get_log_stream
 
 DEFAULT_NUM_FRAMES = 1000
 DEFAULT_MAX_THROUGHPUT = 94578303
@@ -34,7 +34,7 @@ ACQUIRE_STOP_OPTIONS = {
 
 
 class SpinCamera:
-    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None):
+    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None):
         self.cam = cam
         self.acquire_stop = acquire_stop or {'num_frames': DEFAULT_NUM_FRAMES}
         self.dir_path = dir_path
@@ -46,7 +46,7 @@ class SpinCamera:
         self.start_acquire_time = None
 
         self.cam.Init()
-        self.logger = get_logger(self.device_id, dir_path)
+        self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
@@ -296,9 +296,9 @@ def record(exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False, c
     :param cache: memory cache to be used by the cameras
     """
     assert all(k in ACQUIRE_STOP_OPTIONS for k in acquire_stop.keys())
-    clear_log_stream()
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
+    log_stream = get_log_stream()
 
     if camera:
         filter_cameras(cam_list, camera)
@@ -306,7 +306,7 @@ def record(exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False, c
     label = datetime.now().strftime('%Y%m%d-%H%M%S')
     dir_path = mkdir(f"{output}/{label}")
 
-    filtered = [(cam, acquire_stop, dir_path, exposure, cache) for cam in cam_list]
+    filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream) for cam in cam_list]
     print(f'\nCameras detected: {len(filtered)}')
     print(f'Acquire Stop: {acquire_stop}')
     if filtered:
