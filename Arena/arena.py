@@ -37,9 +37,9 @@ class SpinCamera:
     def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None):
         self.cam = cam
         self.acquire_stop = acquire_stop or {'num_frames': DEFAULT_NUM_FRAMES}
-        self.validate_acquire_stop()
         self.dir_path = dir_path
         self.cache = cache
+        self.validate_acquire_stop()
 
         self.is_ready = False  # ready for acquisition
         self.video_out = None
