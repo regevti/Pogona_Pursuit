@@ -88,7 +88,7 @@ class VideoStream:
             self.clear()
             raise Exception('No cameras were found')
 
-        self.sc = SpinCamera(self.cam_list[0], None, None, is_stream=True)
+        self.sc = SpinCamera(self.cam_list[0])
         self.sc.begin_acquisition(EXPOSURE_TIME)
         # self.serializer = Serializer()
         # self.serializer.start_acquisition()
