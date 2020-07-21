@@ -1,15 +1,15 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
-from flask_caching import Cache
+from cache import get_cache, CacheColumns
 import PySpin
 import cv2
 from mqtt import MQTTClient
-from utils import get_datetime_string, CacheColumns
+from utils import get_datetime_string, titlize
 from arena import SpinCamera, record, filter_cameras, \
-    CAMERA_NAMES, DEFAULT_NUM_FRAMES, EXPOSURE_TIME
+    CAMERA_NAMES, DEFAULT_NUM_FRAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
 
 
 app = Flask(__name__)
-cache = Cache(app, config={'CACHE_TYPE': 'simple'})
+cache = get_cache(app)
 mqtt_client = MQTTClient(cache)
 
 
@@ -17,7 +17,7 @@ mqtt_client = MQTTClient(cache)
 def index():
     """Video streaming ."""
     return render_template('index.html', cameras=CAMERA_NAMES.keys(), exposure=EXPOSURE_TIME,
-                           num_frames=DEFAULT_NUM_FRAMES)
+                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()})
 
 
 @app.route('/record', methods=['POST'])
@@ -41,7 +41,16 @@ def start_experiment():
 
 @app.route('/get_experiment')
 def get_experiment():
-    return cache.get(CacheColumns.EXPERIMENT_NAME)
+    return Response(cache.get(CacheColumns.EXPERIMENT_NAME))
+
+
+@app.route('/stop_experiment')
+def stop_experiment():
+    experiment_name = cache.get(CacheColumns.EXPERIMENT_NAME)
+    if experiment_name:
+        cache.delete(CacheColumns.EXPERIMENT_NAME)
+        return Response(f'Experiment: {experiment_name} was stopped')
+    return Response('No available experiment')
 
 
 @app.route('/video_feed')
@@ -50,6 +59,12 @@ def video_feed():
     vc = VideoStream()
     return Response(gen(vc),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@app.route('/manual_record_stop')
+def manual_record_stop():
+    cache.set(CacheColumns.MANUAL_RECORD_STOP, True)
+    return Response('Record stopped')
 
 
 @app.route('/init_bugs')

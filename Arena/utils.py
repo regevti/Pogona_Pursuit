@@ -3,13 +3,8 @@ from pathlib import Path
 from numpy import mean
 from io import StringIO
 from datetime import datetime
-from enum import Enum
 
 log_stream = StringIO()
-
-
-class CacheColumns(Enum):
-    EXPERIMENT_NAME = 'experiment_name'
 
 
 def clear_log_stream():
@@ -59,3 +54,7 @@ def mkdir(path):
 
 def get_datetime_string():
     return datetime.now().strftime('%Y%m%dT%H%M%S')
+
+
+def titlize(s: str):
+    return s.replace('_', ' ').title()
