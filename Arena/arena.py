@@ -252,9 +252,9 @@ def display_info():
     system.ReleaseInstance()
 
 
-def start_camera(cam, dir_path, num_frames, exposure, cache):
+def start_camera(cam, dir_path, num_frames, exposure, cache, log_stream):
     """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam, dir_path, num_frames, cache=cache)
+    sc = SpinCamera(cam, dir_path, num_frames, cache=cache, log_stream=log_stream)
     sc.begin_acquisition(exposure)
     return sc
 
