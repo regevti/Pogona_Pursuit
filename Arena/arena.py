@@ -9,6 +9,7 @@ from datetime import datetime
 import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
+from cache import CacheColumns
 from utils import get_logger, calculate_fps, mkdir, log_stream, clear_log_stream
 
 DEFAULT_NUM_FRAMES = 1000
@@ -24,16 +25,25 @@ CAMERA_NAMES = {
     'realtime': '19506468',
     'right': '19506475'
 }
+ACQUIRE_STOP_OPTIONS = {
+    'num_frames': int,
+    'record_time': int,
+    'manual_stop': 'cache',
+    'experiment_alive': 'cache'
+}
 
 
 class SpinCamera:
-    def __init__(self, cam, dir_path=None, num_frames=None, is_stream=False):
+    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None):
         self.cam = cam
-        self.num_frames = num_frames
-        self.is_ready = False  # ready for acquisition
+        self.acquire_stop = acquire_stop or {'num_frames': DEFAULT_NUM_FRAMES}
+        self.validate_acquire_stop()
         self.dir_path = dir_path
+        self.cache = cache
+
+        self.is_ready = False  # ready for acquisition
         self.video_out = None
-        self.is_stream = is_stream
+        self.start_acquire_time = None
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path)
@@ -83,11 +93,12 @@ class SpinCamera:
         """Acquire images and measure FPS"""
         if self.is_ready:
             frame_times = list()
-
-            for i in range(self.num_frames):
+            i = 0
+            while self.is_acquire_allowed(i):
                 try:
                     image_result = self.cam.GetNextImage()  # Retrieve next received image
                     if i == 0:
+                        self.start_acquire_time = time.time()
                         self.logger.info('Acquisition Started')
 
                     if image_result.IsIncomplete():  # Ensure image completion
@@ -101,6 +112,9 @@ class SpinCamera:
                 except PySpin.SpinnakerException as exc:
                     self.logger.error(f'(acquire); {exc}')
                     continue
+
+                finally:
+                    i += 1
 
             self.logger.info(f'Calculated FPS: {calculate_fps(frame_times)}')
 
@@ -121,6 +135,33 @@ class SpinCamera:
 
         self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+
+    def validate_acquire_stop(self):
+        for key, value in self.acquire_stop.items():
+            assert key in ACQUIRE_STOP_OPTIONS, f'unknown acquire_stop: {key}'
+            if ACQUIRE_STOP_OPTIONS[key] == 'cache':
+                assert self.cache is not None
+            else:
+                assert isinstance(value, int)
+
+    def is_acquire_allowed(self, iteration):
+        """Check all given acquire_stop conditions"""
+        for stop_key in self.acquire_stop.keys():
+            if not getattr(self, f'check_{stop_key}')(iteration):
+                return False
+        return True
+
+    def check_num_frames(self, iteration):
+        return iteration <= self.acquire_stop['num_frames']
+
+    def check_record_time(self, iteration):
+        return time.time() < self.start_acquire_time + self.acquire_stop['record_time']
+
+    def check_manual_stop(self, iteration):
+        return not self.cache.get(CacheColumns.MANUAL_RECORD_STOP)
+
+    def check_experiment_alive(self, iteration):
+        return self.cache.get(CacheColumns.EXPERIMENT_NAME)
 
     def log_info(self):
         """Print into logger the info of the camera"""
@@ -210,9 +251,9 @@ def display_info():
     system.ReleaseInstance()
 
 
-def start_camera(cam, dir_path, num_frames, exposure):
+def start_camera(cam, dir_path, num_frames, exposure, cache):
     """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam, dir_path, num_frames)
+    sc = SpinCamera(cam, dir_path, num_frames, cache=cache)
     sc.begin_acquisition(exposure)
     return sc
 
@@ -244,15 +285,16 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False) -> str:
+def record(exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False, cache=None, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
-    :param num_frames: Number of frames to be captures by each camera
     :param exposure: The exposure time to be set to the cameras
     :param camera: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
     :param output: The output folder for saving the records and log
     :param is_auto_start: Start record automatically or wait for user input
+    :param cache: memory cache to be used by the cameras
     """
+    assert all(k in ACQUIRE_STOP_OPTIONS for k in acquire_stop.keys())
     clear_log_stream()
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
@@ -263,8 +305,9 @@ def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_au
     label = datetime.now().strftime('%Y%m%d-%H%M%S')
     dir_path = mkdir(f"{output}/{label}")
 
-    filtered = [(cam, dir_path, num_frames, exposure) for cam in cam_list]
-    print(f'\nCameras detected: {len(filtered)}\nNumber of Frames to take: {num_frames}\n')
+    filtered = [(cam, acquire_stop, dir_path, exposure, cache) for cam in cam_list]
+    print(f'\nCameras detected: {len(filtered)}')
+    print(f'Acquire Stop: {acquire_stop}')
     if filtered:
         with Pool(len(filtered)) as pool:
             results = pool.starmap(start_camera, filtered)
@@ -284,8 +327,12 @@ def record(num_frames: int, exposure: int, camera=None, output=OUTPUT_DIR, is_au
 def main():
     """Main function for Arena capture"""
     ap = argparse.ArgumentParser(description="Tool for capturing multiple cameras streams in the arena.")
-    ap.add_argument("-n", "--num_frames", type=int, default=DEFAULT_NUM_FRAMES,
-                    help=f"Specify Number of Frames. Default={DEFAULT_NUM_FRAMES}")
+    ap.add_argument("-n", "--num_frames", type=int, help=f"Specify Number of Frames.")
+    ap.add_argument("-t", "--record_time", type=int, help=f"Specify record duration in seconds.")
+    ap.add_argument("-m", "--manual_stop", action="store_true", default=False,
+                    help=f"Stop record using cache key MANUAL_RECORD_STOP.")
+    ap.add_argument("--experiment_alive", action="store_true", default=False,
+                    help=f"Stop record if the experiment ended")
     ap.add_argument("-o", "--output", type=str, default=OUTPUT_DIR,
                     help=f"Specify output directory path. Default={OUTPUT_DIR}")
     ap.add_argument("-e", "--exposure", type=int, default=EXPOSURE_TIME,
@@ -300,7 +347,11 @@ def main():
     if args.get('info'):
         display_info()
     else:
-        record(args.get('num_frames'), args.get('exposure'), args.get('camera'), args.get('output'))
+        acquire_stop = {}
+        for key in ACQUIRE_STOP_OPTIONS:
+            if key in args:
+                acquire_stop[key] = args[key]
+        record(args.get('exposure'), args.get('camera'), args.get('output'), **acquire_stop)
 
 
 if __name__ == '__main__':

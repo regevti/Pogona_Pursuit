@@ -37,6 +37,10 @@ services:
     volumes:
       - ../mosquitto/:/mosquitto/config/
 
+  redis:
+    image: redis
+    restart: always
+
 #  rabbitmq:
 #    image: rabbitmq:3-management
 #    container_name: rabbitmq

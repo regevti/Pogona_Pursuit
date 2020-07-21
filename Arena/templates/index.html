@@ -13,23 +13,27 @@
     <div class="col">
         <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0.5em">Pogona Pursuit</h1>
         <div class="row" id="controls-panel">
-            <form class="col-md-5" id="experiment_column">
+            <form class="col-md-5" id="experiment_form">
                 <h3>Start Experiment</h3>
                 <div class="form-group row pr-3">
                     <label for="experimentName" class="col col-form-label">Experiment Name</label>
                     <div class="col-sm-7">
-                        <input type="text" class="form-control" id="experimentName" value="{{experiment_name}}" required>
+                        <input type="text" class="form-control" id="experimentName" value="{{experiment_name}}"
+                               required>
                     </div>
                 </div>
                 <div class="form-group row pr-3">
                     <label for="experimentTimeout" class="col col-form-label">Experiment Time [minutes]</label>
                     <div class="col-sm-5">
-                        <input type="number" class="form-control" id="experimentTimeout" value="{{experiment_timeout}}" required>
+                        <input type="number" class="form-control" id="experimentTimeout" value="{{experiment_timeout}}"
+                               required>
                     </div>
                 </div>
-                <div class="form-group row">
-                    <div class="col-sm-10">
-                        <button type="submit" class="btn btn-primary">Start</button>
+                <div class="row">
+                    <div class="col">
+                        <button type="submit" class="btn btn-primary mr-2">Start</button>
+                        <button id="stopExperiment" type="button" class="btn btn-outline-danger">Stop Experiment
+                        </button>
                     </div>
                 </div>
                 <div class="col">
@@ -37,19 +41,25 @@
                     <div class="row" id="currentExperimentName"></div>
                 </div>
             </form>
-            <form class="col-md-4" id="record_column">
+            <form class="col-md-4" id="record_form">
                 <h3>Record</h3>
-                <div class="form-group row">
-                    <label for="numOfFrames" class="col col-form-label">Number of Frames</label>
-                    <div class="col-sm-5">
-                        <input type="number" class="form-control" id="numOfFrames" value="{{num_frames}}">
-                    </div>
-                </div>
                 <div class="form-group row">
                     <label for="exposure" class="col col-form-label">Exposure Time</label>
                     <div class="col-sm-5">
-                        <input type="number" class="form-control" id="exposure" value="{{exposure}}">
+                        <input type="number" class="form-control" id="exposure" value="{{exposure}}" required>
                     </div>
+                </div>
+                <h7 class="label">Acquire Stop</h7>
+                <div class="form-group row">
+                    <div class="col">
+                        <select id="acquireStopSelect" class="form-control col">
+                            {% for val, label in acquire_stop.items() %}
+                            <option value="{{val}}">{{label}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <input id="acquireStopValue" class="col-sm-4 ml-1" type="int" class="form-control"
+                           placeholder="Value" required>
                 </div>
                 <div class="form-group row">
                     <div class="col">Cameras</div>
@@ -63,8 +73,9 @@
                     </div>
                 </div>
                 <div class="form-group row">
-                    <div class="col-sm-10">
-                        <button type="submit" class="btn btn-primary">Run</button>
+                    <div class="col">
+                        <button type="submit" class="btn btn-primary mr-2">Run</button>
+                        <button id="stopRecord" type="button" class="btn btn-outline-danger">Stop Record</button>
                     </div>
                 </div>
             </form>
@@ -87,7 +98,10 @@
                  width="640" height="420" class="mx-auto" style="z-index: 10">
         </div>
         <div class="row mt-4">
-            <button id="stream" class="btn btn-lg btn-primary mx-auto">Stream</button>
+            <div class="col text-center">
+                <button id="stream" class="btn btn-lg btn-primary mr-2">Stream</button>
+                <button id="stopStream" class="btn btn-lg btn-outline-danger">Stop Stream</button>
+            </div>
         </div>
     </div>
 
@@ -101,10 +115,26 @@
 
 <script>
   $(function () {
-    $("#stream").bind('click', function () {
+    $.get('/get_experiment', function (data) {
+      $("#currentExperimentName").text(data)
+    })
+    $("#stream").click(function () {
       $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
     });
-    $("#experiment_column").submit(function (event) {
+    $("#stopStream").click(function () {
+      $("#stream_img").attr("src", "{{ url_for('static', filename='video_placeholder.jpg') }}")
+    });
+    $("#stopExperiment").click(function () {
+      $.get('/stop_experiment', function (data) {
+        $("#record-output").text(data);
+        $.get('/get_experiment', function (data) {
+          $("#currentExperimentName").text(data)
+        });
+      }).beforeSend(function () {
+        $("#record-output").text('stopping experiment...')
+      })
+    });
+    $("#experiment_form").submit(function (event) {
       event.preventDefault();
       $.ajax({
         url: "/start_experiment",
@@ -119,20 +149,22 @@
         },
         complete: function (res) {
           $("#record-output").text(res.responseText)
+          $.get('/get_experiment', function (data) {
+            $("#currentExperimentName").text(data)
+          });
         }
       })
     });
-    $("#record_column").submit(function (event) {
+    $("#record_form").submit(function (event) {
       event.preventDefault();
       $.ajax({
         url: "/record",
         type: "POST",
-        data: JSON.stringify({
-          num_frames: Number($("#numOfFrames").val()),
+        data: JSON.stringify(Object.assign({
           exposure: Number($("#exposure").val()),
           camera: getCheckedCameras(),
           is_auto_start: true
-        }),
+        }, getAcquireStop())),
         contentType: "application/json",
         beforeSend: function () {
           $("#record-output").text('recording...')
@@ -142,14 +174,27 @@
         }
       })
     });
+    $("#stopRecord").click(function () {
+        $.get("/manual_record_stop", function (data) {
+            $("#record-output").text(data)
+        })
+    })
+    const AcquireStopWithValue = ['num_frames', 'record_time'];
+    $("#acquireStopSelect").change(function (e) {
+      let isValued = AcquireStopWithValue.indexOf($("#acquireStopSelect").val()) !== -1;
+      let acqValue = $("#acquireStopValue");
+      if (isValued) {
+        acqValue.show()
+      } else {
+        acqValue.hide()
+      }
+      acqValue.prop('required', isValued);
+    })
     $("#init_bugs").click(function (e) {
       $.get('/init_bugs')
     })
     $("#hide_bugs").click(function (e) {
       $.get('/hide_bugs')
-    })
-    $.get('/get_experiment', function (data) {
-        $("#currentExperimentName").text(data)
     })
 
     function getCheckedCameras() {
@@ -160,6 +205,12 @@
         }
       });
       return a.join(',')
+    }
+
+    function getAcquireStop() {
+      let d = {};
+      d[$("#acquireStopSelect").val()] = $("#acquireStopValue").val();
+      return d;
     }
   })
 </script>
