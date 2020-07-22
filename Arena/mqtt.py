@@ -39,6 +39,7 @@ class MQTTClient:
             print(f'saved to {self.get_csv_filename()}')
 
     def publish_event(self, topic, payload, retain=False):
+        self.client.connect(HOST)
         self.client.publish(topic, payload, retain=retain)
 
     def get_csv_filename(self):
