@@ -249,6 +249,7 @@ def display_info():
         index.append(sc.device_id)
 
     df = pd.DataFrame(df, columns=INFO_FIELDS, index=index)
+    del cam, sc
     output = f'\nCameras Info:\n\n{df}\n'
     cam_list.Clear()
     # system.ReleaseInstance()
