@@ -221,6 +221,7 @@ def get_device_id(cam) -> str:
 def validate_serial_number(cam_list: PySpin.CameraList):
     """Validate all cameras have serial number equal to device id"""
     for cam in cam_list:
+        cam.Init()
         try:
             sn = cam.DeviceSerialNumber.ToString()
         except PySpin.SpinnakerException:
@@ -228,6 +229,7 @@ def validate_serial_number(cam_list: PySpin.CameraList):
         device_id = get_device_id(cam)
         if device_id != sn:
             cam.DeviceSerialNumber.SetValue(device_id)
+        cam.DeInit()
 
 
 def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
