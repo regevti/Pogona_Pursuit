@@ -1,12 +1,15 @@
 import re
 import json
 import pandas as pd
+from cache import CacheColumns
+from arena import UNSORTED_DIR
 import paho.mqtt.client as mqtt
 
 HOST = 'mosquitto'
 SUBSCRIPTION_TOPICS = {
     'touch_log': 'event/log/touch'
 }
+TOUCHES_FILENAME = 'screen_touches.csv'
 
 
 class MQTTClient:
@@ -19,21 +22,31 @@ class MQTTClient:
         self.client.on_message = self.on_message
         self.client.connect(HOST)
         self.client.loop_forever()
+        return self
 
     @staticmethod
     def on_connect(client, userdata, flags, rc):
         print(f'MQTT connecting to host: {HOST}; rc: {rc}')
         client.subscribe([(topic, 0) for topic in SUBSCRIPTION_TOPICS.values()])
 
-    @staticmethod
-    def on_message(client, userdata, msg):
+    # @staticmethod
+    def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
         if is_match_topic(msg, 'touch_log'):
-            df = pd.read_json(payload)
-            df.to_csv('my_csv.csv', mode='a', header=False)
+            data = json.loads(payload)
+            df = pd.DataFrame([data])
+            df.to_csv(self.get_csv_filename(), mode='a', header=False)
+            print(f'saved to {self.get_csv_filename()}')
 
     def publish_event(self, topic, payload, retain=False):
         self.client.publish(topic, payload, retain=retain)
+
+    def get_csv_filename(self):
+        if self.cache.get(CacheColumns.EXPERIMENT_NAME):
+            parent = self.cache.get(CacheColumns.EXPERIMENT_PATH)
+        else:
+            parent = UNSORTED_DIR
+        return f'{parent}/{TOUCHES_FILENAME}'
 
 
 def is_match_topic(msg, topic_key):

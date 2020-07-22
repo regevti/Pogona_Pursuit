@@ -3,14 +3,14 @@ from cache import get_cache, CacheColumns
 import PySpin
 import cv2
 from mqtt import MQTTClient
-from utils import get_datetime_string, titlize
+from utils import get_datetime_string, titlize, mkdir
 from arena import SpinCamera, record, filter_cameras, \
-    CAMERA_NAMES, DEFAULT_NUM_FRAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
+    CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS, OUTPUT_DIR
 
 
 app = Flask(__name__)
 cache = get_cache(app)
-mqtt_client = MQTTClient(cache)
+mqtt_client = MQTTClient(cache).start()
 
 
 @app.route('/')
@@ -36,7 +36,9 @@ def start_experiment():
         data = request.json
         experiment_name = f'{data.get("name")}_{get_datetime_string()}'
         timeout = data.get('time')
+        mkdir(f'{OUTPUT_DIR}/{experiment_name}')
         cache.set(CacheColumns.EXPERIMENT_NAME, experiment_name, timeout=timeout)
+        cache.set(CacheColumns.EXPERIMENT_PATH, f'{OUTPUT_DIR}/{experiment_name}', timeout=timeout)
         return f'Experiment {experiment_name} started for {timeout/60} minutes'
 
 
