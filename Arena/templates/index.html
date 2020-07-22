@@ -161,7 +161,7 @@
         type: "POST",
         data: JSON.stringify(Object.assign({
           exposure: Number($("#exposure").val()),
-          camera: getCheckedCameras(),
+          cameras: getCheckedCameras(),
           is_auto_start: true
         }, getAcquireStop())),
         contentType: "application/json",
