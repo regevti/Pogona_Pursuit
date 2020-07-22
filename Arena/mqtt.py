@@ -21,7 +21,7 @@ class MQTTClient:
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.connect(HOST)
-        self.client.loop_forever()
+        # self.client.loop_forever()
         return self
 
     @staticmethod
