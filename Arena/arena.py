@@ -158,6 +158,8 @@ class SpinCamera:
         return iteration <= self.acquire_stop['num_frames']
 
     def check_record_time(self, iteration):
+        if iteration == 0:
+            return True
         return time.time() < self.start_acquire_time + self.acquire_stop['record_time']
 
     def check_manual_stop(self, iteration):
