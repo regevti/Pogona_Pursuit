@@ -8,6 +8,7 @@ class CacheColumns(Enum):
     name = (type, TTL)
     """
     EXPERIMENT_NAME = (str, 60 * 60)
+    EXPERIMENT_PATH = (str, 60 * 60)
     MANUAL_RECORD_STOP = (bool, 5)
 
 

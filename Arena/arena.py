@@ -16,6 +16,7 @@ DEFAULT_NUM_FRAMES = 1000
 DEFAULT_MAX_THROUGHPUT = 94578303
 EXPOSURE_TIME = 6000
 OUTPUT_DIR = 'output'
+UNSORTED_DIR = mkdir('output/unsorted')
 FPS = 60
 SAVED_FRAME_RESOLUTION = (1440, 1088)
 INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
@@ -23,7 +24,8 @@ INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'Trig
                'DeviceLinkCurrentThroughput', 'DeviceLinkThroughputLimit', 'DeviceMaxThroughput', 'DeviceLinkSpeed']
 CAMERA_NAMES = {
     'realtime': '19506468',
-    'right': '19506475'
+    'right': '19506475',
+    'left': '19506455'
 }
 ACQUIRE_STOP_OPTIONS = {
     'num_frames': int,
