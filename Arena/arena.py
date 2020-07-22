@@ -218,24 +218,9 @@ def get_device_id(cam) -> str:
     return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
 
 
-def validate_serial_number(cam_list: PySpin.CameraList):
-    """Validate all cameras have serial number equal to device id"""
-    for cam in cam_list:
-        cam.Init()
-        try:
-            sn = cam.DeviceSerialNumber.ToString()
-        except PySpin.SpinnakerException:
-            sn = cam.DeviceSerialNumber.GetValue()
-        device_id = get_device_id(cam)
-        if device_id != sn:
-            cam.DeviceSerialNumber.SetValue(device_id)
-        cam.DeInit()
-
-
 def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
     """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
     current_devices = [get_device_id(c) for c in cam_list]
-    validate_serial_number(cam_list)
     chosen_devices = []
     for cam_id in cameras_string.split(','):
         if re.match(r'[a-zA-z]+', cam_id):
@@ -245,9 +230,13 @@ def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
         elif re.match(r'[0-9]+', cam_id):
             chosen_devices.extend([d for d in current_devices if d[-len(cam_id):] == cam_id])
 
+    def _remove_from_cam_list(device_id):
+        devices = [get_device_id(c) for c in cam_list]
+        cam_list.RemoveByIndex(devices.index(device_id))
+
     for d in current_devices:
         if d not in chosen_devices:
-            cam_list.RemoveBySerial(d)
+            _remove_from_cam_list(d)
 
 
 def display_info():
