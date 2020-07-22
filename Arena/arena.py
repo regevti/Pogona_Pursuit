@@ -249,9 +249,9 @@ def display_info():
         index.append(sc.device_id)
 
     df = pd.DataFrame(df, columns=INFO_FIELDS, index=index)
-    print(f'\nCameras Info:\n\n{df}\n')
     cam_list.Clear()
-    system.ReleaseInstance()
+    # system.ReleaseInstance()
+    return f'\nCameras Info:\n\n{df}\n'
 
 
 def start_camera(cam, dir_path, num_frames, exposure, cache, log_stream):
@@ -288,11 +288,11 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def record(exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False, cache=None, **acquire_stop) -> str:
+def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_start=False, cache=None, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
     :param exposure: The exposure time to be set to the cameras
-    :param camera: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
+    :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
     :param output: The output folder for saving the records and log
     :param is_auto_start: Start record automatically or wait for user input
     :param cache: memory cache to be used by the cameras
@@ -302,8 +302,8 @@ def record(exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False, c
     cam_list = system.GetCameras()
     log_stream = get_log_stream()
 
-    if camera:
-        filter_cameras(cam_list, camera)
+    if cameras:
+        filter_cameras(cam_list, cameras)
 
     label = datetime.now().strftime('%Y%m%d-%H%M%S')
     dir_path = mkdir(f"{output}/{label}")
@@ -317,12 +317,10 @@ def record(exposure: int, camera=None, output=OUTPUT_DIR, is_auto_start=False, c
             results, serializer = wait_for_streaming(results, is_auto_start)
             results = [(sc,) for sc in results]
             pool.starmap(start_streaming, results)
-            # if serializer:
-            #     serializer.stop_acquisition()
         del filtered, results  # must delete this list in order to destroy all pointers to cameras.
 
     cam_list.Clear()
-    system.ReleaseInstance()
+    # system.ReleaseInstance()
 
     return log_stream.getvalue()
 
@@ -348,7 +346,7 @@ def main():
     args = vars(ap.parse_args())
 
     if args.get('info'):
-        display_info()
+        print(display_info())
     else:
         acquire_stop = {}
         for key in ACQUIRE_STOP_OPTIONS:

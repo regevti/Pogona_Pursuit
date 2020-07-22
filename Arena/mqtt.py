@@ -1,7 +1,7 @@
 import re
 import json
 import pandas as pd
-from cache import CacheColumns
+from cache import CacheColumns, get_cache
 from arena import UNSORTED_DIR
 import paho.mqtt.client as mqtt
 
@@ -13,9 +13,9 @@ TOUCHES_FILENAME = 'screen_touches.csv'
 
 
 class MQTTClient:
-    def __init__(self, cache):
+    def __init__(self):
         self.client = mqtt.Client()
-        self.cache = cache
+        self.cache = get_cache()
 
     def start(self):
         self.client.on_connect = self.on_connect
@@ -41,6 +41,9 @@ class MQTTClient:
     def publish_event(self, topic, payload, retain=False):
         self.client.connect(HOST)
         self.client.publish(topic, payload, retain=retain)
+
+    def publish_command(self, command, payload='', retain=False):
+        self.publish_event(f'event/command/{command}', payload, retain)
 
     def get_csv_filename(self):
         if self.cache.get(CacheColumns.EXPERIMENT_NAME):

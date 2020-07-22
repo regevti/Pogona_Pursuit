@@ -33,5 +33,5 @@ class RedisCache(Cache):
         return super().delete(cache_column.name, *args, **kwargs)
 
 
-def get_cache(app):
+def get_cache(app=None):
     return RedisCache(app, config=config)
