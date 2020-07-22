@@ -218,9 +218,19 @@ def get_device_id(cam) -> str:
     return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
 
 
+def validate_serial_number(cam_list: PySpin.CameraList):
+    """Validate all cameras have serial number equal to device id"""
+    for cam in cam_list:
+        sn = cam.DeviceSerialNumber.GetValue()
+        device_id = get_device_id(cam)
+        if device_id != sn:
+            cam.DeviceSerialNumber.SetValue(device_id)
+
+
 def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
     """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
     current_devices = [get_device_id(c) for c in cam_list]
+    validate_serial_number(cam_list)
     chosen_devices = []
     for cam_id in cameras_string.split(','):
         if re.match(r'[a-zA-z]+', cam_id):

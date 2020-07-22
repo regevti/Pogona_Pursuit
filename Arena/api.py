@@ -107,7 +107,7 @@ class VideoStream:
     def clear(self):
         self.cam_list.Clear()
         del self.sc
-        self.system.ReleaseInstance()
+        # self.system.ReleaseInstance()
         if getattr(self, 'serializer', None):
             self.serializer.stop_acquisition()
 
