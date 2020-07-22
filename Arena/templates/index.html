@@ -23,10 +23,21 @@
                     </div>
                 </div>
                 <div class="form-group row pr-3">
-                    <label for="experimentTimeout" class="col col-form-label">Experiment Time [minutes]</label>
+                    <label for="experimentNumTrials" class="col col-form-label">Number of Trials</label>
                     <div class="col-sm-5">
-                        <input type="number" class="form-control" id="experimentTimeout" value="{{experiment_timeout}}"
-                               required>
+                        <input type="number" class="form-control" id="experimentNumTrials" required>
+                    </div>
+                </div>
+                <div class="form-group row pr-3">
+                    <label for="experimentTrialDuration" class="col col-form-label">Trial Duration [sec]</label>
+                    <div class="col-sm-5">
+                        <input type="number" class="form-control" id="experimentTrialDuration" required>
+                    </div>
+                </div>
+                <div class="form-group row pr-3">
+                    <label for="experimentITI" class="col col-form-label">Inter Trial Interval [sec]</label>
+                    <div class="col-sm-5">
+                        <input type="number" class="form-control" id="experimentITI" required>
                     </div>
                 </div>
                 <div class="row">
@@ -41,45 +52,51 @@
                     <div class="row" id="currentExperimentName"></div>
                 </div>
             </form>
-            <form class="col-md-4" id="record_form">
-                <h3>Record</h3>
-                <div class="form-group row">
-                    <label for="exposure" class="col col-form-label">Exposure Time</label>
-                    <div class="col-sm-5">
-                        <input type="number" class="form-control" id="exposure" value="{{exposure}}" required>
-                    </div>
-                </div>
-                <h7 class="label">Acquire Stop</h7>
-                <div class="form-group row">
-                    <div class="col">
-                        <select id="acquireStopSelect" class="form-control col">
-                            {% for val, label in acquire_stop.items() %}
-                            <option value="{{val}}">{{label}}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <input id="acquireStopValue" class="col-sm-4 ml-1" type="int" class="form-control"
-                           placeholder="Value" required>
-                </div>
-                <div class="form-group row">
-                    <div class="col">Cameras</div>
-                    <div class="col-sm-5">
+            <div class="col-md-4">
+                <div class="row">
+                    <form class="col">
+                        <h3>Cameras</h3>
                         {% for cam in cameras %}
-                        <div class="row" id="cams-checkboxes">
-                            <input class="form-check-input" type="checkbox" id="{{cam}}" checked>
-                            <label class="form-check-label" for="{{cam}}">{{cam}}</label>
+                        <div class="row ml-4" id="cams-checkboxes">
+                            <input class="form-check-input" type="checkbox" value="{{cam}}" id="camera-{{cam}}"
+                                   checked>
+                            <label class="form-check-label" for="camera-{{cam}}">{{cam}}</label>
                         </div>
                         {% endfor %}
-                    </div>
+                    </form>
                 </div>
-                <div class="form-group row">
-                    <div class="col">
-                        <button type="submit" class="btn btn-primary mr-2">Run</button>
-                        <button id="stopRecord" type="button" class="btn btn-outline-danger mr-4">Stop Record</button>
-                        <button id="camerasInfo" type="button" class="btn btn-outline-info">Info</button>
-                    </div>
+                <div class="row mt-3">
+                    <form class="col" id="record_form">
+                        <h3>Record</h3>
+                        <div class="form-group row">
+                            <label for="exposure" class="col col-form-label">Exposure Time</label>
+                            <div class="col-sm-5">
+                                <input type="number" class="form-control" id="exposure" value="{{exposure}}" required>
+                            </div>
+                        </div>
+                        <h7 class="label">Acquire Stop</h7>
+                        <div class="form-group row">
+                            <div class="col">
+                                <select id="acquireStopSelect" class="form-control col">
+                                    {% for val, label in acquire_stop.items() %}
+                                    <option value="{{val}}">{{label}}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <input id="acquireStopValue" class="col-sm-4 ml-1" type="int" class="form-control"
+                                   placeholder="Value" required>
+                        </div>
+                        <div class="form-group row">
+                            <div class="col">
+                                <button type="submit" class="btn btn-primary mr-2">Run</button>
+                                <button id="stopRecord" type="button" class="btn btn-outline-danger mr-4">Stop Record
+                                </button>
+                                <button id="camerasInfo" type="button" class="btn btn-outline-info">Info</button>
+                            </div>
+                        </div>
+                    </form>
                 </div>
-            </form>
+            </div>
             <div class="col-md-3" id="events_column">
                 <h3 style="text-align: center; margin-bottom: 1em">Events</h3>
                 <div class="row mb-2">
@@ -100,6 +117,11 @@
         </div>
         <div class="row mt-4">
             <div class="col text-center">
+                <select id="selectStreamCamera" class="form-control col-sm-3 mx-auto mb-2">
+                    {% for cam in cameras %}
+                    <option value="{{cam}}">{{cam}}</option>
+                    {% endfor %}
+                </select>
                 <button id="stream" class="btn btn-lg btn-primary mr-2">Stream</button>
                 <button id="stopStream" class="btn btn-lg btn-outline-danger">Stop Stream</button>
             </div>
@@ -120,10 +142,17 @@
       $("#currentExperimentName").text(data)
     })
     $("#stream").click(function () {
-      $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
+      $.post('/set_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
+        $("#selectStreamCamera").prop("disabled", true);
+        $(`input[value=${camera}]`).prop("disabled", true);
+        $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
+      })
     });
     $("#stopStream").click(function () {
       $("#stream_img").attr("src", "{{ url_for('static', filename='video_placeholder.jpg') }}")
+      const sCamera = $("#selectStreamCamera");
+      $(`input[value=${sCamera.val()}]`).prop("disabled", false);
+      sCamera.prop("disabled", false);
     });
     $("#stopExperiment").click(function () {
       $.get('/stop_experiment', function (data) {
@@ -140,7 +169,10 @@
         type: "POST",
         data: JSON.stringify({
           name: $("#experimentName").val(),
-          time: Number($("#experimentTimeout").val()) * 60,
+          cameras: getCheckedCameras(),
+          trial_duration: Number($("#experimentTrialDuration").val()),
+          num_trials: Number($("#experimentNumTrials").val()),
+          iti: Number($("#experimentITI").val())
         }),
         contentType: "application/json",
         beforeSend: function () {
@@ -190,9 +222,9 @@
       acqValue.prop('required', isValued);
     })
     $("#camerasInfo").click(function () {
-        $.get('/cameras_info', function (data) {
-            $("#record-output").text(data)
-        })
+      $.get('/cameras_info', function (data) {
+        $("#record-output").text(data)
+      })
     })
     $("#init_bugs").click(function (e) {
       $.get('/init_bugs')
@@ -204,8 +236,8 @@
     function getCheckedCameras() {
       let a = []
       $("#cams-checkboxes input").each(function (e) {
-        if (this.checked) {
-          a.push(this.id)
+        if (this.checked && !this.disabled) {
+          a.push(this.value)
         }
       });
       return a.join(',')
