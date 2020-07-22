@@ -78,6 +78,11 @@
                         <button id="stopRecord" type="button" class="btn btn-outline-danger">Stop Record</button>
                     </div>
                 </div>
+                <div class="row">
+                    <div class="col">
+                        <button id="camerasInfo" type="button" class="btn btn-primary">Cameras Info</button>
+                    </div>
+                </div>
             </form>
             <div class="col-md-3" id="events_column">
                 <h3 style="text-align: center; margin-bottom: 1em">Events</h3>
@@ -173,9 +178,9 @@
       })
     });
     $("#stopRecord").click(function () {
-        $.get("/manual_record_stop", function (data) {
-            $("#record-output").text(data)
-        })
+      $.get("/manual_record_stop", function (data) {
+        $("#record-output").text(data)
+      })
     })
     const AcquireStopWithValue = ['num_frames', 'record_time'];
     $("#acquireStopSelect").change(function (e) {
@@ -187,6 +192,11 @@
         acqValue.hide()
       }
       acqValue.prop('required', isValued);
+    })
+    $("#camerasInfo").click(function () {
+        $.get('/cameras_info', function (data) {
+            $("#record-output").text(data)
+        })
     })
     $("#init_bugs").click(function (e) {
       $.get('/init_bugs')

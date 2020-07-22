@@ -3,14 +3,15 @@ from cache import get_cache, CacheColumns
 import PySpin
 import cv2
 from mqtt import MQTTClient
-from utils import get_datetime_string, titlize, mkdir
-from arena import SpinCamera, record, filter_cameras, \
-    CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS, OUTPUT_DIR
+from experiment import Experiment
+from utils import titlize
+from arena import SpinCamera, record, filter_cameras, display_info, \
+    CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
 
 
 app = Flask(__name__)
 cache = get_cache(app)
-mqtt_client = MQTTClient(cache)
+mqtt_client = MQTTClient()
 
 
 @app.route('/')
@@ -34,12 +35,8 @@ def start_experiment():
     """Set Experiment Name"""
     if request.method == 'POST':
         data = request.json
-        experiment_name = f'{data.get("name")}_{get_datetime_string()}'
-        timeout = data.get('time')
-        mkdir(f'{OUTPUT_DIR}/{experiment_name}')
-        cache.set(CacheColumns.EXPERIMENT_NAME, experiment_name, timeout=timeout)
-        cache.set(CacheColumns.EXPERIMENT_PATH, f'{OUTPUT_DIR}/{experiment_name}', timeout=timeout)
-        return f'Experiment {experiment_name} started for {timeout/60} minutes'
+        e = Experiment(**data)
+        return Response(str(e))
 
 
 @app.route('/get_experiment')
@@ -55,6 +52,11 @@ def stop_experiment():
         return Response(f'Experiment: {experiment_name} was stopped')
     return Response('No available experiment')
 
+
+@app.route('/cameras_info')
+def cameras_info():
+    """Get cameras info"""
+    return Response(display_info())
 
 @app.route('/video_feed')
 def video_feed():
