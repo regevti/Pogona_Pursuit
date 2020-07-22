@@ -8,14 +8,20 @@ mqtt_client = MQTTClient()
 
 
 class Experiment:
-    def __init__(self, name, cache, cameras, trial_duration=60, trials=1, iti=10):
+    def __init__(self, name, cache, cameras, trial_duration=60, num_trials=1, iti=10):
         self.experiment_name = f'{name}_{get_datetime_string()}'
         self.cache = cache
-        self.num_trials = trials
+        self.num_trials = num_trials
         self.trial_duration = trial_duration
         self.iti = iti
         self.cameras = cameras
         self.start()
+
+    def __str__(self):
+        output = ''
+        for obj in ['experiment_name', 'num_trials', 'cameras', 'trial_duration', 'iti']:
+            output += f'{obj}: {getattr(self, obj)}\n'
+        return output
 
     def start(self):
         mkdir(f'{OUTPUT_DIR}/{self.experiment_name}')

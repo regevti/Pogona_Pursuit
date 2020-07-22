@@ -35,6 +35,7 @@ def start_experiment():
     """Set Experiment Name"""
     if request.method == 'POST':
         data = request.json
+        data['cache'] = cache
         e = Experiment(**data)
         return Response(str(e))
 
@@ -73,6 +74,13 @@ def manual_record_stop():
     return Response('Record stopped')
 
 
+@app.route('/set_stream_camera', methods=['POST'])
+def set_stream_camera():
+    if request.method == 'POST':
+        cache.set(CacheColumns.STREAM_CAMERA, request.form['camera'])
+        return Response(request.form['camera'])
+
+
 @app.route('/init_bugs')
 def init_bugs():
     mqtt_client.publish_event('event/command/init_bugs', 1)
@@ -89,7 +97,7 @@ class VideoStream:
     def __init__(self):
         self.system = PySpin.System.GetInstance()
         self.cam_list = self.system.GetCameras()
-        filter_cameras(self.cam_list, 'left')
+        filter_cameras(self.cam_list, cache.get(CacheColumns.STREAM_CAMERA))
         if len(self.cam_list) == 0:
             self.clear()
             raise Exception('No cameras were found')
