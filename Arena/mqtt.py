@@ -7,7 +7,9 @@ import paho.mqtt.client as mqtt
 
 HOST = 'mosquitto'
 SUBSCRIPTION_TOPICS = {
-    'touch_log': 'event/log/touch'
+    'touch_log': 'event/log/touch',
+    'score_log': 'event/log/score',
+    'prediction_log': 'event/log/prediction'
 }
 TOUCHES_FILENAME = 'screen_touches.csv'
 
