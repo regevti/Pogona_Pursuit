@@ -250,7 +250,7 @@ def display_info():
 
     df = pd.DataFrame(df, columns=INFO_FIELDS, index=index)
     del cam, sc
-    output = f'\nCameras Info:\n\n{df}\n'
+    output = f'\nCameras Info:\n\n{df.to_string()}\n'
     cam_list.Clear()
     # system.ReleaseInstance()
     return output
