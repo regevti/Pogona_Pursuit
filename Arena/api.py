@@ -10,7 +10,7 @@ from arena import SpinCamera, record, filter_cameras, \
 
 app = Flask(__name__)
 cache = get_cache(app)
-mqtt_client = MQTTClient(cache).start()
+mqtt_client = MQTTClient(cache)
 
 
 @app.route('/')
@@ -86,7 +86,7 @@ class VideoStream:
     def __init__(self):
         self.system = PySpin.System.GetInstance()
         self.cam_list = self.system.GetCameras()
-        filter_cameras(self.cam_list, 'realtime')
+        filter_cameras(self.cam_list, 'left')
         if len(self.cam_list) == 0:
             self.clear()
             raise Exception('No cameras were found')

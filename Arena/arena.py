@@ -14,7 +14,7 @@ from utils import get_logger, calculate_fps, mkdir, get_log_stream
 
 DEFAULT_NUM_FRAMES = 1000
 DEFAULT_MAX_THROUGHPUT = 94578303
-EXPOSURE_TIME = 6000
+EXPOSURE_TIME = 8000
 OUTPUT_DIR = 'output'
 UNSORTED_DIR = mkdir('output/unsorted')
 FPS = 60
