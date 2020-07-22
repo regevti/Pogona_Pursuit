@@ -10,7 +10,7 @@ from arena import SpinCamera, record, filter_cameras, \
 
 app = Flask(__name__)
 cache = get_cache(app)
-mqtt_client = MQTTClient(cache).start()
+mqtt_client = MQTTClient(cache)
 
 
 @app.route('/')
