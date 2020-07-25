@@ -39,13 +39,19 @@ class Experiment:
             if i != 0:
                 time.sleep(self.iti)
             self.run_trial()
+        self.end_experiment()
 
     def run_trial(self):
         mkdir(self.trial_path)
         mqtt_client.publish_command('init_bugs', 1)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration)
-        record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration)
+        record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration,
+               experiment_alive=True)
         mqtt_client.publish_command('hide_bugs')
+
+    def end_experiment(self):
+        self.cache.delete(CacheColumns.EXPERIMENT_NAME)
+        self.cache.delete(CacheColumns.EXPERIMENT_PATH)
 
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:
@@ -53,7 +59,7 @@ class Experiment:
 
     @property
     def experiment_duration(self):
-        return self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti
+        return (self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti) * 1.5
 
     @property
     def experiment_path(self):
