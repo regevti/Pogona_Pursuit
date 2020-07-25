@@ -21,7 +21,10 @@ class RedisCache:
         self._redis = redis.Redis(host=REDIS_HOST, port=6379, db=0)
 
     def get(self, cache_column: Enum):
-        return self._redis.get(cache_column.name).decode("utf-8")
+        res = self._redis.get(cache_column.name)
+        if res and type(res) == bytes:
+            return res.decode("utf-8")
+        return res
 
     def set(self, cache_column: Enum, value, timeout=None):
         assert isinstance(value, cache_column.value[0]), \
