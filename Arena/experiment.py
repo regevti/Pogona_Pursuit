@@ -59,7 +59,7 @@ class Experiment:
 
     @property
     def experiment_duration(self):
-        return (self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti) * 1.5
+        return round((self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
 
     @property
     def experiment_path(self):
