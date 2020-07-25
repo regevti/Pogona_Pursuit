@@ -19,10 +19,11 @@
       x0: Number,
       y0: Number,
       radius: Number,
-      bugType: String
+      bugType: String,
+      timeInEdge: Number
     },
     computed: {
-      ...mapState(['timeInEdge', 'numImagesPerBug', 'speedRange'])
+      ...mapState(['numImagesPerBug', 'speedRange'])
     },
     mounted() {
       this.canvas = this.$parent.canvas
