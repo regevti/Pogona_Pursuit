@@ -1,5 +1,5 @@
 from flask import Flask, render_template, Response, request, make_response, send_file
-from cache import get_cache, CacheColumns
+from cache import RedisCache, CacheColumns
 import PySpin
 import cv2
 from mqtt import MQTTClient
@@ -10,7 +10,7 @@ from arena import SpinCamera, record, filter_cameras, display_info, \
 
 
 app = Flask(__name__)
-cache = get_cache(app)
+cache = RedisCache()
 mqtt_client = MQTTClient()
 
 

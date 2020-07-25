@@ -1,35 +1,61 @@
 <template>
     <div class="board-canvas-wrapper" oncontextmenu="return false;">
         <Slide style="z-index: 20;">
-            <h1>Pogona Hunter</h1>
-            <p>Written by Reggev Eyal</p>
-            <div id='game-configuration' v-on:change="initBoard">
-                <div>
-                    <label for="bugType">Bug Type:</label>
-                    <select id="bugType" v-model="bugType">
-                        <option v-for="option in bugTypeOptions" v-bind:value="option.value"
-                                v-bind:key="option.value">
-                            {{ option.text }}
-                        </option>
-                    </select>
-                </div>
-                <div>
-                    <label for="numOfBugs">Number of Bugs: </label>
-                    <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
-                </div>
-
+            <div>
+                <form id='game-configuration' v-on:change="initBoard">
+                    <h1>Pogona Hunter</h1>
+                    <div class="row">
+                        <label for="bugType">Bug Type:</label>
+                        <select id="bugType" v-model="bugType">
+                            <option v-for="option in bugTypeOptions" v-bind:value="option.value"
+                                    v-bind:key="option.value">
+                                {{ option.text }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <label for="numOfBugs">Number of Bugs: </label>
+                        <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
+                    </div>
+                    <div class="row">
+                        <label for="canvasHeight">Canvas Height: </label>
+                        <input v-model.number="canvasParams.height" id="canvasHeight" type="number" style="width: 4em">
+                    </div>
+                    <div class="row">
+                        <label for="time-in-edge">Time In Edge: </label>
+                        <input v-model.number="timeInEdge" id="time-in-edge" type="number" style="width: 4em">
+                    </div>
+                    <div class="row">
+                        <label for="time-between-trial">Time Between Trials: </label>
+                        <input v-model.number="timeBetweenTrial" id="time-between-trial" type="number"
+                               style="width: 4em">
+                    </div>
+                    <div class="row">
+                        <label for="blood-duration">Blood Duration: </label>
+                        <input v-model.number="bloodDuration" id="blood-duration" type="number" style="width: 4em">
+                    </div>
+                    <div class="row">
+                        <label for="radius-min">Radius Range: </label>
+                        <input v-model.number="radiusRange.min" id="radius-min" type="number" style="width: 3em">
+                        <input v-model.number="radiusRange.max" id="radius-max" type="number" style="width: 3em">
+                    </div>
+                    <h3 style="margin-top: 3em">SCORE: {{$store.state.score}}</h3>
+                    <p>Written by Reggev Eyal</p>
+                </form>
             </div>
-            <h3 style="margin: 10px auto 0">SCORE: {{$store.state.score}}</h3>
         </Slide>
-        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"
-                v-on:touchstart="setCanvasClick($event)" style="z-index: 10;">
-            <!--            v-on:click.right="changeTrajectory($event)"-->
+        <!--        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"-->
+        <!--                v-on:touchstart="setCanvasTouch($event)" style="z-index: 10;">-->
+        <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
+                v-on:mousedown="setCanvasClick($event)" style="z-index: 10;"
+                v-on:click.right="changeTrajectory($event)">
             <bug v-for="(value, index) in bugsProps"
                  :key="index"
                  :x0="value.x"
                  :y0="value.y"
                  :radius="value.radius"
                  :bugType="value.bugType"
+                 :timeInEdge="value.timeInEdge"
                  ref="bugChild">
             </bug>
         </canvas>
@@ -49,7 +75,18 @@
       return {
         bugsProps: [],
         bugType: 'cockroach',
-        numOfBugs: 1
+        numOfBugs: 1,
+        timeBetweenTrial: 2000,
+        bloodDuration: 2000,
+        timeInEdge: 2000,
+        radiusRange: {
+          min: 140,
+          max: 160
+        },
+        canvasParams: {
+          width: window.innerWidth - 20,
+          height: Math.round(window.innerHeight / 1.5)
+        }
       }
     },
     mounted() {
@@ -63,18 +100,18 @@
       })
     },
     mqtt: {
-      'event/command/hide_bugs' (data) {
+      'event/command/hide_bugs'(data) {
         this.numOfBugs = 0
         this.initBoard()
       },
-      'event/command/init_bugs' (numOfBugs) {
+      'event/command/init_bugs'(numOfBugs) {
         numOfBugs = Number(numOfBugs) ? Number(numOfBugs) : 1
         this.numOfBugs = numOfBugs
         this.initBoard()
       }
     },
     computed: {
-      ...mapState(['timeBetweenTrial', 'bloodDuration', 'canvasParams', 'radiusRange', 'bugTypeOptions'])
+      ...mapState(['bugTypeOptions'])
     },
     methods: {
       initBoard() {
@@ -98,30 +135,38 @@
           cancelAnimationFrame(this.animationHandler)
         }
       },
-      setCanvasClick(event) {
+      setCanvasTouch(event) {
         for (let touch of event.touches) {
-          this.handleTouchEvent(touch)
+          this.handleTouchEvent(touch.screenX, touch.screenY)
         }
       },
-      handleTouchEvent(touch) {
-        let x = touch.screenX
-        let y = touch.screenY
+      setCanvasClick(event) {
+        this.handleTouchEvent(event.x, event.y)
+      },
+      handleTouchEvent(x, y) {
         x -= this.canvas.offsetLeft
         y -= this.canvas.offsetTop
         console.log(x, y)
 
         for (let i = 0; i < this.$refs.bugChild.length; i++) {
+          this.$mqtt.publish('event/log/touch', JSON.stringify({
+            x: x,
+            y: y,
+            bug_x: this.$refs.bugChild[i].x,
+            bug_y: this.$refs.bugChild[i].y
+          }))
           if (distance(x, y, this.$refs.bugChild[i].x, this.$refs.bugChild[i].y) <= this.$refs.bugChild[i].radius / 1.5) {
-            this.destruct(i)
+            this.destruct(i, x, y)
           }
         }
       },
-      destruct(bugIndex) {
+      destruct(bugIndex, x, y) {
         if (this.$refs.bugChild[bugIndex].isDead) {
           return
         }
         this.$refs.bugChild[bugIndex].isDead = true
         this.$store.commit('increment')
+        this.$mqtt.publish('event/log/hit', JSON.stringify({x: x, y: y}))
         const bloodTimeout = setTimeout(() => {
           this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
           if (this.$refs.bugChild.length === 0) {
@@ -144,7 +189,8 @@
             y: y,
             radius: radius,
             bugType: this.bugType,
-            bugId: `${this.bugType}${i}`
+            bugId: `${this.bugType}${i}`,
+            timeInEdge: this.timeInEdge
           }
 
           if (i !== 0) {
@@ -175,6 +221,8 @@
         /*margin: 20px auto 0;*/
         display: block;
         background: #e8eaf6;
+        position: absolute;
+        bottom: 10px;
     }
 
 </style>

@@ -1,0 +1,9 @@
+FROM python:3.6
+
+RUN mkdir /logger
+WORKDIR /logger
+
+COPY ./requirements/arena.txt .
+COPY ./Arena .
+
+RUN pip install -r arena.txt
