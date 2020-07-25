@@ -1,5 +1,7 @@
-from flask_caching import Cache
+import redis
 from enum import Enum
+
+REDIS_HOST = 'redis'
 
 
 class CacheColumns(Enum):
@@ -9,30 +11,24 @@ class CacheColumns(Enum):
     """
     EXPERIMENT_NAME = (str, 60 * 60)
     EXPERIMENT_PATH = (str, 60 * 60)
+    EXPERIMENT_TRIAL_PATH = (str, 60 * 60)
     STREAM_CAMERA = (str, 60)
     MANUAL_RECORD_STOP = (bool, 5)
 
 
-config = {
-    'CACHE_TYPE': 'redis',
-    'CACHE_REDIS_HOST': 'redis',
-}
+class RedisCache:
+    def __init__(self):
+        self._redis = redis.Redis(host=REDIS_HOST, port=6379, db=0)
 
+    def get(self, cache_column: Enum):
+        return self._redis.get(cache_column.name)
 
-class RedisCache(Cache):
-    def get(self, cache_column: Enum, *args, **kwargs):
-        return super().get(cache_column.name, *args, **kwargs)
-
-    def set(self, cache_column: Enum, value, *args, **kwargs):
+    def set(self, cache_column: Enum, value, timeout=None):
         assert isinstance(value, cache_column.value[0]), \
             f'Bad type for {cache_column.name}; received {type(value)} expected {cache_column.value[0]}'
-        if not kwargs.get('timeout') and cache_column.value:
-            kwargs['timeout'] = cache_column.value[1]
-        return super().set(cache_column.name, value, **kwargs)
+        if not timeout and cache_column.value:
+            timeout = cache_column.value[1]
+        return self._redis.set(cache_column.name, value, ex=timeout)
 
-    def delete(self, cache_column: Enum, *args, **kwargs):
-        return super().delete(cache_column.name, *args, **kwargs)
-
-
-def get_cache(app=None):
-    return RedisCache(app, config=config)
+    def delete(self, cache_column: Enum):
+        return self._redis.delete(cache_column.name)
