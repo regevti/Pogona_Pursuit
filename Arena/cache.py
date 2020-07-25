@@ -1,7 +1,7 @@
 import redis
 from enum import Enum
 
-REDIS_HOST = 'redis'
+REDIS_HOST = 'cache'
 
 
 class CacheColumns(Enum):
