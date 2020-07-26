@@ -34,6 +34,7 @@ class Experiment:
         mqtt_client.publish_command('hide_bugs')
         for i in range(self.num_trials):
             if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
+                print('experiment was stopped')
                 break
             self.current_trial = i + 1
             if i != 0:
