@@ -25,7 +25,8 @@ INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'Trig
 CAMERA_NAMES = {
     'realtime': '19506468',
     'right': '19506475',
-    'left': '19506455'
+    'left': '19506455',
+    'back': '19506481'
 }
 ACQUIRE_STOP_OPTIONS = {
     'num_frames': int,
