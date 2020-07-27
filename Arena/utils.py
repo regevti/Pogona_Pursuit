@@ -20,6 +20,8 @@ def get_logger(device_id: str, dir_path: str, log_stream=None) -> logging.Logger
     logger = logging.getLogger(device_id)
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter(f'%(asctime)s - %(levelname)s - <CAM:{device_id: >8}> - %(message)s')
+    if logger.hasHandlers():
+        logger.handlers.clear()
 
     if dir_path:
         fh = logging.FileHandler(f'{dir_path}/output.log')

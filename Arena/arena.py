@@ -63,7 +63,7 @@ class SpinCamera:
     def __del__(self):
         self.cam.DeInit()
 
-    def get_max_throuput(self):
+    def get_max_throughput(self):
         try:
             max_throughput = int(self.cam.DeviceMaxThroughput.GetValue())
         except Exception as exc:
@@ -83,7 +83,7 @@ class SpinCamera:
             self.cam.LineSelector.SetValue(PySpin.LineSelector_Line1)
             self.cam.LineMode.SetValue(PySpin.LineMode_Input)
             self.cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
-            self.cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throuput())
+            self.cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput())
             self.cam.ExposureTime.SetValue(exposure)
             self.logger.info(f'Finished Configuration')
             self.log_info()
@@ -104,7 +104,10 @@ class SpinCamera:
                         self.logger.info('Acquisition Started')
 
                     if image_result.IsIncomplete():  # Ensure image completion
-                        self.logger.warning(f'Image incomplete with image status {image_result.GetImageStatus()}')
+                        sts = image_result.GetImageStatus()
+                        self.logger.warning(f'Image incomplete with image status {sts}')
+                        if sts == 9:
+                            break
                     else:
                         frame_times.append(time.time())
                         self.image_handler(image_result)
