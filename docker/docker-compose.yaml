@@ -25,6 +25,8 @@ services:
       dockerfile: ./docker/Dockerfile-app
     container_name: pogona_hunter
     restart: always
+    volumes:
+    - ../pogona_hunter:/app
     ports:
      - 8080:8080
 
