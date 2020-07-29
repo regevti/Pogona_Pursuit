@@ -7,9 +7,9 @@
                     <div class="row">
                         <label for="bugType">Bug Type:</label>
                         <select id="bugType" v-model="bugType">
-                            <option v-for="option in bugTypeOptions" v-bind:value="option.value"
-                                    v-bind:key="option.value">
-                                {{ option.text }}
+                            <option v-for="option in Object.keys(bugTypeOptions)" v-bind:value="option"
+                                    v-bind:key="option">
+                                {{ bugTypeOptions[option].text }}
                             </option>
                         </select>
                     </div>
@@ -36,8 +36,10 @@
                     </div>
                     <div class="row">
                         <label for="radius-min">Radius Range: </label>
-                        <input v-model.number="radiusRange.min" id="radius-min" type="number" style="width: 3em">
-                        <input v-model.number="radiusRange.max" id="radius-max" type="number" style="width: 3em">
+                        <input v-model.number="currentBugOptions.radiusRange.min" id="radius-min" type="number"
+                               style="width: 3em">
+                        <input v-model.number="currentBugOptions.radiusRange.max" id="radius-max" type="number"
+                               style="width: 3em">
                     </div>
                     <h3 style="margin-top: 3em">SCORE: {{$store.state.score}}</h3>
                     <p>Written by Reggev Eyal</p>
@@ -56,6 +58,9 @@
                  :radius="value.radius"
                  :bugType="value.bugType"
                  :timeInEdge="value.timeInEdge"
+                 :speedRange="value.speedRange"
+                 :numImagesPerBug="value.numImagesPerBug"
+                 :isStatic="value.isStatic"
                  ref="bugChild">
             </bug>
         </canvas>
@@ -65,7 +70,6 @@
 <script>
   import bug from './bug'
   import {distance, randomRange} from '@/js/helpers'
-  import {mapState} from 'vuex'
   import {Slide} from 'vue-burger-menu'
 
   export default {
@@ -74,15 +78,12 @@
     data() {
       return {
         bugsProps: [],
+        bugTypeOptions: require('@/store/bugs.json'),
         bugType: 'cockroach',
         numOfBugs: 1,
         timeBetweenTrial: 2000,
         bloodDuration: 2000,
         timeInEdge: 2000,
-        radiusRange: {
-          min: 140,
-          max: 160
-        },
         canvasParams: {
           width: window.innerWidth - 20,
           height: Math.round(window.innerHeight / 1.5)
@@ -111,7 +112,9 @@
       }
     },
     computed: {
-      ...mapState(['bugTypeOptions'])
+      currentBugOptions: function () {
+        return this.bugTypeOptions[this.bugType]
+      }
     },
     methods: {
       initBoard() {
@@ -180,7 +183,7 @@
         }, this.bloodDuration)
       },
       spawnBugs(noOfBugs) {
-        const radius = randomRange(this.radiusRange.min, this.radiusRange.max)
+        const radius = randomRange(this.currentBugOptions.radiusRange.min, this.currentBugOptions.radiusRange.max)
         for (let i = 0; i < noOfBugs; i++) {
           let x = randomRange(radius, this.canvas.width - radius)
           let y = randomRange(radius, this.canvas.height - radius)
@@ -190,7 +193,10 @@
             radius: radius,
             bugType: this.bugType,
             bugId: `${this.bugType}${i}`,
-            timeInEdge: this.timeInEdge
+            timeInEdge: this.timeInEdge,
+            speedRange: this.currentBugOptions.speedRange,
+            numImagesPerBug: this.currentBugOptions.numImagesPerBug,
+            isStatic: this.currentBugOptions.isStatic
           }
 
           if (i !== 0) {

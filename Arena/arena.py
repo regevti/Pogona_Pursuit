@@ -77,7 +77,8 @@ class SpinCamera:
     def configure_camera(self, exposure):
         """Configure camera for trigger mode before acquisition"""
         try:
-            self.cam.AcquisitionFrameRateEnable.SetValue(True)
+            self.cam.AcquisitionFrameRateEnable.SetValue(False)
+            # self.cam.AcquisitionFrameRate.SetValue(60)
             self.cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
             self.cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
             self.cam.TriggerMode.SetValue(PySpin.TriggerMode_On)

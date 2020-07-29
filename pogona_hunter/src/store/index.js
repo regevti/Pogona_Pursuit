@@ -8,7 +8,7 @@ export default new Vuex.Store({
     score: 0,
     bugTypeOptions: [
       {text: 'Cockroach', value: 'cockroach'},
-      {text: 'Cricket', value: 'cricket'}
+      {text: 'Worm', value: 'worm'}
     ],
     numImagesPerBug: 3,
     speedRange: {

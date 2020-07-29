@@ -1,4 +1,7 @@
 export function randomRange (min, max) {
+	if (min === 0 && max === 0) {
+		return 0
+	}
 	while (true) {
 		let randomNum = Math.floor(Math.random() * (max - min) + min)
 		if (randomNum !== 0)
