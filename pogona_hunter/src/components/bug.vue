@@ -4,7 +4,6 @@
 
 <script>
   import {distance, randomRange} from '@/js/helpers'
-  import {mapState} from 'vuex'
 
   export default {
     name: 'bug',
@@ -20,11 +19,12 @@
       y0: Number,
       radius: Number,
       bugType: String,
-      timeInEdge: Number
+      timeInEdge: Number,
+      speedRange: Object,
+      numImagesPerBug: Number,
+      isStatic: Boolean
     },
-    computed: {
-      ...mapState(['numImagesPerBug', 'speedRange'])
-    },
+    computed: {},
     mounted() {
       this.canvas = this.$parent.canvas
       this.ctx = this.canvas.getContext('2d')
@@ -53,7 +53,7 @@
         this.step = 0
       },
       move(particles) {
-        if (this.isDead) {
+        if (this.isDead || this.isStatic) {
           this.draw()
           return
         }
