@@ -14,6 +14,15 @@
                         </select>
                     </div>
                     <div class="row">
+                        <label for="movementType">Movement Type:</label>
+                        <select id="movementType" v-model="movementType">
+                            <option v-for="option in movementTypeOptions" v-bind:value="option"
+                                    v-bind:key="option">
+                                {{ option }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="row">
                         <label for="numOfBugs">Number of Bugs: </label>
                         <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
                     </div>
@@ -41,6 +50,11 @@
                         <input v-model.number="currentBugOptions.radiusRange.max" id="radius-max" type="number"
                                style="width: 3em">
                     </div>
+                    <div class="row">
+                        <label for="speed">Speed: </label>
+                        <input v-model.number="currentBugOptions.speed" id="speed" type="number"
+                               style="width: 3em">
+                    </div>
                     <h3 style="margin-top: 3em">SCORE: {{$store.state.score}}</h3>
                     <p>Written by Reggev Eyal</p>
                 </form>
@@ -56,11 +70,12 @@
                  :x0="value.x"
                  :y0="value.y"
                  :radius="value.radius"
-                 :bugType="value.bugType"
-                 :timeInEdge="value.timeInEdge"
-                 :speedRange="value.speedRange"
-                 :numImagesPerBug="value.numImagesPerBug"
-                 :isStatic="value.isStatic"
+                 :bugType="bugType"
+                 :timeInEdge="timeInEdge"
+                 :speed="currentBugOptions.speed"
+                 :numImagesPerBug="currentBugOptions.numImagesPerBug"
+                 :isStatic="currentBugOptions.isStatic"
+                 :movementType="movementType"
                  ref="bugChild">
             </bug>
         </canvas>
@@ -80,6 +95,8 @@
         bugsProps: [],
         bugTypeOptions: require('@/store/bugs.json'),
         bugType: 'cockroach',
+        movementTypeOptions: ['line', 'circle'],
+        movementType: 'line',
         numOfBugs: 1,
         timeBetweenTrial: 2000,
         bloodDuration: 2000,
@@ -108,6 +125,10 @@
       'event/command/init_bugs'(numOfBugs) {
         numOfBugs = Number(numOfBugs) ? Number(numOfBugs) : 1
         this.numOfBugs = numOfBugs
+        this.initBoard()
+      },
+      'event/command/bug_speed'(speed) {
+        this.speed = Number(speed)
         this.initBoard()
       }
     },
@@ -191,12 +212,7 @@
             x: x,
             y: y,
             radius: radius,
-            bugType: this.bugType,
-            bugId: `${this.bugType}${i}`,
-            timeInEdge: this.timeInEdge,
-            speedRange: this.currentBugOptions.speedRange,
-            numImagesPerBug: this.currentBugOptions.numImagesPerBug,
-            isStatic: this.currentBugOptions.isStatic
+            bugId: `${this.bugType}${i}`
           }
 
           if (i !== 0) {

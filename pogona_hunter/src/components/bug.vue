@@ -3,7 +3,7 @@
 </template>
 
 <script>
-  import {distance, randomRange} from '@/js/helpers'
+  import {distance, plusOrMinus} from '@/js/helpers'
 
   export default {
     name: 'bug',
@@ -20,11 +20,16 @@
       radius: Number,
       bugType: String,
       timeInEdge: Number,
-      speedRange: Object,
+      speed: Number,
       numImagesPerBug: Number,
-      isStatic: Boolean
+      isStatic: Boolean,
+      movementType: String
     },
-    computed: {},
+    computed: {
+      isMoveInCircles: function () {
+        return this.movementType === 'circle'
+      }
+    },
     mounted() {
       this.canvas = this.$parent.canvas
       this.ctx = this.canvas.getContext('2d')
@@ -32,8 +37,8 @@
       this.stepsPerImage = 10
       this.isOutEdged = false
       this.isDead = false
-      this.dx = randomRange(this.speedRange.min, this.speedRange.max)
-      this.dy = randomRange(this.speedRange.min, this.speedRange.max)
+      this.dx = plusOrMinus() * this.speed
+      this.dy = plusOrMinus() * this.speed
       this.initBug(this.x0, this.y0, this.dx, this.dy)
     },
     methods: {
@@ -46,11 +51,17 @@
         return img
       },
       initBug(x, y, dx, dy) {
+        if (this.isMoveInCircles) {
+          this.x0 = this.canvas.width / 2
+          this.y0 = this.canvas.height / 2
+          this.r = Math.min(this.x0, this.y0) - this.y0 / 10
+        }
         this.x = x
         this.y = y
         this.dx = dx
         this.dy = dy
         this.step = 0
+        this.theta = 0
       },
       move(particles) {
         if (this.isDead || this.isStatic) {
@@ -58,8 +69,15 @@
           return
         }
         this.edgeDetection()
-        this.x += this.dx
-        this.y += this.dy
+        if (this.isMoveInCircles) {
+          this.theta += Math.abs(this.dx) / 100
+          this.x = this.x0 + this.r * Math.cos(this.theta)
+          this.y = this.y0 + this.r * Math.sin(this.theta)
+        } else {
+          // move in straight lines
+          this.x += this.dx
+          this.y += this.dy
+        }
         this.draw()
 
         for (let i = 0; i < particles.length; i++) {
@@ -146,6 +164,9 @@
         }
       },
       getAngleRadians() {
+        if (this.isMoveInCircles) {
+          return Math.atan2(this.y - this.y0, this.x - this.x0) + Math.PI
+        }
         return Math.atan2(this.dy, this.dx) + Math.PI / 2
       },
       collisionEffect(otherBug) {

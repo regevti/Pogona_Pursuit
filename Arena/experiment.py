@@ -9,7 +9,8 @@ EXPERIMENTS_DIR = 'experiments'
 
 
 class Experiment:
-    def __init__(self, name: str, animal_id: str, cache: RedisCache, cameras, trial_duration=60, num_trials=1, iti=10):
+    def __init__(self, name: str, animal_id: str, cache: RedisCache, cameras, trial_duration=60, num_trials=1, iti=10,
+                 bug_type=None, bug_speed=None):
         self.experiment_name = f'{name}_{get_datetime_string()}'
         self.animal_id = animal_id
         self.cache = cache
@@ -18,11 +19,14 @@ class Experiment:
         self.iti = iti
         self.current_trial = 1
         self.cameras = cameras
+        self.bug_type = bug_type
+        self.bug_speed = bug_speed
         self.start()
 
     def __str__(self):
         output = ''
-        for obj in ['experiment_name', 'animal_id', 'num_trials', 'cameras', 'trial_duration', 'iti']:
+        for obj in ['experiment_name', 'animal_id', 'num_trials', 'cameras', 'trial_duration', 'iti',
+                    'bug_type', 'bug_speed']:
             output += f'{obj}: {getattr(self, obj)}\n'
         return output
 
@@ -32,6 +36,10 @@ class Experiment:
         self.cache.set(CacheColumns.EXPERIMENT_NAME, self.experiment_name, timeout=self.experiment_duration)
         self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
         mqtt_client.publish_command('hide_bugs')
+        if self.bug_type:
+            mqtt_client.publish_command('bug_type', self.bug_type)
+        if self.bug_speed:
+            mqtt_client.publish_command('bug_speed', self.bug_speed)
         for i in range(self.num_trials):
             if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
                 print('experiment was stopped')

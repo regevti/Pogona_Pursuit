@@ -2,10 +2,7 @@
   "cockroach": {
     "text": "Cockroach",
     "numImagesPerBug": 3,
-    "speedRange": {
-      "min": -2,
-      "max": 2
-    },
+    "speed": 3,
     "radiusRange": {
       "min": 140,
       "max": 160
@@ -15,10 +12,7 @@
     "text": "Worm",
     "value": "worm",
     "numImagesPerBug": 5,
-    "speedRange": {
-      "min": -1,
-      "max": 1
-    },
+    "speed": 1,
     "radiusRange": {
       "min": 220,
       "max": 240
@@ -29,10 +23,7 @@
     "value": "vegetables",
     "numImagesPerBug": 2,
     "isStatic": true,
-    "speedRange": {
-      "min": -1,
-      "max": 1
-    },
+    "speed": 1,
     "radiusRange": {
       "min": 250,
       "max": 300
