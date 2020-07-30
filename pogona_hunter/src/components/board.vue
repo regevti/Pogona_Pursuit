@@ -130,6 +130,12 @@
       'event/command/bug_speed'(speed) {
         this.speed = Number(speed)
         this.initBoard()
+      },
+      'event/command/bug_type'(bugType) {
+        if (Object.values(this.bugTypeOptions).indexOf(bugType) !== -1) {
+          this.bugType = bugType
+          this.initBoard()
+        }
       }
     },
     computed: {
