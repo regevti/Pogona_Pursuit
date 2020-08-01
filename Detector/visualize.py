@@ -183,7 +183,7 @@ def draw_k_arrows(frame,frameCounter,centroids,arrowWindow,visAngle,windowSize,s
         draw_arrow(frame,frameCounter-k,centroids,arrowWindow,k,visAngle,windowSize,scale)
 
 
-def draw_k_centroids(frame,frameCounter,centroids,k):
+def draw_k_centroids(frame,frameCounter,centroids,k,color=(0,0,255)):
     if k > frameCounter:
         k = frameCounter-1
     
@@ -195,7 +195,7 @@ def draw_k_centroids(frame,frameCounter,centroids,k):
         cv.circle(frame,
                   center = (x,y),
                   radius=2,
-                  color= (0,0,255),
+                  color= color,
                   thickness=-1,
                   lineType=cv.LINE_AA)
 
@@ -391,6 +391,8 @@ def plot_with_figure(input_name,
                      output_name,
                      centroids,
                      num_frames,
+                     with_figure=True,
+                     filtered_centroids=None,
                      width=1440,
                      height=1080,
                      draw_window=240,
@@ -427,9 +429,15 @@ def plot_with_figure(input_name,
         
         draw_k_centroids(frame,frameCounter,centroids,draw_window)
         
-        draw_figure_on_frame(write_frame,frame,frameCounter,velocities_mag,confies,num_frames)
+        if filtered_centroids is not None:
+            draw_k_centroids(frame,frameCounter,filtered_centroids,draw_window,color=(255,0,0))
         
-        videowriter.write(write_frame)
+        if with_figure:
+            draw_figure_on_frame(write_frame,frame,frameCounter,velocities_mag,confies,num_frames)
+            videowriter.write(write_frame)
+        else:
+            videowriter.write(frame)
+        
     
     videowriter.release()
 
@@ -785,3 +793,84 @@ def plot_image(detections, img, detector, output_path=None):
     if output_path is not None:
         plt.savefig(output_path)
     plt.show()
+
+    
+    
+    
+def stats_update_frames_data(detections, frames_data, frameCounter):
+    """
+    update the frames data array
+    Possible bug (also for update_centroids): if first frame with multiple detections
+    fix: add "if frameCounter==1 and detections.shape[0]>1" and take the first.
+    it will correct itself even if it's the wrong one
+    """
+    if detections.shape[0] > 1 and frameCounter > 1:
+        prev = frames_data[frameCounter - 1][:2]
+        detected_centroids = calc_centroid(detections)
+        deltas = prev - detected_centroids
+        dists = np.linalg.norm(deltas, axis=1)
+        arg_best = np.argmin(dists)
+        centroid = detected_centroids[arg_best]
+        detection = detections[arg_best:arg_best+1]
+    else:
+        centroid = calc_centroid(detections)[0]
+        detection = detections
+        
+    # frames_data: centroid x,centroid y, left x, top y, right x, bottom y, confidence, num_boxes
+    # detections: Each row is x, y, w, h (top-left corner)
+
+    frames_data[frameCounter][0] = centroid[0]
+    frames_data[frameCounter][1] = centroid[1]
+    frames_data[frameCounter][2] = detection[0][0]
+    frames_data[frameCounter][3] = detection[0][1]
+    frames_data[frameCounter][4] = detection[0][0] + detection[0][2]
+    frames_data[frameCounter][5] = detection[0][1] + detection[0][3]
+    frames_data[frameCounter][6] = detection[0][4]
+
+
+def stats_save_frames_data(video_path,
+                    detector,
+                    start_frame=0,
+                    num_frames=None,
+                    frame_rate=None):
+    vcap = cv.VideoCapture(video_path)
+
+    if start_frame != 0:
+        vcap.set(cv.CAP_PROP_POS_FRAMES, start_frame)
+
+    if num_frames is None:
+        num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT)) - start_frame
+
+    width = int(vcap.get(3))
+    height = int(vcap.get(4))
+    detector.set_input_size(width, height)
+
+    if frame_rate is None:
+        frame_rate = vcap.get(cv.CAP_PROP_FPS)
+
+    frameCounter = 0
+    
+    # frames_data: centroid x,centroid y, left x, top y, right x, bottom y, confidence, num_boxes
+    frames_data = np.empty((num_frames,8))
+    frames_data[:] = np.nan
+    
+    print(f'analysing {video_path}, num_frames {num_frames}')
+    
+    for frameCounter in tqdm(range(num_frames)):
+        ret, frame = vcap.read()
+
+        if not ret:
+            print("error reading frame")
+            break
+                
+        detections = detector.detect_image(frame)
+               
+        if detections is not None:
+            stats_update_frames_data(detections,frames_data,frameCounter)
+            frames_data[frameCounter][7] = detections.shape[0]
+        else:
+            frames_data[frameCounter][7] = 0
+
+    vcap.release()
+
+    return frames_data

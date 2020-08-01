@@ -16,3 +16,4 @@ __pycache__/
 *.npy
 *new_frames*
 test_images/
+stats/
