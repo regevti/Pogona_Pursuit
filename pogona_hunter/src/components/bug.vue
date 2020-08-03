@@ -52,8 +52,7 @@
       },
       initBug(x, y, dx, dy) {
         if (this.isMoveInCircles) {
-          this.x0 = this.canvas.width / 2
-          this.y0 = this.canvas.height / 2
+          this.r0 = [this.canvas.width / 2, this.canvas.height / 2]
           this.r = Math.min(this.x0, this.y0) - this.y0 / 10
         }
         this.x = x
@@ -71,8 +70,8 @@
         this.edgeDetection()
         if (this.isMoveInCircles) {
           this.theta += Math.abs(this.dx) / 100
-          this.x = this.x0 + this.r * Math.cos(this.theta)
-          this.y = this.y0 + this.r * Math.sin(this.theta)
+          this.x = this.r0[0] + this.r * Math.cos(this.theta)
+          this.y = this.r0[1] + this.r * Math.sin(this.theta)
         } else {
           // move in straight lines
           this.x += this.dx
@@ -165,7 +164,7 @@
       },
       getAngleRadians() {
         if (this.isMoveInCircles) {
-          return Math.atan2(this.y - this.y0, this.x - this.x0) + Math.PI
+          return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + Math.PI
         }
         return Math.atan2(this.dy, this.dx) + Math.PI / 2
       },
