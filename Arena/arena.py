@@ -181,10 +181,9 @@ class SpinCamera:
             st += f'{k}: {v}\n'
         self.logger.info(st)
 
-    @staticmethod
     def save_frames_timestamps(self, frame_times):
         """Save frames timestamps to csv file"""
-        pd.to_datetime(pd.Series(frame_times), unit='s')
+        pd.to_datetime(pd.Series(frame_times), unit='s').to_csv(self.timestamp_path)
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
