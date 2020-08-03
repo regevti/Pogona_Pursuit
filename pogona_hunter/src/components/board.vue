@@ -97,7 +97,7 @@
         bugType: 'cockroach',
         movementTypeOptions: require('@/config.json')['movementTypes'],
         movementType: 'line',
-        numOfBugs: 1,
+        numOfBugs: 0,
         timeBetweenTrial: 2000,
         bloodDuration: 2000,
         timeInEdge: 2000,
