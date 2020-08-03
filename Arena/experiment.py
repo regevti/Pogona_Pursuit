@@ -3,6 +3,7 @@ from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTClient
 import time
+import json
 
 mqtt_client = MQTTClient()
 EXPERIMENTS_DIR = 'experiments'
@@ -10,7 +11,7 @@ EXPERIMENTS_DIR = 'experiments'
 
 class Experiment:
     def __init__(self, name: str, animal_id: str, cache: RedisCache, cameras, trial_duration=60, num_trials=1, iti=10,
-                 bug_type=None, bug_speed=None):
+                 bug_type=None, bug_speed=None, movement_type=None):
         self.experiment_name = f'{name}_{get_datetime_string()}'
         self.animal_id = animal_id
         self.cache = cache
@@ -21,12 +22,13 @@ class Experiment:
         self.cameras = cameras
         self.bug_type = bug_type
         self.bug_speed = bug_speed
+        self.movement_type = movement_type
         self.start()
 
     def __str__(self):
         output = ''
         for obj in ['experiment_name', 'animal_id', 'num_trials', 'cameras', 'trial_duration', 'iti',
-                    'bug_type', 'bug_speed']:
+                    'bug_type', 'bug_speed', 'movement_type']:
             output += f'{obj}: {getattr(self, obj)}\n'
         return output
 
@@ -36,10 +38,6 @@ class Experiment:
         self.cache.set(CacheColumns.EXPERIMENT_NAME, self.experiment_name, timeout=self.experiment_duration)
         self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
         mqtt_client.publish_command('hide_bugs')
-        if self.bug_type:
-            mqtt_client.publish_command('bug_type', self.bug_type)
-        if self.bug_speed:
-            mqtt_client.publish_command('bug_speed', self.bug_speed)
         for i in range(self.num_trials):
             if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
                 print('experiment was stopped')
@@ -52,7 +50,7 @@ class Experiment:
 
     def run_trial(self):
         mkdir(self.trial_path)
-        mqtt_client.publish_command('init_bugs', 1)
+        mqtt_client.publish_command('init_bugs', self.bug_options)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration)
         record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration,
                cache=self.cache)
@@ -65,6 +63,15 @@ class Experiment:
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:
             f.write(str(self))
+
+    @property
+    def bug_options(self):
+        return json.dumps({
+            'numOfBugs': 1,
+            'speed': self.bug_speed,
+            'bugType': self.bug_type,
+            'movementType': self.movement_type
+        })
 
     @property
     def experiment_duration(self):

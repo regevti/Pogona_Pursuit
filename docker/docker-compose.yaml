@@ -9,6 +9,7 @@ services:
     privileged: true
     volumes:
     - ../Arena:/arena
+    - ../pogona_hunter:/pogona_hunter
     restart: always
     command: "flask run --host=0.0.0.0"
     ports:
@@ -56,6 +57,8 @@ services:
     image: redis
     container_name: cache
     restart: always
+    ports:
+    - 6379:6379
 
 #  rabbitmq:
 #    image: rabbitmq:3-management

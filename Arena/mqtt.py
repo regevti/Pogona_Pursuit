@@ -1,4 +1,5 @@
 import re
+import os
 import json
 import pandas as pd
 from pathlib import Path
@@ -6,7 +7,7 @@ from datetime import datetime
 from cache import CacheColumns, RedisCache
 import paho.mqtt.client as mqtt
 
-HOST = 'mqtt'
+HOST = os.environ.get('MQTT_HOST', 'mqtt')
 SUBSCRIPTION_TOPICS = {
     'event/log/touch': 'screen_touches.csv',
     'event/log/hit': 'hits.csv',

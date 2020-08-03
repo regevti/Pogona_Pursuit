@@ -1,5 +1,6 @@
 import redis
-REDIS_HOST = 'cache'
+import os
+REDIS_HOST = os.environ.get('REDIS_HOST', 'cache')
 
 
 class Column:

@@ -93,9 +93,9 @@
     data() {
       return {
         bugsProps: [],
-        bugTypeOptions: require('@/store/bugs.json'),
+        bugTypeOptions: require('@/config.json')['bugTypes'],
         bugType: 'cockroach',
-        movementTypeOptions: ['line', 'circle'],
+        movementTypeOptions: require('@/config.json')['movementTypes'],
         movementType: 'line',
         numOfBugs: 1,
         timeBetweenTrial: 2000,
@@ -122,20 +122,14 @@
         this.numOfBugs = 0
         this.initBoard()
       },
-      'event/command/init_bugs'(numOfBugs) {
-        numOfBugs = Number(numOfBugs) ? Number(numOfBugs) : 1
-        this.numOfBugs = numOfBugs
+      'event/command/init_bugs'(options) {
+        options = JSON.parse(options)
+        console.log(options)
+        this.numOfBugs = Number(options.numOfBugs) ? Number(options.numOfBugs) : 1
+        this.speed = options.speed ? Number(options.speed) : this.speed
+        this.bugType = options.bugType ? options.bugType : this.bugType
+        this.movementType = options.movementType ? options.movementType : this.movementType
         this.initBoard()
-      },
-      'event/command/bug_speed'(speed) {
-        this.speed = Number(speed)
-        this.initBoard()
-      },
-      'event/command/bug_type'(bugType) {
-        if (Object.values(this.bugTypeOptions).indexOf(bugType) !== -1) {
-          this.bugType = bugType
-          this.initBoard()
-        }
       }
     },
     computed: {

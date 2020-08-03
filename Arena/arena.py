@@ -125,6 +125,7 @@ class SpinCamera:
 
             self.logger.info(f'Number of frames taken: {i}')
             self.logger.info(f'Calculated FPS: {calculate_fps(frame_times)}')
+            self.save_frames_timestamps(frame_times)
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
@@ -180,6 +181,9 @@ class SpinCamera:
             st += f'{k}: {v}\n'
         self.logger.info(st)
 
+    def save_frames_timestamps(self, frame_times):
+        pd.to_datetime(pd.Series(frame_times), unit='s')
+
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
         nan = 'x'
@@ -211,6 +215,11 @@ class SpinCamera:
     @property
     def video_path(self):
         return f'{self.dir_path}/{self.device_id}.avi'
+
+    @property
+    def timestamp_path(self):
+        mkdir(f'{self.dir_path}/timestamps')
+        return f'{self.dir_path}/timestamps/{self.device_id}.csv'
 
     @property
     def device_id(self):

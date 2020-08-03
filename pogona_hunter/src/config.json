@@ -1,0 +1,36 @@
+{
+  "bugTypes": {
+    "cockroach": {
+      "text": "Cockroach",
+      "numImagesPerBug": 3,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      }
+    },
+    "worm": {
+      "text": "Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 240
+      }
+    },
+    "vegetables": {
+      "text": "Vegetables",
+      "numImagesPerBug": 2,
+      "isStatic": true,
+      "speed": 1,
+      "radiusRange": {
+        "min": 250,
+        "max": 300
+      }
+    }
+  },
+  "movementTypes": [
+    "circle",
+    "line"
+  ]
+}
