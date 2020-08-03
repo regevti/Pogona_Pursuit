@@ -53,7 +53,7 @@
       initBug(x, y, dx, dy) {
         if (this.isMoveInCircles) {
           this.r0 = [this.canvas.width / 2, this.canvas.height / 2]
-          this.r = Math.min(this.x0, this.y0) - this.y0 / 10
+          this.r = Math.min(this.canvas.width / 2, this.canvas.height / 2) - this.canvas.height / 10
         }
         this.x = x
         this.y = y
