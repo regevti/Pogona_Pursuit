@@ -26,7 +26,7 @@ CAMERA_NAMES = {
     'realtime': '19506468',
     'right': '19506475',
     'left': '19506455',
-    'back': '19506481'
+    # 'back': '19506481'
 }
 ACQUIRE_STOP_OPTIONS = {
     'num_frames': int,
@@ -127,7 +127,7 @@ class SpinCamera:
 
             self.logger.info(f'Number of frames taken: {i}')
             mean_fps, std_fps = calculate_fps(frame_times)
-            self.logger.info(f'Calculated FPS: {mean_fps} ± {std_fps}')
+            self.logger.info(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
             self.save_frames_timestamps(frame_times)
 
         self.cam.EndAcquisition()  # End acquisition
@@ -179,7 +179,7 @@ class SpinCamera:
 
     def log_info(self):
         """Print into logger the info of the camera"""
-        st = ''
+        st = '\n'
         for k, v in zip(INFO_FIELDS, self.info()):
             st += f'{k}: {v}\n'
         self.logger.info(st)
