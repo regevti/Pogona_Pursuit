@@ -124,7 +124,8 @@ class SpinCamera:
                     i += 1
 
             self.logger.info(f'Number of frames taken: {i}')
-            self.logger.info(f'Calculated FPS: {calculate_fps(frame_times)}')
+            mean_fps, std_fps = calculate_fps(frame_times)
+            self.logger.info(f'Calculated FPS: {mean_fps} ± {std_fps}')
             self.save_frames_timestamps(frame_times)
 
         self.cam.EndAcquisition()  # End acquisition

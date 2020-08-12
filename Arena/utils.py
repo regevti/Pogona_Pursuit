@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from numpy import mean
+import numpy as np
 from io import StringIO
 from datetime import datetime
 
@@ -45,7 +45,7 @@ def get_logger(device_id: str, dir_path: str, log_stream=None) -> logging.Logger
 
 def calculate_fps(frame_times):
     diffs = [j - i for i, j in zip(frame_times[:-1], frame_times[1:])]
-    return 1 / mean(diffs)
+    return 1 / np.mean(diffs), 1 / np.std(diffs)
 
 
 def mkdir(path):
