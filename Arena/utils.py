@@ -46,7 +46,7 @@ def get_logger(device_id: str, dir_path: str, log_stream=None) -> logging.Logger
 def calculate_fps(frame_times):
     diffs = [j - i for i, j in zip(frame_times[:-1], frame_times[1:])]
     fps = 1 / np.mean(diffs)
-    std = fps - (1 / (np.mean(diffs) + np.std(diffs)))
+    std = fps - (1 / (np.mean(diffs) + np.std(diffs) / np.sqrt(len(diffs))))
     return fps, std
 
 
