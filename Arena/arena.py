@@ -109,6 +109,8 @@ class SpinCamera:
                         sts = image_result.GetImageStatus()
                         self.logger.warning(f'Image incomplete with image status {sts}')
                         if sts == 9:
+                            self.logger.warning(f'Breaking after status 9')
+                            image_result.Release()
                             break
                     else:
                         frame_times.append(time.time())
