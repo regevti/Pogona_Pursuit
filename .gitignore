@@ -17,3 +17,4 @@ __pycache__/
 *new_frames*
 test_images/
 stats/
+*.p

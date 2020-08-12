@@ -141,8 +141,8 @@ class Detector_v4:
     Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images
     """
     def __init__(self,
-                 cfg_path="Detector/Yolo4/yolo4_rgb.cfg",
-                 weights_path="Detector/Yolo4/yolo4_best_rgb.weights",
+                 cfg_path="Detector/Yolo4/yolo4_2306.cfg",
+                 weights_path="Detector/Yolo4/yolo4_gs_best_2306.weights",
                  meta_path="Detector/Yolo4/obj.data",
                  conf_thres=0.9,
                  nms_thres=0.6):
@@ -199,3 +199,36 @@ class Detector_v4:
             return None
         else:
             return res
+
+
+def xywh_to_centroid(xywh):
+    """
+    Return the centroids of a bbox array (1 or 2 dimensional).
+    xywh - bbox array in x, y, width, height.
+    """
+    if len(xywh.shape) == 1:
+        x, y, w, h = xywh[:4]
+        return np.array([x+w//2, y+h//2])
+
+    x1 = xywh[:, 0]
+    y1 = xywh[:, 1]
+    box_w = xywh[:, 2]
+    box_h = xywh[:, 3]
+
+    return np.stack([x1+(box_w//2), y1+(box_h//2)], axis=1)
+
+
+def nearest_detection(detections, prev_centroid):
+    """
+    Return the nearest detection to the previous centroid or the detection
+    if there's only one.
+    """
+    if detections.shape[0] > 1:
+        detected_centroids = xywh_to_centroid(detections)
+        deltas = prev_centroid - detected_centroids
+        dists = np.linalg.norm(deltas, axis=1)
+        arg_best = np.argmin(dists)
+        return detections[arg_best]
+    else:
+        return detections[0]
+
