@@ -275,6 +275,21 @@ def missed_frames_saver(detector, output_dir, prefix='frame', save_thresh=0.8,
 
     return fn
 
+def video_sampler(output_path, freq):
+    """
+    Save arbitrary frames at constant frequency from video to path
+    """
+   
+    if not os.path.exists(output_path):
+        os.mkdir(output_path)
+   
+    def fn(orig_frame, write_frame, width, height, frame_counter):
+        if frame_counter % freq == 0:
+            fname = os.path.join(output_path,'chkr_'+str(frame_counter)+'.jpg')
+            cv.imwrite(fname, orig_frame)
+    
+    return fn
+
 
 def offline_centroid_visualizer(centroids, color, window_size):
 

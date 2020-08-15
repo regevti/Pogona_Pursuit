@@ -1,7 +1,8 @@
 # Module responsible for real-time analysis and prediction of the pogona
 
-from Detector.detector import Detector_v4
 
+from Detector.detector import Detector_v4
+import undistort
 
 class Predictor:
     def __init__(self):

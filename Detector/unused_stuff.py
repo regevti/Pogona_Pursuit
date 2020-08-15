@@ -429,3 +429,53 @@ def plot_with_figure(input_name,
         
     videowriter.release()
 
+
+    
+    
+# analyze timings
+
+XLIM=40
+YLIM=40
+
+TOTAL_XLIM = 80
+TOTAL_YLIM = 80
+
+centros = centroids[:,:2]
+speed = visualize.compute_velocity(centros)
+
+confs = centroids[:,2]
+for k in times.keys():
+    print(k,": ",round(1/times[k].mean()))
+times['Total'] = np.sum(np.stack([times[k] for k in times.keys() if k!='Total'],axis=1),axis=1)
+print("Average FPS: ",round(1/times['Total'].mean()))
+
+
+
+phases = ['Rsz_inf','Read','Write'] # sorted order
+fig,axs = plt.subplots(len(phases)+1,2,figsize=(20,30))
+k='Total'
+axs[0][0].set_title(k+' Histogram')
+axs[0][1].set_title(k+' Time Plot')
+axs[0][0].hist(times[k]*1000,label=k,bins=100)
+axs[0][0].set_xlim(0,XLIM)
+axs[0][0].set_xlabel('Time (ms)')
+axs[0][1].set_xlabel('Frame number')
+axs[0][0].set_ylabel('Freq')
+axs[0][1].set_ylabel('Time (ms)')
+axs[0][1].scatter(np.arange(times[k].shape[0]),times[k]*1000)
+axs[0][1].set_ylim(0,YLIM)
+axs[0][0].plot(np.ones(5)*16.6,np.linspace(1,1000,5),color='r')
+axs[0][1].plot(np.linspace(1,3000,5),np.ones(5)*16.6,color='r')
+for i,k in enumerate(phases):
+    i+=1
+    axs[i][0].set_title(k+' Histogram')
+    axs[i][1].set_title(k+' Time Plot')
+    axs[i][0].hist(times[k]*1000,label=k,bins=100)
+    axs[i][0].set_xlim(0,XLIM)
+    axs[i][0].set_xlabel('Time (ms)')
+    axs[i][1].set_xlabel('Frame number')
+    axs[i][0].set_ylabel('Freq')
+    axs[i][1].set_ylabel('Time (ms)')
+    axs[i][1].scatter(np.arange(times[k].shape[0]),times[k]*1000)
+    axs[i][1].set_ylim(0,YLIM)
+#plt.savefig('timings.jpg')

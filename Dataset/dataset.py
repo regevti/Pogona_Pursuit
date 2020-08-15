@@ -344,7 +344,7 @@ def get_unified_df(all_exper,mult=False):
         all_df = all_df.set_index(keys=pd.MultiIndex.from_tuples(mult_tuples))
         all_df.drop(columns=['exper_name','trial'],inplace=True)
     
-    # additional corrections for the dataframe
+    # additional corrections and additions for the dataframe
     all_df.hit.replace(np.nan,False,inplace=True)
     all_df['touch_ts'] = pd.to_datetime(all_df['touch_ts'])
   
