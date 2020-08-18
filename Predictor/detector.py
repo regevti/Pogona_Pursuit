@@ -4,9 +4,10 @@ from ctypes import c_int, pointer
 import torch
 from torchvision import transforms
 from PIL import Image
-import Detector.Yolo4.darknet as darknet4
-from Detector.models import Darknet
-from utils.utils import load_classes, non_max_suppression
+from Predictor.Yolo3.utils.utils import load_classes, non_max_suppression
+
+import Predictor.Yolo4.darknet as darknet4
+from Predictor.models import Darknet
 
 
 
@@ -34,9 +35,9 @@ class Detector_v3(Detector):
     """
     
     def __init__(self,
-                 model_def="Detector/Yolo3/config/yolov3-custom.cfg",
-                 weights_path="Detector/Yolo3/weights/yolov3-pogonahead.pth",
-                 class_path="Detector/Yolo3/classes.names",
+                 model_def="Predictor/Yolo3/config/yolov3-custom.cfg",
+                 weights_path="Predictor/Yolo3/weights/yolov3-pogonahead.pth",
+                 class_path="Predictor/Yolo3/classes.names",
                  img_size=416,
                  conf_thres=0.9,
                  nms_thres=0.6):
@@ -141,9 +142,9 @@ class Detector_v4:
     Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images
     """
     def __init__(self,
-                 cfg_path="Detector/Yolo4/yolo4_2306.cfg",
-                 weights_path="Detector/Yolo4/yolo4_gs_best_2306.weights",
-                 meta_path="Detector/Yolo4/obj.data",
+                 cfg_path="Predictor/Yolo4/yolo4_2306.cfg",
+                 weights_path="Predictor/Yolo4/yolo4_gs_best_2306.weights",
+                 meta_path="Predictor/Yolo4/obj.data",
                  conf_thres=0.9,
                  nms_thres=0.6):
 

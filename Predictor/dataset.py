@@ -6,8 +6,10 @@ import os
 import sys
 import cv2 as cv
 import pickle
-from Detector.detector import nearest_detection, xywh_to_centroid
 from tqdm import tqdm
+
+
+from Predictor.detector import nearest_detection, xywh_to_centroid
 
 #sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))) # Relative import
 

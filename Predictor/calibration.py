@@ -2,6 +2,13 @@ import numpy as np
 import cv2 as cv
 import glob
 
+"""
+TODO note:
+- https://www.learnopencv.com/homography-examples-using-opencv-python-c/
+maybe fix for angle of camera, so the data will be from an overhead (90) angle.
+if we move the camera (or at all), may be redundent.
+"""
+
 # Undistortion code from:
 #   https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_calib3d/py_calibration/py_calibration.html
 
@@ -115,7 +122,9 @@ def undistort_point(p, mapping):
     mapx, mapy = mapping
     x, y = p
     return mapx[x, y], mapy[x, y]
-
+    """
+    TODO - bulk transformation on data, maybe the easiest way is just to apply on each row
+    """
 
 # Calibration: Use a calibration image to find the touch screen transition transform.
 # code taken from:
@@ -218,7 +227,10 @@ def calibrate(cal_img, screen_width=1920,
 
 def transform_point(p, aff):
     return np.dot(aff[:, :2], p) + aff[:, 2]
-
+"""
+TODO: bulk transform and undistort. data is (X,Y,1) - 3XN matrix, transormation is 2X3 matrix
+transpose affine matrix and compute dot(DATA, M^T)
+"""
 
 def transform_image(img, aff, screen_width, screen_size):
     y_val = img.shape[0]

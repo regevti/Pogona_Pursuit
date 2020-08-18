@@ -4,7 +4,8 @@ import cv2 as cv
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import matplotlib.patches as patches
-from Detector.detector import xywh_to_centroid, nearest_detection
+
+from Predictor.detector import xywh_to_centroid, nearest_detection
 
 
 def plot_image(detections, img, output_path=None, show_img=True):

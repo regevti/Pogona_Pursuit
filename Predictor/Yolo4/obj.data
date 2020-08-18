@@ -1,5 +1,5 @@
 classes = 1
 train = data/train.txt
 valid = data/valid.txt
-names = Detector/Yolo4/obj.names
+names = Predictor/Yolo4/obj.names
 backup = backup/
