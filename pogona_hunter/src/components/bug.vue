@@ -11,7 +11,9 @@
       return {
         bugImages: [],
         imgSrc: '',
-        mass: 1
+        mass: 1,
+        counter: 0,
+        t: 0
       }
     },
     props: {
@@ -23,7 +25,8 @@
       speed: Number,
       numImagesPerBug: Number,
       isStatic: Boolean,
-      movementType: String
+      movementType: String,
+      stepsPerImage: Number
     },
     computed: {
       isMoveInCircles: function () {
@@ -34,7 +37,6 @@
       this.canvas = this.$parent.canvas
       this.ctx = this.canvas.getContext('2d')
       this.deadImage = this.getDeadImage()
-      this.stepsPerImage = 10
       this.isOutEdged = false
       this.isDead = false
       this.dx = plusOrMinus() * this.speed
@@ -69,9 +71,16 @@
         }
         this.edgeDetection()
         if (this.isMoveInCircles) {
-          this.theta += Math.abs(this.dx) / 100
+          this.theta += Math.abs(this.dx) / this.r
           this.x = this.r0[0] + this.r * Math.cos(this.theta)
           this.y = this.r0[1] + this.r * Math.sin(this.theta)
+          this.counter += 1
+          if (!(this.counter % 10)) {
+            if (this.t) {
+              // console.log(Date.now() - this.t)
+            }
+            this.t = Date.now()
+          }
         } else {
           // move in straight lines
           this.x += this.dx
