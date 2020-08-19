@@ -64,16 +64,6 @@ class SpinCamera:
     def __del__(self):
         self.cam.DeInit()
 
-    def get_max_throughput(self):
-        try:
-            max_throughput = int(self.cam.DeviceMaxThroughput.GetValue())
-        except Exception as exc:
-            self.logger.warning(exc)
-            max_throughput = DEFAULT_MAX_THROUGHPUT
-
-        self.logger.info(f'max throughput: {max_throughput}')
-        return max_throughput
-
     def configure_camera(self, exposure):
         """Configure camera for trigger mode before acquisition"""
         try:
@@ -113,7 +103,7 @@ class SpinCamera:
                             image_result.Release()
                             break
                     else:
-                        frame_times.append(time.time())
+                        frame_times.append(image_result.GetTimeStamp())
                         self.image_handler(image_result)
 
                     image_result.Release()  # Release image
@@ -126,9 +116,8 @@ class SpinCamera:
                     i += 1
 
             self.logger.info(f'Number of frames taken: {i}')
-            mean_fps, std_fps = calculate_fps(frame_times)
+            mean_fps, std_fps = self.analyze_timestamps(frame_times)
             self.logger.info(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
-            self.save_frames_timestamps(frame_times)
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
@@ -184,9 +173,18 @@ class SpinCamera:
             st += f'{k}: {v}\n'
         self.logger.info(st)
 
-    def save_frames_timestamps(self, frame_times):
-        """Save frames timestamps to csv file"""
-        pd.to_datetime(pd.Series(frame_times), unit='s').to_csv(self.timestamp_path)
+    def analyze_timestamps(self, frame_times):
+        """Convert camera's timestamp to server time, save server timestamps and calculate FPS"""
+        self.cam.TimestampLatch()
+        camera_time = self.cam.TimestampLatchValue.GetValue()
+        server_time = time.time()
+        frame_times = server_time - (camera_time - pd.Series(frame_times)) / 1e9
+        mean_fps, std_fps = calculate_fps(frame_times)
+
+        frame_times = pd.to_datetime(frame_times, unit='s')
+        frame_times.to_csv(self.timestamp_path)
+
+        return mean_fps, std_fps
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
@@ -208,6 +206,15 @@ class SpinCamera:
             values.append(value)
 
         return values
+
+    def get_max_throughput(self):
+        try:
+            max_throughput = int(self.cam.DeviceMaxThroughput.GetValue())
+        except Exception as exc:
+            self.logger.warning(exc)
+            max_throughput = DEFAULT_MAX_THROUGHPUT
+
+        return max_throughput
 
     def is_firefly(self):
         """Check whether cam is a Firefly camere"""
