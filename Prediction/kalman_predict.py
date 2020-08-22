@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-def constant_velocity_kalman_filter(dt=1, r_var=5., q_var=.1, dim=2):
+def constant_velocity_kalman_filter(init_x=None, dt=1, r_var=5., q_var=.1, dim=2):
     """
     Return a constant velocity kalman filter
     dt - time step
@@ -15,10 +15,13 @@ def constant_velocity_kalman_filter(dt=1, r_var=5., q_var=.1, dim=2):
     """
 
     kf = KalmanFilter(dim_x=dim*2, dim_z=dim)
-    kf.x = np.zeros(dim*2)  # later init filter with initial location
+    if init_x is None:
+        kf.x = np.zeros(dim*2)
+    else:
+        kf.x = init_x
 
     # state transition matrix
-    f = np.array([[1., dt]
+    f = np.array([[1., dt],
                   [0., 1.]])
     kf.F = block_diag(*([f] * dim))
 
@@ -30,6 +33,8 @@ def constant_velocity_kalman_filter(dt=1, r_var=5., q_var=.1, dim=2):
 
     q = Q_discrete_white_noise(dim=dim, dt=dt, var=q_var)
     kf.Q = block_diag(q, q)
+
+    return kf
 
 
 def batch_predict_hits(f, centroids, y_threshold=930, max_timesteps=60):

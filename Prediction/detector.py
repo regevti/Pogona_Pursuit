@@ -4,21 +4,18 @@ from ctypes import c_int, pointer
 import torch
 from torchvision import transforms
 from PIL import Image
-from Predictor.Yolo3.utils.utils import load_classes, non_max_suppression
+from Prediction.Yolo3.utils.utils import load_classes, non_max_suppression
 
-import Predictor.Yolo4.darknet as darknet4
-from Predictor.models import Darknet
-
-
-
-
-"""
-All detectors implement the function detect_image(), that return a (number of detections) X 5 Numpy array.
-The (row - single detection) array format is left_x-left_y-width-height-confidence.
-"""
+import Prediction.Yolo4.darknet as darknet4
+from Prediction.models import Darknet
 
 
 class Detector:
+    """
+    Abstract class with a detect_image() method that return a (number of detections) X 5 Numpy array.
+    The (row - single detection) array format is left_x, left_y, width, height, confidence.
+    """
+
     def detect_image(self, img):
         """
         Return detection array for the supplied image.
@@ -33,11 +30,11 @@ class Detector_v3(Detector):
     based on original paper "YOLOv3: An Incremental Improvement".
     This model training was done without non-examples, i.e, images that do not contain any ground truth detection
     """
-    
+
     def __init__(self,
-                 model_def="Predictor/Yolo3/config/yolov3-custom.cfg",
-                 weights_path="Predictor/Yolo3/weights/yolov3-pogonahead.pth",
-                 class_path="Predictor/Yolo3/classes.names",
+                 model_def="Prediction/Yolo3/config/yolov3-custom.cfg",
+                 weights_path="Prediction/Yolo3/weights/yolov3-pogonahead.pth",
+                 class_path="Prediction/Yolo3/classes.names",
                  img_size=416,
                  conf_thres=0.9,
                  nms_thres=0.6):
@@ -142,9 +139,9 @@ class Detector_v4:
     Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images
     """
     def __init__(self,
-                 cfg_path="Predictor/Yolo4/yolo4_2306.cfg",
-                 weights_path="Predictor/Yolo4/yolo4_gs_best_2306.weights",
-                 meta_path="Predictor/Yolo4/obj.data",
+                 cfg_path="Prediction/Yolo4/yolo4_2306.cfg",
+                 weights_path="Prediction/Yolo4/yolo4_gs_best_2306.weights",
+                 meta_path="Prediction/Yolo4/obj.data",
                  conf_thres=0.9,
                  nms_thres=0.6):
 

@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-from Predictor.Yolo3.utils.parse_config import *
-from Predictor.Yolo3.utils.utils import build_targets, to_cpu, non_max_suppression
+from Prediction.Yolo3.utils.parse_config import *
+from Prediction.Yolo3.utils.utils import build_targets, to_cpu, non_max_suppression
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches

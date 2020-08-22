@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import matplotlib.patches as patches
 
-from Predictor.detector import xywh_to_centroid, nearest_detection
+from Prediction.detector import xywh_to_centroid, nearest_detection
 
 
 def plot_image(detections, img, output_path=None, show_img=True):
@@ -25,17 +25,22 @@ def plot_image(detections, img, output_path=None, show_img=True):
         # browse detections and draw bounding boxes
         for x1, y1, box_w, box_h, conf in detections:
             color = (0, 0, 1, 1)
-            bbox = patches.Rectangle((x1, y1), box_w, box_h,
-                                     linewidth=2, edgecolor=color,
-                                     facecolor='none')
+            bbox = patches.Rectangle(
+                (x1, y1), box_w, box_h, linewidth=2, edgecolor=color, facecolor="none"
+            )
             ax.add_patch(bbox)
-            plt.text(x1, y1, s=str(round(conf, 2)),
-                     color='white', verticalalignment='top',
-                     bbox={'color': color, 'pad': 0})
-    plt.axis('off')
+            plt.text(
+                x1,
+                y1,
+                s=str(round(conf, 2)),
+                color="white",
+                verticalalignment="top",
+                bbox={"color": color, "pad": 0},
+            )
+    plt.axis("off")
 
     if output_path is not None:
-        plt.savefig(output_path, bbox_inches='tight', pad_inches=0.0)
+        plt.savefig(output_path, bbox_inches="tight", pad_inches=0.0)
 
     if show_img:
         plt.show()
@@ -47,9 +52,9 @@ def hsv_to_rgb(H, S, V):
     """
     transform angle to BGR color as 3-tuple
     """
-    C = S*V
-    X = C*(1-np.abs((H/60) % 2-1))
-    m = V-C
+    C = S * V
+    X = C * (1 - np.abs((H / 60) % 2 - 1))
+    m = V - C
 
     if H >= 0 and H < 60:
         r, g, b = C, X, 0
@@ -68,7 +73,7 @@ def hsv_to_rgb(H, S, V):
         return int(round(x))
 
     # return b,g,r
-    return roun((b+m)*255), roun((g+m)*255), roun((r+m)*255)
+    return roun((b + m) * 255), roun((g + m) * 255), roun((r + m) * 255)
 
 
 def vec_to_bgr(vec):
@@ -78,7 +83,7 @@ def vec_to_bgr(vec):
     """
 
     # transform to [-pi,pi] and then to degrees
-    angle = np.arctan2(vec[1], vec[0])*180/np.pi
+    angle = np.arctan2(vec[1], vec[0]) * 180 / np.pi
 
     # transform to [0,360]
     angle = (angle + 360) % 360
@@ -89,37 +94,40 @@ def time_to_bgr(k, arrowWindow):  # DOES NOT WORK - TODO
     # map the relative position of the frame to [0,360] angle and then to hue
     rel = (arrowWindow - k) / arrowWindow
     return hsv_to_rgb(0, 1, rel)
-    
 
-def draw_arrow(frame,
-               frameCounter,
-               centroids,
-               arrowWindow,
-               k,
-               vis_angle=True,
-               windowSize=1,
-               scale=2.5):
+
+def draw_arrow(
+    frame,
+    frameCounter,
+    centroids,
+    arrowWindow,
+    k,
+    vis_angle=True,
+    windowSize=1,
+    scale=2.5,
+):
     """
     draws the direction of the velocity vector from (arrowWindow) frames back
     directions based on the first discrete derivative of the 2D coordinates of
     windowSize consecutive centroids of the detecions, if both exist
     """
-    
+
     # initial arrow
     if frameCounter < windowSize:
         return
 
     # if no prediction at t - windowSize, bo drawing
-    if (np.isnan(centroids[frameCounter-windowSize, 0]) or
-            np.isnan(centroids[frameCounter, 0])):
+    if np.isnan(centroids[frameCounter - windowSize, 0]) or np.isnan(
+        centroids[frameCounter, 0]
+    ):
         return
 
-    arrowBase = tuple(centroids[frameCounter-windowSize].astype(int))
+    arrowBase = tuple(centroids[frameCounter - windowSize].astype(int))
     arrowHead = tuple(centroids[frameCounter].astype(int))
 
     # scale head for better visibility
-    extend_x = scale*(arrowHead[0]-arrowBase[0])
-    extend_y = scale*(arrowHead[1]-arrowBase[1])
+    extend_x = scale * (arrowHead[0] - arrowBase[0])
+    extend_y = scale * (arrowHead[1] - arrowBase[1])
 
     new_x = arrowHead[0] + extend_x
     new_y = arrowHead[1] + extend_y
@@ -138,12 +146,21 @@ def draw_arrow(frame,
 
     # compute color based on angle or time
     if vis_angle:
-        vec_color = vec_to_bgr([arrowHead[0]-arrowBase[0],arrowHead[1]-arrowBase[1]])
+        vec_color = vec_to_bgr(
+            [arrowHead[0] - arrowBase[0], arrowHead[1] - arrowBase[1]]
+        )
     else:
         vec_color = time_to_bgr(k, arrowWindow)
 
-    cv.arrowedLine(frame, arrowBase, arrowHead, color=vec_color,
-                   thickness=2, tipLength=0.2, line_type=cv.LINE_AA)
+    cv.arrowedLine(
+        frame,
+        arrowBase,
+        arrowHead,
+        color=vec_color,
+        thickness=2,
+        tipLength=0.2,
+        line_type=cv.LINE_AA,
+    )
 
 
 def draw_bounding_boxes(frame, detections, color=(0, 0, 255)):
@@ -172,33 +189,52 @@ def draw_bounding_boxes(frame, detections, color=(0, 0, 255)):
             end_y = int(y1 + txt_size[0][1] + margin)
 
             cv.rectangle(frame, (x1, y1), (end_x, end_y), color, thickness)
-            cv.rectangle(frame, (x1, y1), (x1+box_w, y1+box_h), color, 2)
-            cv.putText(frame, text, (x1, end_y - margin), font, scale,
-                       (255, 255, 255), 1, cv.LINE_AA)
+            cv.rectangle(frame, (x1, y1), (x1 + box_w, y1 + box_h), color, 2)
+            cv.putText(
+                frame,
+                text,
+                (x1, end_y - margin),
+                font,
+                scale,
+                (255, 255, 255),
+                1,
+                cv.LINE_AA,
+            )
 
 
-def draw_k_arrows(frame, frameCounter, centroids, arrowWindow,
-                  visAngle, windowSize, scale=5):
+def draw_k_arrows(
+    frame, frameCounter, centroids, arrowWindow, visAngle, windowSize, scale=5
+):
     for k in range(arrowWindow):
-        draw_arrow(frame, frameCounter - k, centroids, arrowWindow,
-                   k, visAngle, windowSize, scale)
+        draw_arrow(
+            frame,
+            frameCounter - k,
+            centroids,
+            arrowWindow,
+            k,
+            visAngle,
+            windowSize,
+            scale,
+        )
 
 
 def draw_k_centroids(frame, frameCounter, centroids, k, color=(0, 0, 255)):
     if k > frameCounter:
-        k = frameCounter-1
+        k = frameCounter - 1
 
     for j in range(k):
-        if np.isnan(centroids[frameCounter-j][0]):
+        if np.isnan(centroids[frameCounter - j][0]):
             continue
-        x = int(centroids[frameCounter-j][0])
-        y = int(centroids[frameCounter-j][1])
-        cv.circle(frame,
-                  center=(x, y),
-                  radius=2,
-                  color=color,
-                  thickness=-1,
-                  lineType=cv.LINE_AA)
+        x = int(centroids[frameCounter - j][0])
+        y = int(centroids[frameCounter - j][1])
+        cv.circle(
+            frame,
+            center=(x, y),
+            radius=2,
+            color=color,
+            thickness=-1,
+            lineType=cv.LINE_AA,
+        )
 
 
 def online_centroid_visualizer(detector, color, window_size):
@@ -225,24 +261,30 @@ def online_centroid_visualizer(detector, color, window_size):
 
             x = int(c[0])
             y = int(c[1])
-            cv.circle(write_frame,
-                      center=(x, y),
-                      radius=2,
-                      color=color,
-                      thickness=-1,
-                      lineType=cv.LINE_AA)
+            cv.circle(
+                write_frame,
+                center=(x, y),
+                radius=2,
+                color=color,
+                thickness=-1,
+                lineType=cv.LINE_AA,
+            )
 
     return fn
 
 
-def missed_frames_saver(detector, output_dir, prefix='frame', save_thresh=0.8, 
-                        above=False, draw_bbox=True):
+def missed_frames_saver(
+    detector, output_dir, prefix="frame", save_thresh=0.8, above=False, draw_bbox=True
+):
     saved_counter = 0
 
     if above:
+
         def save_func(detec, save_thres):
             return (detec is not None) and (detec[0][4] > save_thres)
+
     else:
+
         def save_func(detec, save_thres):
             return (detec is None) or (detec[0][4] < save_thres)
 
@@ -260,15 +302,16 @@ def missed_frames_saver(detector, output_dir, prefix='frame', save_thresh=0.8,
             if detections is not None:
                 prob = str(round(detections[0][4], 3))
             else:
-                prob = '0'
+                prob = "0"
 
-            save_path = os.path.join(output_dir,
-                                     prefix+'_' + prob + '_' +
-                                     str(saved_counter) + '.jpg')
+            save_path = os.path.join(
+                output_dir, prefix + "_" + prob + "_" + str(saved_counter) + ".jpg"
+            )
 
             if draw_bbox:
-                plot_image(detections, orig_frame,
-                           output_path=save_path, show_plot=False)
+                plot_image(
+                    detections, orig_frame, output_path=save_path, show_plot=False
+                )
             else:
                 cv.imwrite(save_path, orig_frame)
 
@@ -276,74 +319,116 @@ def missed_frames_saver(detector, output_dir, prefix='frame', save_thresh=0.8,
 
     return fn
 
+
 def video_sampler(output_path, freq):
     """
     Save arbitrary frames at constant frequency from video to path
     """
-   
+
     if not os.path.exists(output_path):
         os.mkdir(output_path)
-   
+
     def fn(orig_frame, write_frame, width, height, frame_counter):
         if frame_counter % freq == 0:
-            fname = os.path.join(output_path,'chkr_'+str(frame_counter)+'.jpg')
+            fname = os.path.join(output_path, "chkr_" + str(frame_counter) + ".jpg")
             cv.imwrite(fname, orig_frame)
-    
+
     return fn
 
 
 def offline_centroid_visualizer(centroids, color, window_size):
-
     def fn(orig_frame, write_frame, width, height, frame_counter):
-        draw_k_centroids(write_frame, frame_counter,
-                         centroids, window_size, color)
+        draw_k_centroids(write_frame, frame_counter, centroids, window_size, color)
 
     return fn
 
 
 def offline_arrow_visualizer(centroids, window_size, vis_angle=True, scale=5):
     def fn(orig_frame, write_frame, width, height, frame_counter):
-        draw_k_arrows(write_frame,
-                      frame_counter,
-                      centroids,
-                      window_size,
-                      vis_angle,
-                      2, scale)
+        draw_k_arrows(
+            write_frame, frame_counter, centroids, window_size, vis_angle, 2, scale
+        )
 
     return fn
 
 
 def offline_kalman_visualizer(cents_df, max_k):
     def fn(orig_frame, write_frame, width, height, frame_counter):
-        if any(np.isnan(cents_df[['det_x', 'det_y']].iloc[frame_counter])):
+        if any(np.isnan(cents_df[["det_x", "det_y"]].iloc[frame_counter])):
             return
 
-        orig = tuple(cents_df[['det_x', 'det_y']].iloc[frame_counter].values.astype(int))
-        pred = tuple(cents_df[['pred_x', 'pred_y']].iloc[frame_counter].values.astype(int))
+        orig = tuple(
+            cents_df[["det_x", "det_y"]].iloc[frame_counter].values.astype(int)
+        )
+        pred = tuple(
+            cents_df[["pred_x", "pred_y"]].iloc[frame_counter].values.astype(int)
+        )
 
         k = int(cents_df.k[frame_counter])
 
-        cv.circle(write_frame, orig,
-                  radius=2,
-                  color=(0, 0, 255),
-                  thickness=-1)
+        cv.circle(write_frame, orig, radius=2, color=(0, 0, 255), thickness=-1)
         if k == max_k - 1:
             color = (0, 255, 0)
         else:
             color = (0, 0, 255)
 
-        cv.line(write_frame, orig, pred, color=color,
-                thickness=2, lineType=cv.LINE_AA)
+        cv.line(write_frame, orig, pred, color=color, thickness=2, lineType=cv.LINE_AA)
 
     return fn
 
 
-def process_video(video_path,
-                  output_path,
-                  process_fns,
-                  start_frame=0,
-                  num_frames=None,
-                  frame_rate=None):
+def predictor_visualizer(predictor):
+    def fn(orig_frame, write_frame, width, height, frame_counter):
+        forecast, hit_point, hit_steps = predictor.handle_frame(orig_frame)
+
+        bbox = predictor.history[predictor.frame_num - 1]
+        if not np.isnan(bbox[0]):
+            x, y, w, h = bbox.astype(int)
+            cv.rectangle(write_frame, (x, y), (x + w, y + h), (255, 0, 0), 1)
+
+        if forecast is not None:
+            for p in forecast:
+                cv.circle(
+                    write_frame,
+                    center=tuple(p.astype(int)),
+                    radius=2,
+                    color=(0, 255, 0),
+                    thickness=-1,
+                    lineType=cv.LINE_AA,
+                )
+
+        if hit_point is not None:
+            cv.circle(
+                write_frame,
+                center=tuple(hit_point.astype(int)),
+                radius=4,
+                color=(0, 0, 255),
+                thickness=-1,
+                lineType=cv.LINE_AA,
+            )
+
+            cv.putText(
+                write_frame,
+                str(hit_steps),
+                tuple(hit_point.astype(int)),
+                cv.FONT_HERSHEY_COMPLEX,
+                fontScale=0.4,
+                color=(255, 0, 0),
+                thickness=1,
+                lineType=cv.LINE_AA,
+            )
+
+    return fn
+
+
+def process_video(
+    video_path,
+    output_path,
+    process_fns,
+    start_frame=0,
+    num_frames=None,
+    frame_rate=None,
+):
     """
     Open a video file, run all functions in process_fns, and write the
     processed video to file.
@@ -380,8 +465,9 @@ def process_video(video_path,
         frame_rate = vcap.get(cv.CAP_PROP_FPS)
 
     if output_path is not None:
-        videowriter = cv.VideoWriter(output_path, cv.VideoWriter_fourcc(*'mp4v'),
-                                     frame_rate, (width, height))
+        videowriter = cv.VideoWriter(
+            output_path, cv.VideoWriter_fourcc(*"mp4v"), frame_rate, (width, height)
+        )
 
     for frame_counter in tqdm(range(num_frames)):
         ret, orig_frame = vcap.read()
