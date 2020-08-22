@@ -7,6 +7,7 @@ import sys
 import cv2 as cv
 import pickle
 from tqdm import tqdm
+import torch
 
 from Prediction.detector import nearest_detection, xywh_to_centroid
 
@@ -377,3 +378,39 @@ def get_unified_df(all_exper, mult=False):
     all_df['touch_ts'] = pd.to_datetime(all_df['touch_ts'])
 
     return all_df
+
+
+def trial_to_samples(trial_df,
+                     input_labels, output_labels,
+                     input_seq_size, output_seq_size):
+    """
+    Extract samples from a single trial dataframe to torch 3D tensors, X with dimension
+    (sample, input sequence index, single timestep dimension) and Y with dim
+    (sample, output sequence index, single timestep dimension)
+    Assumes that the data is corrected and transformed
+
+    returns: 2 3D tensors X, Y
+    """
+
+    input_2d_tensors = []
+    output_2d_tensors = []
+
+    inds_range = trial_df.shape[0] - input_seq_size - output_seq_size + 1
+
+    input_data = trial_df[input_labels].values
+    output_data = trial_df[output_labels].values
+
+    for i in range(inds_range):
+        inp_seq = input_data[i:i + input_seq_size]
+        out_seq = output_data[i + input_seq_size:i + input_seq_size + output_seq_size]
+
+        if np.any(np.isnan(inp_seq)) or np.any(np.isnan(out_seq)):
+            continue
+
+        input_2d_tensors.append(torch.Tensor(inp_seq))
+        output_2d_tensors.append(torch.Tensor(out_seq))
+
+    input_3d_tensor = torch.stack(input_2d_tensors)
+    output_3d_tensor = torch.stack(output_2d_tensors)
+
+    return input_3d_tensor, output_3d_tensor
