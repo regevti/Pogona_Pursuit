@@ -1,37 +1,55 @@
 #!/usr/bin/env python
 
 import time
+import re
 import cv2
 import argparse
-import serial
+
 from datetime import datetime
 import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
-from utils import get_logger, calculate_fps, mkdir
+from cache import CacheColumns
+from utils import get_logger, calculate_fps, mkdir, get_log_stream
 
 DEFAULT_NUM_FRAMES = 1000
-EXPOSURE_TIME = 15000
+DEFAULT_MAX_THROUGHPUT = 94578303
+EXPOSURE_TIME = 8000
 OUTPUT_DIR = 'output'
+UNSORTED_DIR = mkdir('output/unsorted')
 FPS = 60
 SAVED_FRAME_RESOLUTION = (1440, 1088)
-SERIAL_PORT = '/dev/ttyACM0'
-SERIAL_BAUD = 9600
 INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
-               'PayloadSize', 'EventSelector', 'LineStatus',
+               'PayloadSize', 'EventSelector', 'LineStatus', 'ExposureTime',
                'DeviceLinkCurrentThroughput', 'DeviceLinkThroughputLimit', 'DeviceMaxThroughput', 'DeviceLinkSpeed']
+CAMERA_NAMES = {
+    'realtime': '19506468',
+    'right': '19506475',
+    'left': '19506455',
+    'back': '19506481'
+}
+ACQUIRE_STOP_OPTIONS = {
+    'num_frames': int,
+    'record_time': int,
+    'manual_stop': 'cache',
+    'experiment_alive': 'cache'
+}
 
 
 class SpinCamera:
-    def __init__(self, cam, dir_path=None, num_frames=None):
+    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None):
         self.cam = cam
-        self.num_frames = num_frames
-        self.is_ready = False  # ready for acquisition
+        self.acquire_stop = acquire_stop or {'num_frames': DEFAULT_NUM_FRAMES}
         self.dir_path = dir_path
+        self.cache = cache
+        self.validate_acquire_stop()
+
+        self.is_ready = False  # ready for acquisition
         self.video_out = None
+        self.start_acquire_time = None
 
         self.cam.Init()
-        self.logger = get_logger(self.device_id, dir_path)
+        self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
@@ -49,17 +67,18 @@ class SpinCamera:
     def configure_camera(self, exposure):
         """Configure camera for trigger mode before acquisition"""
         try:
-            self.cam.AcquisitionFrameRateEnable.SetValue(True)
+            self.cam.AcquisitionFrameRateEnable.SetValue(False)
+            # self.cam.AcquisitionFrameRate.SetValue(60)
             self.cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
             self.cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
             self.cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
             self.cam.LineSelector.SetValue(PySpin.LineSelector_Line1)
             self.cam.LineMode.SetValue(PySpin.LineMode_Input)
             self.cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
-            self.cam.DeviceLinkThroughputLimit.SetValue(94578303)
-            self.cam.AcquisitionFrameRate.SetValue(60)
+            self.cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput())
             self.cam.ExposureTime.SetValue(exposure)
             self.logger.info(f'Finished Configuration')
+            self.log_info()
 
         except PySpin.SpinnakerException as exc:
             self.logger.error(f'(configure_images); {exc}')
@@ -68,17 +87,23 @@ class SpinCamera:
         """Acquire images and measure FPS"""
         if self.is_ready:
             frame_times = list()
-
-            for i in range(self.num_frames):
+            i = 0
+            while self.is_acquire_allowed(i):
                 try:
                     image_result = self.cam.GetNextImage()  # Retrieve next received image
                     if i == 0:
+                        self.start_acquire_time = time.time()
                         self.logger.info('Acquisition Started')
 
                     if image_result.IsIncomplete():  # Ensure image completion
-                        self.logger.warning(f'Image incomplete with image status {image_result.GetImageStatus()}')
+                        sts = image_result.GetImageStatus()
+                        self.logger.warning(f'Image incomplete with image status {sts}')
+                        if sts == 9:
+                            self.logger.warning(f'Breaking after status 9')
+                            image_result.Release()
+                            break
                     else:
-                        frame_times.append(time.time())
+                        frame_times.append(image_result.GetTimeStamp())
                         self.image_handler(image_result)
 
                     image_result.Release()  # Release image
@@ -87,10 +112,16 @@ class SpinCamera:
                     self.logger.error(f'(acquire); {exc}')
                     continue
 
-            self.logger.info(f'Calculated FPS: {calculate_fps(frame_times)}')
+                finally:
+                    i += 1
+
+            self.logger.info(f'Number of frames taken: {i}')
+            mean_fps, std_fps = self.analyze_timestamps(frame_times)
+            self.logger.info(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
+            self.logger.info(f'Video path: {self.video_path}')
             self.video_out.release()
         self.is_ready = False
 
@@ -98,13 +129,62 @@ class SpinCamera:
         img = image_result.GetNDArray()
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        if self.dir_path and self.video_out == None:
+        if self.dir_path and self.video_out is None:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
             h, w = img.shape[:2]
-            self.video_out = cv2.VideoWriter(f'{self.dir_path}/{self.device_id}.avi', fourcc, FPS, (w, h), True)
+            self.video_out = cv2.VideoWriter(self.video_path, fourcc, FPS, (w, h), True)
 
         self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+
+    def validate_acquire_stop(self):
+        for key, value in self.acquire_stop.items():
+            assert key in ACQUIRE_STOP_OPTIONS, f'unknown acquire_stop: {key}'
+            if ACQUIRE_STOP_OPTIONS[key] == 'cache':
+                assert self.cache is not None
+            else:
+                assert isinstance(value, int), f'acquire stop {key}: expected type int, received {type(value)}'
+
+    def is_acquire_allowed(self, iteration):
+        """Check all given acquire_stop conditions"""
+        for stop_key in self.acquire_stop.keys():
+            if not getattr(self, f'check_{stop_key}')(iteration):
+                return False
+        return True
+
+    def check_num_frames(self, iteration):
+        return iteration <= self.acquire_stop['num_frames']
+
+    def check_record_time(self, iteration):
+        if iteration == 0:
+            return True
+        return time.time() < self.start_acquire_time + self.acquire_stop['record_time']
+
+    def check_manual_stop(self, iteration):
+        return not self.cache.get(CacheColumns.MANUAL_RECORD_STOP)
+
+    def check_experiment_alive(self, iteration):
+        return self.cache.get(CacheColumns.EXPERIMENT_NAME)
+
+    def log_info(self):
+        """Print into logger the info of the camera"""
+        st = '\n'
+        for k, v in zip(INFO_FIELDS, self.info()):
+            st += f'{k}: {v}\n'
+        self.logger.info(st)
+
+    def analyze_timestamps(self, frame_times):
+        """Convert camera's timestamp to server time, save server timestamps and calculate FPS"""
+        self.cam.TimestampLatch()
+        camera_time = self.cam.TimestampLatchValue.GetValue()
+        server_time = time.time()
+        frame_times = server_time - (camera_time - pd.Series(frame_times)) / 1e9
+        mean_fps, std_fps = calculate_fps(frame_times)
+
+        frame_times = pd.to_datetime(frame_times, unit='s')
+        frame_times.to_csv(self.timestamp_path)
+
+        return mean_fps, std_fps
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
@@ -127,6 +207,15 @@ class SpinCamera:
 
         return values
 
+    def get_max_throughput(self):
+        try:
+            max_throughput = int(self.cam.DeviceMaxThroughput.GetValue())
+        except Exception as exc:
+            self.logger.warning(exc)
+            max_throughput = DEFAULT_MAX_THROUGHPUT
+
+        return max_throughput
+
     def is_firefly(self):
         """Check whether cam is a Firefly camere"""
         nodemap_tldevice = self.cam.GetTLDeviceNodeMap()
@@ -135,48 +224,54 @@ class SpinCamera:
             return True
 
     @property
+    def video_path(self):
+        return f'{self.dir_path}/{self.device_id}.avi'
+
+    @property
+    def timestamp_path(self):
+        mkdir(f'{self.dir_path}/timestamps')
+        return f'{self.dir_path}/timestamps/{self.device_id}.csv'
+
+    @property
     def device_id(self):
-        nodemap_tldevice = self.cam.GetTLDeviceNodeMap()
-        return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
+        return get_device_id(self.cam)
+
+############################################################################################################
 
 
-# def save_list_to_avi(images, fps, device_id, dir_path):
-#     try:
-#         avi_recorder = PySpin.SpinVideo()
-#         avi_filename = f'{dir_path}/{device_id}'
-#         option = PySpin.MJPGOption()
-#         option.frameRate = fps
-#         option.quality = 75
-#
-#         avi_recorder.Open(avi_filename, option)
-#         for img in images:
-#             avi_recorder.Append(img)
-#         avi_recorder.Close()
-#
-#         print(f'<CAM {device_id}>: Video saved at {avi_filename}-0000.avi , FPS: {fps:.2f}')
-#         return True
-#
-#     except PySpin.SpinnakerException as exc:
-#         print(f'<CAM {device_id}>: ERROR (save_list_to_avi); {exc}')
-#         return
+def get_device_id(cam) -> str:
+    """Get the camera device ID of the cam instance"""
+    nodemap_tldevice = cam.GetTLDeviceNodeMap()
+    return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
 
 
-class Serializer:
-    def __init__(self):
-        self.ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
-        time.sleep(0.5)
+def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
+    """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
+    current_devices = [get_device_id(c) for c in cam_list]
+    chosen_devices = []
+    for cam_id in cameras_string.split(','):
+        if re.match(r'[a-zA-z]+', cam_id):
+            device = CAMERA_NAMES.get(cam_id)
+            if device and device in current_devices:
+                chosen_devices.append(device)
+        elif re.match(r'[0-9]+', cam_id):
+            chosen_devices.extend([d for d in current_devices if d[-len(cam_id):] == cam_id])
 
-    def start_acquisition(self):
-        self.ser.write(b'H')
+    def _remove_from_cam_list(device_id):
+        devices = [get_device_id(c) for c in cam_list]
+        cam_list.RemoveByIndex(devices.index(device_id))
 
-    def stop_acquisition(self):
-        self.ser.write(b'L')
+    for d in current_devices:
+        if d not in chosen_devices:
+            _remove_from_cam_list(d)
 
 
-def display_info(cam_list):
+def display_info():
     """Function for displaying info of all FireFly cameras detected"""
     df = []
     index = []
+    system = PySpin.System.GetInstance()
+    cam_list = system.GetCameras()
     for cam in cam_list:
         sc = SpinCamera(cam)
         if not sc.is_firefly():
@@ -185,27 +280,32 @@ def display_info(cam_list):
         index.append(sc.device_id)
 
     df = pd.DataFrame(df, columns=INFO_FIELDS, index=index)
-    print(f'\nCameras Info:\n\n{df}\n')
+    del cam, sc
+    output = f'\nCameras Info:\n\n{df.to_string()}\n'
+    cam_list.Clear()
+    # system.ReleaseInstance()
+    return output
 
 
-def start_camera(cam, dir_path, num_frames, exposure):
+def start_camera(cam, dir_path, num_frames, exposure, cache, log_stream):
     """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam, dir_path, num_frames)
+    sc = SpinCamera(cam, dir_path, num_frames, cache=cache, log_stream=log_stream)
     sc.begin_acquisition(exposure)
     return sc
 
 
-def wait_for_streaming(results: list):
+def wait_for_streaming(results: list, is_auto_start=False):
     """Wait for user approval for start streaming and send serial for Arduino to start TTL.
     If keyboard interrupt turn all is_ready to false, so acquisition will not start"""
     serializer = None
     try:
-        key = input(f'\nThere are {len([sc for sc in results if sc.is_ready])} cameras ready for streaming.\n'
-                    f'Press any key for sending TTL serial to start streaming.\n'
-                    f"If you like to start TTL manually press 'm'\n>> ")
-        if not key == 'm':
-            serializer = Serializer()
-            serializer.start_acquisition()
+        if not is_auto_start:
+            key = input(f'\nThere are {len([sc for sc in results if sc.is_ready])} cameras ready for streaming.\n'
+                        f'Press any key for sending TTL serial to start streaming.\n'
+                        f"If you like to start TTL manually press 'm'\n>> ")
+            # if not key == 'm':
+            #     serializer = Serializer()
+            #     serializer.start_acquisition()
 
     except Exception as exc:
         print(f'Error: {exc}')
@@ -221,46 +321,71 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
+def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_start=False, cache=None, **acquire_stop) -> str:
+    """
+    Record videos from Arena's cameras
+    :param exposure: The exposure time to be set to the cameras
+    :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
+    :param output: The output folder for saving the records and log
+    :param is_auto_start: Start record automatically or wait for user input
+    :param cache: memory cache to be used by the cameras
+    """
+    assert all(k in ACQUIRE_STOP_OPTIONS for k in acquire_stop.keys())
+    system = PySpin.System.GetInstance()
+    cam_list = system.GetCameras()
+    log_stream = get_log_stream()
+
+    if cameras:
+        filter_cameras(cam_list, cameras)
+
+    label = datetime.now().strftime('%Y%m%d-%H%M%S')
+    dir_path = mkdir(f"{output}/{label}")
+
+    filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream) for cam in cam_list]
+    print(f'\nCameras detected: {len(filtered)}')
+    print(f'Acquire Stop: {acquire_stop}')
+    if filtered:
+        with Pool(len(filtered)) as pool:
+            results = pool.starmap(start_camera, filtered)
+            results, serializer = wait_for_streaming(results, is_auto_start)
+            results = [(sc,) for sc in results]
+            pool.starmap(start_streaming, results)
+        del filtered, results  # must delete this list in order to destroy all pointers to cameras.
+
+    cam_list.Clear()
+    # system.ReleaseInstance()
+
+    return log_stream.getvalue()
+
+
 def main():
     """Main function for Arena capture"""
     ap = argparse.ArgumentParser(description="Tool for capturing multiple cameras streams in the arena.")
-    ap.add_argument("-n", "--num_frames", type=int, default=DEFAULT_NUM_FRAMES,
-                    help=f"Specify Number of Frames. Default={DEFAULT_NUM_FRAMES}")
+    ap.add_argument("-n", "--num_frames", type=int, help=f"Specify Number of Frames.")
+    ap.add_argument("-t", "--record_time", type=int, help=f"Specify record duration in seconds.")
+    ap.add_argument("-m", "--manual_stop", action="store_true", default=False,
+                    help=f"Stop record using cache key MANUAL_RECORD_STOP.")
+    ap.add_argument("--experiment_alive", action="store_true", default=False,
+                    help=f"Stop record if the experiment ended")
     ap.add_argument("-o", "--output", type=str, default=OUTPUT_DIR,
                     help=f"Specify output directory path. Default={OUTPUT_DIR}")
     ap.add_argument("-e", "--exposure", type=int, default=EXPOSURE_TIME,
                     help=f"Specify cameras exposure time. Default={EXPOSURE_TIME}")
+    ap.add_argument("-c", "--camera", type=str, required=False,
+                    help=f"filter cameras by last digits or according to CAMERA_NAMES (for more than one use ',').")
     ap.add_argument("-i", "--info", action="store_true", default=False,
                     help=f"Show cameras information")
 
     args = vars(ap.parse_args())
 
-    system = PySpin.System.GetInstance()
-    cam_list = system.GetCameras()
-    num_frames = args.get('num_frames')
-    exposure = args.get('exposure')
-
     if args.get('info'):
-        display_info([c for c in cam_list])
-
+        print(display_info())
     else:
-        label = datetime.now().strftime('%Y%m%d-%H%M%S')
-        dir_path = mkdir(f"{args.get('output')}/{label}")
-
-        filtered = [(cam, dir_path, num_frames, exposure) for cam in cam_list]
-        print(f'\nCameras detected: {len(filtered)}\nNumber of Frames to take: {num_frames}\n')
-        if filtered:
-            with Pool(len(filtered)) as pool:
-                results = pool.starmap(start_camera, filtered)
-                results, serializer = wait_for_streaming(results)
-                results = [(sc,) for sc in results]
-                pool.starmap(start_streaming, results)
-                if serializer:
-                    serializer.stop_acquisition()
-        del filtered, results  # must delete this list in order to destroy all pointers to cameras.
-
-    cam_list.Clear()
-    system.ReleaseInstance()
+        acquire_stop = {}
+        for key in ACQUIRE_STOP_OPTIONS:
+            if key in args:
+                acquire_stop[key] = args[key]
+        record(args.get('exposure'), args.get('camera'), args.get('output'), **acquire_stop)
 
 
 if __name__ == '__main__':

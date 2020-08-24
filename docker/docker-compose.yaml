@@ -1,0 +1,80 @@
+version: '3'
+
+services:
+  arena:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-arena
+    container_name: arena
+    privileged: true
+    volumes:
+    - ../Arena:/arena
+    - ../pogona_hunter:/pogona_hunter
+    restart: always
+    command: "flask run --host=0.0.0.0"
+    ports:
+      - 3350:8888
+      - 3351:5000
+    environment:
+      - FLASK_APP=api.py
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+
+  app:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-app
+    container_name: pogona_hunter
+    restart: always
+    volumes:
+    - ../pogona_hunter:/app
+    ports:
+     - 8080:8080
+
+  logger:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-logger
+    container_name: logger
+    restart: always
+    command: 'python mqtt.py'
+    volumes:
+      - ../Arena:/logger
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  mqtt:
+    image: eclipse-mosquitto:1.6
+    restart: always
+    container_name: mqtt
+    ports:
+      - 1883:1883
+      - 0.0.0.0:9001:9001
+    volumes:
+      - ../mosquitto/:/mosquitto/config/
+
+  cache:
+    image: redis
+    container_name: cache
+    restart: always
+    ports:
+    - 6379:6379
+
+#  rabbitmq:
+#    image: rabbitmq:3-management
+#    container_name: rabbitmq
+#    restart: always
+#    ports:
+#      - 5672:5672
+#      - 15672:15672
+
+#  mongo:
+#    image: mongo
+#    restart: always
+#
+#  mongo-express:
+#    image: mongo-express
+#    restart: always
+#    ports:
+#      - 27017:27017
+#      - 8081:8081

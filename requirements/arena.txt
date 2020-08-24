@@ -1,0 +1,12 @@
+pandas==1.0.3
+pyserial==3.4
+python-dateutil==2.8.1
+jupyterlab
+
+# queue messaging
+paho-mqtt==1.5.0
+
+Flask==1.1.2
+Flask-Caching==1.9.0
+redis==3.5.3
+python-dotenv==0.14.0
