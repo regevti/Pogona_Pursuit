@@ -3,6 +3,7 @@
 import time
 import re
 import cv2
+import json
 import argparse
 
 from datetime import datetime
@@ -10,7 +11,11 @@ import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
+from Prediction import predictor
+from Prediction import LSTM_predict
+from mqtt import MQTTClient
 from utils import get_logger, calculate_fps, mkdir, get_log_stream
+
 
 DEFAULT_NUM_FRAMES = 1000
 DEFAULT_MAX_THROUGHPUT = 94578303
@@ -47,9 +52,17 @@ class SpinCamera:
         self.is_ready = False  # ready for acquisition
         self.video_out = None
         self.start_acquire_time = None
+        self.predictor = None
+        self.mqtt_client = None
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
+        self.name = self.get_camera_name()
+        if self.is_realtime:
+            self.mqtt_client = MQTTClient()
+            self.predictor = predictor.HitPredictor(LSTM_predict.REDPredictor(
+                'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_state=64
+            ))
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
@@ -68,7 +81,7 @@ class SpinCamera:
         """Configure camera for trigger mode before acquisition"""
         try:
             self.cam.AcquisitionFrameRateEnable.SetValue(False)
-            # self.cam.AcquisitionFrameRate.SetValue(60)
+            self.cam.AcquisitionFrameRate.SetValue(FPS)
             self.cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
             self.cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
             self.cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
@@ -129,6 +142,9 @@ class SpinCamera:
         img = image_result.GetNDArray()
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+        if self.is_realtime:
+            self.handle_prediction(img)
+
         if self.dir_path and self.video_out is None:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
             h, w = img.shape[:2]
@@ -165,6 +181,11 @@ class SpinCamera:
 
     def check_experiment_alive(self, iteration):
         return self.cache.get(CacheColumns.EXPERIMENT_NAME)
+
+    def handle_prediction(self, img):
+        forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
+        time2hit = (1 / FPS) * hit_steps  # seconds
+        self.mqtt_client.publish_event('event/log/prediction', json.dumps({'hit_point': hit_point, 'time2hit': time2hit}))
 
     def log_info(self):
         """Print into logger the info of the camera"""
@@ -223,6 +244,11 @@ class SpinCamera:
         if 'firefly' in device_name.lower():
             return True
 
+    def get_camera_name(self):
+        for name, device_id in CAMERA_NAMES.items():
+            if self.device_id == device_id:
+                return name
+
     @property
     def video_path(self):
         return f'{self.dir_path}/{self.device_id}.avi'
@@ -235,6 +261,12 @@ class SpinCamera:
     @property
     def device_id(self):
         return get_device_id(self.cam)
+
+    @property
+    def is_realtime(self):
+        return self.name == 'realtime'
+
+
 
 ############################################################################################################
 
