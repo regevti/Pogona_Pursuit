@@ -1,0 +1,59 @@
+{
+  "bugTypes": {
+    "cockroach": {
+      "text": "Cockroach",
+      "numImagesPerBug": 3,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 160
+      },
+      "stepsPerImage": 10
+    },
+    "worm": {
+      "text": "Worm",
+      "numImagesPerBug": 5,
+      "speed": 1,
+      "radiusRange": {
+        "min": 220,
+        "max": 240
+      },
+      "stepsPerImage": 10
+    },
+    "vegetables": {
+      "text": "Vegetables",
+      "numImagesPerBug": 2,
+      "isStatic": true,
+      "speed": 1,
+      "radiusRange": {
+        "min": 250,
+        "max": 300
+      },
+      "stepsPerImage": 10
+    },
+    "red_beetle": {
+      "text": "Red Beetle",
+      "numImagesPerBug": 12,
+      "speed": 3,
+      "radiusRange": {
+        "min": 150,
+        "max": 180
+      },
+      "stepsPerImage": 4
+    },
+    "black_beetle": {
+      "text": "Black Beetle",
+      "numImagesPerBug": 12,
+      "speed": 3,
+      "radiusRange": {
+        "min": 150,
+        "max": 180
+      },
+      "stepsPerImage": 4
+    }
+  },
+  "movementTypes": [
+    "circle",
+    "line"
+  ]
+}

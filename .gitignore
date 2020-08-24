@@ -6,9 +6,6 @@ __pycache__/
 *.avi
 *.mp4
 *.pth
-*.jpg
-*.png
-*.txt
 *.conv.74
 *.*~
 *.log
@@ -18,3 +15,5 @@ __pycache__/
 test_images/
 stats/
 *.p
+
+Archive/
