@@ -1,7 +1,6 @@
 # Module responsible for real-time analysis and prediction of the pogona
 
 from Prediction.detector import Detector_v4, nearest_detection, xywh_to_centroid
-from Prediction.kalman_predict import constant_velocity_kalman_filter
 import numpy as np
 
 
@@ -35,20 +34,23 @@ class HitPredictor:
         detection = self.detect_pogona_head(frame)
         self.update_history(detection)
 
+        forecast, hit_point, hit_steps = None, None, None
+
         if not self.did_find_detections:
             # First detection. Initialize trajectory predictor.
             if detection is not None:
                 self.did_find_detections = True
                 self.trajectory_predictor.init_trajectory(detection)
-            forecast, hit_point, hit_steps = None, None, None
         else:
             # Update trajectory predictor.
             forecast = self.trajectory_predictor.update_and_predict(
                 self.history[: self.frame_num + 1]
             )
-            hit_point, hit_steps = self.predict_hit(forecast)
+            if forecast is not None:
+                hit_point, hit_steps = self.predict_hit(forecast)
 
         self.frame_num += 1
+        self.forecasts.append(forecast)
 
         return forecast, hit_point, hit_steps
 
@@ -107,6 +109,7 @@ class HitPredictor:
         self.did_find_detections = False
         self.history = np.empty((history_size, 4), np.float)
         self.history[:] = np.nan
+        self.forecasts = []
 
 
 class TrajectoryPredictor:
@@ -122,25 +125,3 @@ class TrajectoryPredictor:
         trajectory.
         """
         pass
-
-
-class ConstantVelocityKalmanPredictor(TrajectoryPredictor):
-    def init_trajectory(self, detection):
-        init_x = np.zeros(4, np.float)
-        init_x[0::2] = xywh_to_centroid(detection[:4])
-
-        self.kf = constant_velocity_kalman_filter(init_x=init_x, dim=2)
-
-    def update_and_predict(self, history):
-        self.kf.predict()
-        if not np.isnan(history[-1, 0]):
-            self.kf.update(xywh_to_centroid(history[-1]))
-
-        forecast = np.empty((self.forecast_horizon, 2), np.float)
-        pred = self.kf.x
-
-        for i in range(self.forecast_horizon):
-            forecast[i] = pred[0::2]
-            pred = np.dot(self.kf.F, pred)
-
-        return forecast

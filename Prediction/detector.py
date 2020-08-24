@@ -155,8 +155,8 @@ class Detector_v4:
         self.model_height = darknet4.lib.network_height(self.net)
         self.conf_thres = conf_thres
         self.nms_thres = nms_thres
+        self.curr_img = None
         print("Detector initiated successfully")
-        #TODO add self.curr_image variable
 
     def set_input_size(self, width, height):
         self.input_width = width
@@ -174,8 +174,8 @@ class Detector_v4:
         """
         image = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         image = cv.resize(image, (self.model_width, self.model_height), interpolation=cv.INTER_LINEAR)
+        self.curr_img = image
         image, arr = darknet4.array_to_image(image)
-        # TODO add self.curr_image variable
         num = c_int(0)
         pnum = pointer(num)
         darknet4.predict_image(self.net, image)

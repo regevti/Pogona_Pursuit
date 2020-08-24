@@ -41,8 +41,31 @@ REALTIME_ID = '19506468'
 DLC_FILENAME = REALTIME_ID + 'DLC_resnet50_pogona_pursuitJul19shuffle1_400000.csv'
 
 
+def get_cropped_head(img, detection, orig_dim, resize_size):
+    """
+    Returns the flattend cropped head
+    :param img: the resized image that was detector run on last (usually 416X416)
+    :param detection: the 5-array (x,y,w,h,prob) that includes the detection
+    :param resize_size: the size of the edge of the square image of the head
+    :return: the cropped resized flattened image array (copy)
+    """
+    src_x1, src_y1 = detection[0], detection[1]
+    src_x2, src_y2 = src_x1 + detection[2], src_y1 + detection[3]
+
+    x_scale = img.shape[0]/orig_dim[0]
+    y_scale = img.shape[1]/orig_dim[1]
+
+    dst_x1, dst_y1 = round(src_x1 * x_scale), round(src_y1 * y_scale)
+    dst_x2, dst_y2 = round(src_x2 * x_scale), round(src_y2 * y_scale)
+
+    cropped_head = img[dst_x1: dst_x2, dst_y1: dst_y2].copy()
+    return cropped_head.flatten()
+
+
+
 def stats_save_frames_data(video_path,
                            detector,
+                           resize_head=40,
                            start_frame=0,
                            num_frames=None):
     """
@@ -68,6 +91,12 @@ def stats_save_frames_data(video_path,
     frames_data = np.empty((num_frames, 8))
     frames_data[:] = np.nan
 
+    # num frames rows by resize^2 columns to store crops of head
+
+    head_crops = np.empty((num_frames, resize_head**2))
+    head_crops[:] = np.nan
+
+
     print(f'analysing {video_path}, num_frames {num_frames}')
 
     for frameCounter in tqdm(range(num_frames)):
@@ -78,6 +107,8 @@ def stats_save_frames_data(video_path,
             break
 
         detections = detector.detect_image(frame)
+
+
 
         if detections is not None:
             if frameCounter > 0:
@@ -92,8 +123,13 @@ def stats_save_frames_data(video_path,
             frames_data[frameCounter][0:2] = centroid
             frames_data[frameCounter][2:7] = detection
             frames_data[frameCounter][7] = detections.shape[0]
+
+            # save flattened cropped head image to matrix
+            flat_head = get_cropped_head(detector.curr_img, detection, (width, height), resize_head)
+
         else:
             frames_data[frameCounter][7] = 0
+
 
     vcap.release()
 
@@ -272,6 +308,9 @@ def analyze_experiment(exper, detector):
 
         # add DLC joint coordinates
         trial_update_dlc(exper_dict, exper, k)
+
+        # save pandas dataframe to csv file
+
 
     return exper_dict
 

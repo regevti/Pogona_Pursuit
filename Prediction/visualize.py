@@ -384,7 +384,17 @@ def predictor_visualizer(predictor):
         bbox = predictor.history[predictor.frame_num - 1]
         if not np.isnan(bbox[0]):
             x, y, w, h = bbox.astype(int)
+            c = xywh_to_centroid(bbox).astype(int)
+
             cv.rectangle(write_frame, (x, y), (x + w, y + h), (255, 0, 0), 1)
+            cv.circle(
+                write_frame,
+                center=tuple(c),
+                radius=4,
+                color=(255, 0, 0),
+                thickness=-1,
+                lineType=cv.LINE_AA,
+            )
 
         if forecast is not None:
             for p in forecast:

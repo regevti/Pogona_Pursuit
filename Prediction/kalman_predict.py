@@ -4,8 +4,11 @@ from scipy.linalg import block_diag
 import numpy as np
 import pandas as pd
 
+from Prediction.predictor import TrajectoryPredictor
+from Prediction.detector import xywh_to_centroid
 
-def constant_velocity_kalman_filter(init_x=None, dt=1, r_var=5., q_var=.1, dim=2):
+
+def constant_velocity_kalman_filter(init_x=None, dt=1, r_var=5.0, q_var=0.1, dim=2):
     """
     Return a constant velocity kalman filter
     dt - time step
@@ -14,21 +17,20 @@ def constant_velocity_kalman_filter(init_x=None, dt=1, r_var=5., q_var=.1, dim=2
     dim - dimensions of input
     """
 
-    kf = KalmanFilter(dim_x=dim*2, dim_z=dim)
+    kf = KalmanFilter(dim_x=dim * 2, dim_z=dim)
     if init_x is None:
-        kf.x = np.zeros(dim*2)
+        kf.x = np.zeros(dim * 2)
     else:
         kf.x = init_x
 
     # state transition matrix
-    f = np.array([[1., dt],
-                  [0., 1.]])
+    f = np.array([[1.0, dt], [0.0, 1.0]])
     kf.F = block_diag(*([f] * dim))
 
     # Measurement function
-    kf.H = block_diag(*([np.array([[1., 0.]])] * dim))
+    kf.H = block_diag(*([np.array([[1.0, 0.0]])] * dim))
 
-    kf.P *= 1.      # covariance matrix
+    kf.P *= 1.0  # covariance matrix
     kf.R *= r_var  # state uncertainty
 
     q = Q_discrete_white_noise(dim=dim, dt=dt, var=q_var)
@@ -72,7 +74,33 @@ def batch_predict_hits(f, centroids, y_threshold=930, max_timesteps=60):
                 cents_pred[i, 4:] = np.array([pred_x, pred_y, j])
                 break
 
-    cents_df = pd.DataFrame(data=cents_pred, columns=['x', 'vx', 'y', 'vy', 'pred_x', 'pred_y', 'k'])
-    cents_df = pd.concat([pd.DataFrame(centroids, columns=['det_x', 'det_y']), cents_df], axis=1)
+    cents_df = pd.DataFrame(
+        data=cents_pred, columns=["x", "vx", "y", "vy", "pred_x", "pred_y", "k"]
+    )
+    cents_df = pd.concat(
+        [pd.DataFrame(centroids, columns=["det_x", "det_y"]), cents_df], axis=1
+    )
 
     return cents_df
+
+
+class ConstantVelocityKalmanPredictor(TrajectoryPredictor):
+    def init_trajectory(self, detection):
+        init_x = np.zeros(4, np.float)
+        init_x[0::2] = xywh_to_centroid(detection[:4])
+
+        self.kf = constant_velocity_kalman_filter(init_x=init_x, dim=2)
+
+    def update_and_predict(self, history):
+        self.kf.predict()
+        if not np.isnan(history[-1, 0]):
+            self.kf.update(xywh_to_centroid(history[-1]))
+
+        forecast = np.empty((self.forecast_horizon, 2), np.float)
+        pred = self.kf.x
+
+        for i in range(self.forecast_horizon):
+            forecast[i] = pred[0::2]
+            pred = np.dot(self.kf.F, pred)
+
+        return forecast
