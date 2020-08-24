@@ -32,42 +32,6 @@ apt-get autoclean && apt-get clean && \
 rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 
-# Download OpenCV 4.2.0 and install
-# step 10
-RUN cd ~ && \
-  wget https://github.com/Itseez/opencv/archive/4.2.0.zip && \
-  unzip 4.2.0.zip && \
-  mv ~/opencv-4.2.0/ ~/opencv/ && \
-  rm -rf ~/4.2.0.zip && \
-  cd ~ && \
-  wget https://github.com/opencv/opencv_contrib/archive/4.2.0.zip -O 4.2.0-contrib.zip && \
-  unzip 4.2.0-contrib.zip && \
-  mv opencv_contrib-4.2.0 opencv_contrib && \
-  rm -rf ~/4.2.0-contrib.zip && \
-  cd /root/opencv && \
-  mkdir build && \
-  cd build && \
-  cmake -D CMAKE_BUILD_TYPE=RELEASE \
-        -D CMAKE_INSTALL_PREFIX=/usr/local \
-        -D INSTALL_C_EXAMPLES=OFF \
-        -D INSTALL_PYTHON_EXAMPLES=ON \
-        -D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib/modules \
-        -D BUILD_EXAMPLES=ON .. && \
-  cd ~/opencv/build && \
-  make -j $(nproc) && \
-  make install && \
-  ldconfig && \
-  # clean opencv repos
-  rm -rf ~/opencv/build && \
-  rm -rf ~/opencv/3rdparty && \
-  rm -rf ~/opencv/doc && \
-  rm -rf ~/opencv/include && \
-  rm -rf ~/opencv/platforms && \
-  rm -rf ~/opencv/modules && \
-  rm -rf ~/opencv_contrib/build && \
-  rm -rf ~/opencv_contrib/doc
-
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
 gnupg2 curl ca-certificates && \
     curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub | apt-key add - && \
@@ -117,6 +81,59 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 libcudnn7-dev=$CUDNN_VERSION-1+cuda10.0 \
 && \
     apt-mark hold libcudnn7
+
+
+# Download OpenCV 4.2.0 and install
+# step 10
+RUN cd ~ && \
+  wget https://github.com/Itseez/opencv/archive/4.2.0.zip && \
+  unzip 4.2.0.zip && \
+  mv ~/opencv-4.2.0/ ~/opencv/ && \
+  rm -rf ~/4.2.0.zip && \
+  cd ~ && \
+  wget https://github.com/opencv/opencv_contrib/archive/4.2.0.zip -O 4.2.0-contrib.zip && \
+  unzip 4.2.0-contrib.zip && \
+  mv opencv_contrib-4.2.0 opencv_contrib && \
+  rm -rf ~/4.2.0-contrib.zip && \
+  cd /root/opencv && \
+  mkdir build && \
+  cd build && \
+  cmake -D CMAKE_BUILD_TYPE=RELEASE \
+        -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D INSTALL_C_EXAMPLES=OFF \
+        -D INSTALL_PYTHON_EXAMPLES=ON \
+        -D WITH_TBB=ON \
+        -D WITH_CUDA=ON \
+        -D BUILD_opencv_cudacodec=OFF \
+        -D ENABLE_FAST_MATH=1 \
+        -D CUDA_FAST_MATH=1 \
+        -D WITH_CUBLAS=1 \
+        -D WITH_V4L=ON \
+        -D WITH_QT=OFF \
+        -D WITH_OPENGL=ON \
+        -D WITH_GSTREAMER=ON \
+        -D OPENCV_GENERATE_PKGCONFIG=ON \
+        -D OPENCV_PC_FILE_NAME=opencv.pc \
+        -D OPENCV_ENABLE_NONFREE=ON \
+        -D WITH_CUDNN=ON \
+        -D OPENCV_DNN_CUDA=ON \
+        -D CUDA_ARCH_BIN=7.5 \
+        -D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib/modules \
+        -D BUILD_EXAMPLES=ON .. && \
+  cd ~/opencv/build && \
+  make -j $(nproc) && \
+  make install && \
+  echo "/usr/local/lib" >> /etc/ld.so.conf.d/opencv.conf && \
+  ldconfig && \
+  # clean opencv repos
+  rm -rf ~/opencv/build && \
+  rm -rf ~/opencv/3rdparty && \
+  rm -rf ~/opencv/doc && \
+  rm -rf ~/opencv/include && \
+  rm -rf ~/opencv/platforms && \
+  rm -rf ~/opencv/modules && \
+  rm -rf ~/opencv_contrib/build && \
+  rm -rf ~/opencv_contrib/doc
 
 
 RUN mkdir /arena
