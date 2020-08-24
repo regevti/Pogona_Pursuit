@@ -11,8 +11,8 @@ import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
-from Prediction import predictor
-from Prediction import LSTM_predict
+# from Prediction import predictor
+# from Prediction import LSTM_predict
 from mqtt import MQTTClient
 from utils import get_logger, calculate_fps, mkdir, get_log_stream
 
