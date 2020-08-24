@@ -76,6 +76,7 @@
                  :numImagesPerBug="currentBugOptions.numImagesPerBug"
                  :isStatic="currentBugOptions.isStatic"
                  :movementType="movementType"
+                 :stepsPerImage="currentBugOptions.stepsPerImage"
                  ref="bugChild">
             </bug>
         </canvas>
