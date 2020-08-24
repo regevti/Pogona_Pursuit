@@ -40,6 +40,16 @@
         "max": 180
       },
       "stepsPerImage": 4
+    },
+    "black_beetle": {
+      "text": "Black Beetle",
+      "numImagesPerBug": 12,
+      "speed": 3,
+      "radiusRange": {
+        "min": 150,
+        "max": 180
+      },
+      "stepsPerImage": 4
     }
   },
   "movementTypes": [
