@@ -60,9 +60,10 @@ class SpinCamera:
         self.name = self.get_camera_name()
         if self.is_realtime:
             self.mqtt_client = MQTTClient()
-            self.predictor = predictor.HitPredictor(LSTM_predict.REDPredictor(
-                'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_state=64
-            ))
+            self.predictor = predictor.HitPredictor(predictor.MockTrajectoryPredictor(10))
+            # LSTM_predict.REDPredictor(
+            #     'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_state=64
+            # )
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""

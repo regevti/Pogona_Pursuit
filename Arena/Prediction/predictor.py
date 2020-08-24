@@ -125,3 +125,8 @@ class TrajectoryPredictor:
         trajectory.
         """
         pass
+
+
+class MockTrajectoryPredictor(TrajectoryPredictor):
+    def update_and_predict(self, history):
+        return np.random.rand(self.forecast_horizon, 2) * 1000
