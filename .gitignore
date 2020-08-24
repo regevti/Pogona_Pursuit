@@ -10,5 +10,10 @@ __pycache__/
 *.*~
 *.log
 *.DS_Store
+*.npy
+*new_frames*
+test_images/
+stats/
+*.p
 
 Archive/

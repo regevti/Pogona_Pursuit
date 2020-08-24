@@ -1,20 +1,21 @@
+import numpy as np
+import cv2 as cv
+from ctypes import c_int, pointer
 import torch
 from torchvision import transforms
 from PIL import Image
-import Detector.Yolo4.darknet as darknet4
-from Detector.models import Darknet
-from utils.utils import load_classes, non_max_suppression
-import cv2 as cv
-from ctypes import c_int, pointer
-import numpy as np
+from Prediction.Yolo3.utils.utils import load_classes, non_max_suppression
 
-"""
-All detectors implement the function detect_image(), that return a (number of detections) X 5 Numpy array.
-The (row - single detection) array format is left_x-left_y-width-height-confidence.
-"""
+import Prediction.Yolo4.darknet as darknet4
+from Prediction.models import Darknet
 
 
 class Detector:
+    """
+    Abstract class with a detect_image() method that return a (number of detections) X 5 Numpy array.
+    The (row - single detection) array format is left_x, left_y, width, height, confidence.
+    """
+
     def detect_image(self, img):
         """
         Return detection array for the supplied image.
@@ -29,11 +30,11 @@ class Detector_v3(Detector):
     based on original paper "YOLOv3: An Incremental Improvement".
     This model training was done without non-examples, i.e, images that do not contain any ground truth detection
     """
-    
+
     def __init__(self,
-                 model_def="Detector/Yolo3/config/yolov3-custom.cfg",
-                 weights_path="Detector/Yolo3/weights/yolov3-pogonahead.pth",
-                 class_path="Detector/Yolo3/classes.names",
+                 model_def="Prediction/Yolo3/config/yolov3-custom.cfg",
+                 weights_path="Prediction/Yolo3/weights/yolov3-pogonahead.pth",
+                 class_path="Prediction/Yolo3/classes.names",
                  img_size=416,
                  conf_thres=0.9,
                  nms_thres=0.6):
@@ -58,20 +59,21 @@ class Detector_v3(Detector):
             self.model.cuda()
         self.model.eval()
         self.classes = load_classes(class_path)
-     
+
     def set_input_size(self, width, height):
         self.input_width = width
         self.input_height = height
 
         # update transforms: scale and pad image
-        ratio = min(self.img_size/width, self.img_size/height)
+        ratio = min(self.img_size / width, self.img_size / height)
         imw = round(width * ratio)
         imh = round(height * ratio)
         # resize + pad can be done with open cv and numpy!!
         self.resize_transform = transforms.Compose([transforms.Resize((imh, imw)),
-                                                    transforms.Pad((max(int((imh - imw)/2), 0),
-                                                                    max(int((imw - imh)/2), 0), max(int((imh-imw)/2), 0),
-                                                                    max(int((imw - imh)/2), 0)), (128, 128, 128)),
+                                                    transforms.Pad((max(int((imh - imw) / 2), 0),
+                                                                    max(int((imw - imh) / 2), 0),
+                                                                    max(int((imh - imw) / 2), 0),
+                                                                    max(int((imw - imh) / 2), 0)), (128, 128, 128)),
                                                     transforms.ToTensor()])
 
     def xyxy_to_xywh(self, xyxy, output_shape):
@@ -105,7 +107,7 @@ class Detector_v3(Detector):
         conf_thres - confidence threshold for detection
         nms_thres - threshold for non-max suppression
         """
-        
+
         # TODO - could be updated to be done without conversion to PIL image
         # might be faster
         img_rgb = cv.cvtColor(img, cv.COLOR_BGR2RGB)
@@ -137,10 +139,11 @@ class Detector_v4:
     Code from: https://github.com/AlexeyAB/darknet, including a python wrapper for the C modules
     Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images
     """
+
     def __init__(self,
-                 cfg_path="Detector/Yolo4/yolo-obj.cfg",
-                 weights_path="Detector/Yolo4/yolo-obj_best.weights",
-                 meta_path="Detector/Yolo4/obj.data",
+                 cfg_path="Prediction/Yolo4/yolo4_2306.cfg",
+                 weights_path="Prediction/Yolo4/yolo4_gs_best_2306.weights",
+                 meta_path="Prediction/Yolo4/obj.data",
                  conf_thres=0.9,
                  nms_thres=0.6):
 
@@ -152,16 +155,17 @@ class Detector_v4:
         self.model_height = darknet4.lib.network_height(self.net)
         self.conf_thres = conf_thres
         self.nms_thres = nms_thres
+        self.curr_img = None
         print("Detector initiated successfully")
-  
+
     def set_input_size(self, width, height):
         self.input_width = width
         self.input_height = height
-    
-    def set_conf_and_nms(self,new_conf_thres=0.9,new_nms_thres=0.6):
+
+    def set_conf_and_nms(self, new_conf_thres=0.9, new_nms_thres=0.6):
         self.conf_thres = new_conf_thres
         self.nms_thres = new_nms_thres
-    
+
     def detect_image(self, img):
         """
         Receive an image as numpy array. Resize image to model size using open-cv.
@@ -170,8 +174,8 @@ class Detector_v4:
         """
         image = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         image = cv.resize(image, (self.model_width, self.model_height), interpolation=cv.INTER_LINEAR)
+        self.curr_img = image
         image, arr = darknet4.array_to_image(image)
-
         num = c_int(0)
         pnum = pointer(num)
         darknet4.predict_image(self.net, image)
@@ -186,7 +190,7 @@ class Detector_v4:
         res = np.zeros((num, 5))
         for i in range(num):
             b = dets[i].bbox
-            res[i] = [b.x-b.w/2, b.y-b.h/2, b.w, b.h, dets[i].prob[0]]
+            res[i] = [b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, dets[i].prob[0]]
         nonzero = res[:, 4] > 0
         res = res[nonzero]
 
@@ -196,3 +200,35 @@ class Detector_v4:
             return None
         else:
             return res
+
+
+def xywh_to_centroid(xywh):
+    """
+    Return the centroids of a bbox array (1 or 2 dimensional).
+    xywh - bbox array in x, y, width, height.
+    """
+    if len(xywh.shape) == 1:
+        x, y, w, h = xywh[:4]
+        return np.array([x + w // 2, y + h // 2])
+
+    x1 = xywh[:, 0]
+    y1 = xywh[:, 1]
+    box_w = xywh[:, 2]
+    box_h = xywh[:, 3]
+
+    return np.stack([x1 + (box_w // 2), y1 + (box_h // 2)], axis=1)
+
+
+def nearest_detection(detections, prev_centroid):
+    """
+    Return the nearest detection to the previous centroid or the detection
+    if there's only one.
+    """
+    if detections.shape[0] > 1:
+        detected_centroids = xywh_to_centroid(detections)
+        deltas = prev_centroid - detected_centroids
+        dists = np.linalg.norm(deltas, axis=1)
+        arg_best = np.argmin(dists)
+        return detections[arg_best]
+    else:
+        return detections[0]

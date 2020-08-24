@@ -131,6 +131,10 @@
         this.bugType = options.bugType ? options.bugType : this.bugType
         this.movementType = options.movementType ? options.movementType : this.movementType
         this.initBoard()
+      },
+      'event/log/prediction'(options) {
+        options = JSON.parse(options)
+        console.log(`Prediction detected coords: ${options.hit_point}, time2hit:${options.time2hit}`)
       }
     },
     computed: {
