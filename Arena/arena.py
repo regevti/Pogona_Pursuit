@@ -8,6 +8,7 @@ import argparse
 
 from datetime import datetime
 import pandas as pd
+import numpy as np
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
@@ -39,9 +40,9 @@ ACQUIRE_STOP_OPTIONS = {
     'manual_stop': 'cache',
     'experiment_alive': 'cache'
 }
-_predictor = predictor.HitPredictor(LSTM_predict.REDPredictor(
+_lstm = LSTM_predict.REDPredictor(
     'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_size=64
-))
+)
 
 
 class SpinCamera:
@@ -61,6 +62,7 @@ class SpinCamera:
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
         self.name = self.get_camera_name()
         if self.is_realtime:
+            self.predictor = predictor.HitPredictor(_lstm)
             self.mqtt_client = MQTTClient()
 
     def begin_acquisition(self, exposure):
@@ -99,6 +101,7 @@ class SpinCamera:
         """Acquire images and measure FPS"""
         if self.is_ready:
             frame_times = list()
+            image_handler_times = list()
             i = 0
             while self.is_acquire_allowed(i):
                 try:
@@ -116,7 +119,9 @@ class SpinCamera:
                             break
                     else:
                         frame_times.append(image_result.GetTimeStamp())
+                        t0 = time.time()
                         self.image_handler(image_result)
+                        image_handler_times.append(time.time() - t0)
 
                     image_result.Release()  # Release image
 
@@ -130,6 +135,7 @@ class SpinCamera:
             self.logger.info(f'Number of frames taken: {i}')
             mean_fps, std_fps = self.analyze_timestamps(frame_times)
             self.logger.info(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
+            self.logger.info(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
@@ -143,13 +149,14 @@ class SpinCamera:
 
         if self.is_realtime:
             self.handle_prediction(img)
+        else:
+            if self.dir_path and self.video_out is None:
+                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+                h, w = img.shape[:2]
+                self.video_out = cv2.VideoWriter(self.video_path, fourcc, FPS, (w, h), True)
 
-        if self.dir_path and self.video_out is None:
-            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-            h, w = img.shape[:2]
-            self.video_out = cv2.VideoWriter(self.video_path, fourcc, FPS, (w, h), True)
+            self.video_out.write(img)
 
-        self.video_out.write(img)
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
 
     def validate_acquire_stop(self):
@@ -182,7 +189,7 @@ class SpinCamera:
         return self.cache.get(CacheColumns.EXPERIMENT_NAME)
 
     def handle_prediction(self, img):
-        forecast, hit_point, hit_steps = _predictor.handle_frame(img)
+        forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
         if hit_point is None or not hit_steps:
             return
 
@@ -208,6 +215,12 @@ class SpinCamera:
         frame_times.to_csv(self.timestamp_path)
 
         return mean_fps, std_fps
+
+    def save_predictions(self):
+        if not self.is_realtime:
+            return
+
+        pd.Series(self.predictor.forecasts).to_csv(self.predictions_path)
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
@@ -259,6 +272,10 @@ class SpinCamera:
     def timestamp_path(self):
         mkdir(f'{self.dir_path}/timestamps')
         return f'{self.dir_path}/timestamps/{self.device_id}.csv'
+
+    @property
+    def predictions_path(self):
+        return f'{self.dir_path}/predictions.csv'
 
     @property
     def device_id(self):
