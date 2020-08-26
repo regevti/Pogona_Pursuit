@@ -279,7 +279,7 @@ class SpinCamera:
 
     @property
     def predictions_path(self):
-        return f'{self.dir_path}/predictions.csv'
+        return f'{self.dir_path}/forecasts.csv'
 
     @property
     def device_id(self):
