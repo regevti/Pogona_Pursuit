@@ -47,11 +47,13 @@ _detector = detector.Detector_v4()
 
 
 class SpinCamera:
-    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None):
+    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None,
+                 is_use_predictions=False):
         self.cam = cam
         self.acquire_stop = acquire_stop or {'num_frames': DEFAULT_NUM_FRAMES}
         self.dir_path = dir_path
         self.cache = cache
+        self.is_use_predictions = is_use_predictions
         self.validate_acquire_stop()
 
         self.is_ready = False  # ready for acquisition
@@ -285,7 +287,7 @@ class SpinCamera:
 
     @property
     def is_realtime(self):
-        return self.name == 'realtime'
+        return self.is_use_predictions and self.name == 'realtime'
 
 
 
@@ -340,9 +342,9 @@ def display_info():
     return output
 
 
-def start_camera(cam, dir_path, num_frames, exposure, cache, log_stream):
+def start_camera(cam, dir_path, num_frames, exposure, cache, log_stream, is_use_predictions):
     """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam, dir_path, num_frames, cache=cache, log_stream=log_stream)
+    sc = SpinCamera(cam, dir_path, num_frames, cache=cache, log_stream=log_stream, is_use_predictions=is_use_predictions)
     sc.begin_acquisition(exposure)
     return sc
 
@@ -374,7 +376,8 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_start=False, cache=None, **acquire_stop) -> str:
+def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_start=False, cache=None,
+           is_use_predictions=False, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
     :param exposure: The exposure time to be set to the cameras
@@ -382,6 +385,7 @@ def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_star
     :param output: The output folder for saving the records and log
     :param is_auto_start: Start record automatically or wait for user input
     :param cache: memory cache to be used by the cameras
+    :param is_use_predictions: relevant for realtime camera only - using strike prediction
     """
     assert all(k in ACQUIRE_STOP_OPTIONS for k in acquire_stop.keys())
     system = PySpin.System.GetInstance()
@@ -394,7 +398,7 @@ def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_star
     label = datetime.now().strftime('%Y%m%d-%H%M%S')
     dir_path = mkdir(f"{output}/{label}")
 
-    filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream) for cam in cam_list]
+    filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]
     print(f'\nCameras detected: {len(filtered)}')
     print(f'Acquire Stop: {acquire_stop}')
     if filtered:

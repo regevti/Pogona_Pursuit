@@ -11,7 +11,7 @@ EXPERIMENTS_DIR = 'experiments'
 
 class Experiment:
     def __init__(self, name: str, animal_id: str, cache: RedisCache, cameras, trial_duration=60, num_trials=1, iti=10,
-                 bug_type=None, bug_speed=None, movement_type=None):
+                 bug_type=None, bug_speed=None, movement_type=None, is_use_predictions=False):
         self.experiment_name = f'{name}_{get_datetime_string()}'
         self.animal_id = animal_id
         self.cache = cache
@@ -23,6 +23,7 @@ class Experiment:
         self.bug_type = bug_type
         self.bug_speed = bug_speed
         self.movement_type = movement_type
+        self.is_use_predictions = is_use_predictions
         self.start()
 
     def __str__(self):
@@ -53,7 +54,7 @@ class Experiment:
         mqtt_client.publish_command('init_bugs', self.bug_options)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration)
         record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration,
-               cache=self.cache)
+               cache=self.cache, is_use_predictions=self.is_use_predictions)
         mqtt_client.publish_command('hide_bugs')
 
     def end_experiment(self):

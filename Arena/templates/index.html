@@ -95,6 +95,10 @@
                             <label class="form-check-label" for="camera-{{cam}}">{{cam}}</label>
                         </div>
                         {% endfor %}
+                        <div class="row ml-4 mt-3">
+                            <input class="form-check-input" type="checkbox" id="use_predictions">
+                            <label class="form-check-label" for="use_predictions">Use Predictions</label>
+                        </div>
                     </form>
                 </div>
                 <div class="row mt-3">
@@ -208,7 +212,8 @@
           iti: Number($("#experimentITI").val()),
           bug_type: $("#bugTypeSelect").val(),
           bug_speed: Number($("#bugSpeed").val()),
-          movement_type: $("#movementTypeSelect").val()
+          movement_type: $("#movementTypeSelect").val(),
+          is_use_predictions: $("#use_predictions").is(":checked")
         }),
         contentType: "application/json",
         beforeSend: function () {
@@ -230,7 +235,8 @@
         data: JSON.stringify(Object.assign({
           exposure: Number($("#exposure").val()),
           cameras: getCheckedCameras(),
-          is_auto_start: true
+          is_auto_start: true,
+          is_use_predictions: $("#use_predictions").is(":checked")
         }, getAcquireStop())),
         contentType: "application/json",
         beforeSend: function () {
