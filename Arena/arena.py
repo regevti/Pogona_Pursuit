@@ -39,6 +39,9 @@ ACQUIRE_STOP_OPTIONS = {
     'manual_stop': 'cache',
     'experiment_alive': 'cache'
 }
+_predictor = predictor.HitPredictor(LSTM_predict.REDPredictor(
+    'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_size=64
+))
 
 
 class SpinCamera:
@@ -52,7 +55,6 @@ class SpinCamera:
         self.is_ready = False  # ready for acquisition
         self.video_out = None
         self.start_acquire_time = None
-        self.predictor = None
         self.mqtt_client = None
 
         self.cam.Init()
@@ -60,9 +62,6 @@ class SpinCamera:
         self.name = self.get_camera_name()
         if self.is_realtime:
             self.mqtt_client = MQTTClient()
-            self.predictor = predictor.HitPredictor(LSTM_predict.REDPredictor(
-                'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_size=64
-            ))
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
@@ -183,7 +182,7 @@ class SpinCamera:
         return self.cache.get(CacheColumns.EXPERIMENT_NAME)
 
     def handle_prediction(self, img):
-        forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
+        forecast, hit_point, hit_steps = _predictor.handle_frame(img)
         if not hit_point:
             return
 
