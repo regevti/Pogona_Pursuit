@@ -8,10 +8,11 @@ from cache import CacheColumns, RedisCache
 import paho.mqtt.client as mqtt
 
 HOST = os.environ.get('MQTT_HOST', 'mqtt')
+TOPIC_PREFIX = 'event/log/'
 SUBSCRIPTION_TOPICS = {
-    'event/log/touch': 'screen_touches.csv',
-    'event/log/hit': 'hits.csv',
-    'event/log/prediction': 'predictions.csv'
+    'touch': 'screen_touches.csv',
+    'hit': 'hits.csv',
+    'prediction': 'predictions.csv'
 }
 
 
@@ -29,12 +30,13 @@ class MQTTClient:
     @staticmethod
     def on_connect(client, userdata, flags, rc):
         print(f'MQTT connecting to host: {HOST}; rc: {rc}')
-        client.subscribe([(topic, 0) for topic in SUBSCRIPTION_TOPICS.keys()])
+        client.subscribe([(TOPIC_PREFIX + topic, 0) for topic in SUBSCRIPTION_TOPICS.keys()])
 
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
-        if msg.topic in SUBSCRIPTION_TOPICS:
-            self.save_to_csv(msg.topic, payload)
+        topic = msg.topic.replace(TOPIC_PREFIX, '')
+        if topic in SUBSCRIPTION_TOPICS:
+            self.save_to_csv(topic, payload)
 
     def publish_event(self, topic, payload, retain=False):
         self.client.connect(HOST)
@@ -67,8 +69,8 @@ class MQTTClient:
         return Path(f'{parent}/{SUBSCRIPTION_TOPICS[topic]}')
 
 
-def is_match_topic(msg, topic_key):
-    return re.match(SUBSCRIPTION_TOPICS[topic_key].replace('+', r'\w+'), msg.topic)
+# def is_match_topic(msg, topic_key):
+#     return re.match(SUBSCRIPTION_TOPICS[topic_key].replace('+', r'\w+'), msg.topic)
 
 
 if __name__ == '__main__':

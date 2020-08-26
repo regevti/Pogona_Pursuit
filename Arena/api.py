@@ -44,7 +44,7 @@ def start_experiment():
         data = request.json
         data['cache'] = cache
         e = Experiment(**data)
-        return Response(str(e))
+        return Response(e.start())
 
 
 @app.route('/get_experiment')

@@ -12,8 +12,6 @@ import numpy as np
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
-from Prediction import predictor, detector
-from Prediction import LSTM_predict
 from mqtt import MQTTClient
 from utils import get_logger, calculate_fps, mkdir, get_log_stream
 
@@ -40,10 +38,17 @@ ACQUIRE_STOP_OPTIONS = {
     'manual_stop': 'cache',
     'experiment_alive': 'cache'
 }
-_lstm = LSTM_predict.REDPredictor(
-    'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_size=64
-)
-_detector = detector.Detector_v4()
+IS_PREDICTOR_READY = False
+try:
+    from Prediction import predictor, detector, LSTM_predict
+
+    _lstm = LSTM_predict.REDPredictor(
+        'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_size=64
+    )
+    _detector = detector.Detector_v4()
+    IS_PREDICTOR_READY = True
+except Exception as exc:
+    print(f'Error loading detector: {exc}')
 
 
 class SpinCamera:
@@ -64,7 +69,7 @@ class SpinCamera:
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
         self.name = self.get_camera_name()
-        if self.is_realtime:
+        if self.is_realtime_mode:
             self.predictor = predictor.HitPredictor(_lstm, detector=_detector)
             self.mqtt_client = MQTTClient()
 
@@ -151,7 +156,7 @@ class SpinCamera:
         img = image_result.GetNDArray()
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        if self.is_realtime:
+        if self.is_realtime_mode:
             self.handle_prediction(img)
         else:
             if self.dir_path and self.video_out is None:
@@ -221,7 +226,7 @@ class SpinCamera:
         return mean_fps, std_fps
 
     def save_predictions(self):
-        if not self.is_realtime:
+        if not self.is_realtime_mode:
             return
 
         pd.Series(self.predictor.forecasts).to_csv(self.predictions_path)
@@ -286,8 +291,8 @@ class SpinCamera:
         return get_device_id(self.cam)
 
     @property
-    def is_realtime(self):
-        return self.is_use_predictions and self.name == 'realtime'
+    def is_realtime_mode(self):
+        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == 'realtime'
 
 
 

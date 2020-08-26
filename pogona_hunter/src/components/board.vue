@@ -35,8 +35,8 @@
                         <input v-model.number="timeInEdge" id="time-in-edge" type="number" style="width: 4em">
                     </div>
                     <div class="row">
-                        <label for="time-between-trial">Time Between Trials: </label>
-                        <input v-model.number="timeBetweenTrial" id="time-between-trial" type="number"
+                        <label for="time-between-bugs">Time Between Bugs: </label>
+                        <input v-model.number="timeBetweenBugs" id="time-between-bugs" type="number"
                                style="width: 4em">
                     </div>
                     <div class="row">
@@ -99,11 +99,11 @@
         movementTypeOptions: require('@/config.json')['movementTypes'],
         movementType: 'line',
         numOfBugs: 0,
-        timeBetweenTrial: 2000,
+        timeBetweenBugs: 2000,
         bloodDuration: 2000,
         timeInEdge: 2000,
         canvasParams: {
-          width: window.innerWidth - 20,
+          width: window.innerWidth,
           height: Math.round(window.innerHeight / 1.5)
         }
       }
@@ -127,9 +127,10 @@
         options = JSON.parse(options)
         console.log(options)
         this.numOfBugs = Number(options.numOfBugs) ? Number(options.numOfBugs) : 1
-        this.speed = options.speed ? Number(options.speed) : this.speed
         this.bugType = options.bugType ? options.bugType : this.bugType
         this.movementType = options.movementType ? options.movementType : this.movementType
+        this.timeBetweenBugs = options.timeBetweenBugs ? Number(options.timeBetweenBugs) * 1000 : this.timeBetweenBugs
+        this.currentBugOptions.speed = options.speed ? Number(options.speed) : this.currentBugOptions.speed
         this.initBoard()
       },
       'event/log/prediction'(options) {
@@ -203,7 +204,7 @@
               cancelAnimationFrame(this.animationHandler)
               this.initBoard()
               clearTimeout(startNewGameTimeout)
-            }, this.timeBetweenTrial)
+            }, this.timeBetweenBugs)
           }
           clearTimeout(bloodTimeout)
         }, this.bloodDuration)

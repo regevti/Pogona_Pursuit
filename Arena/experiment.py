@@ -1,7 +1,9 @@
 from utils import get_datetime_string, mkdir
 from arena import record
 from cache import CacheColumns, RedisCache
-from mqtt import MQTTClient
+from mqtt import MQTTClient, SUBSCRIPTION_TOPICS
+from pathlib import Path
+import pandas as pd
 import time
 import json
 
@@ -11,7 +13,7 @@ EXPERIMENTS_DIR = 'experiments'
 
 class Experiment:
     def __init__(self, name: str, animal_id: str, cache: RedisCache, cameras, trial_duration=60, num_trials=1, iti=10,
-                 bug_type=None, bug_speed=None, movement_type=None, is_use_predictions=False):
+                 bug_type=None, bug_speed=None, movement_type=None, is_use_predictions=False, time_between_bugs=None):
         self.experiment_name = f'{name}_{get_datetime_string()}'
         self.animal_id = animal_id
         self.cache = cache
@@ -20,16 +22,16 @@ class Experiment:
         self.iti = iti
         self.current_trial = 1
         self.cameras = cameras
+        self.is_use_predictions = is_use_predictions
         self.bug_type = bug_type
         self.bug_speed = bug_speed
         self.movement_type = movement_type
-        self.is_use_predictions = is_use_predictions
-        self.start()
+        self.time_between_bugs = time_between_bugs
 
     def __str__(self):
         output = ''
         for obj in ['experiment_name', 'animal_id', 'num_trials', 'cameras', 'trial_duration', 'iti',
-                    'bug_type', 'bug_speed', 'movement_type']:
+                    'bug_type', 'bug_speed', 'movement_type', 'is_use_predictions', 'time_between_bugs']:
             output += f'{obj}: {getattr(self, obj)}\n'
         return output
 
@@ -47,7 +49,11 @@ class Experiment:
             if i != 0:
                 time.sleep(self.iti)
             self.run_trial()
+
+            yield self.trial_summary
+
         self.end_experiment()
+        yield str(self)
 
     def run_trial(self):
         mkdir(self.trial_path)
@@ -65,13 +71,29 @@ class Experiment:
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:
             f.write(str(self))
 
+    def trial_summary(self, i):
+        log = f'Trial {i}:\n'
+        touches_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("touch", '')
+        hits_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("hits", '')
+        if touches_file.exists() and touches_file.is_file():
+            touches_df = pd.read_csv(touches_file, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
+            log += f'Number of touches on the screen: {len(touches_df)}\n'
+
+        if hits_file.exists() and hits_file.is_file():
+            hits_df = pd.read_csv(hits_file, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
+            log += f'Number of hits: {len(hits_df)}\n'
+
+        log += '\n'
+        return log
+
     @property
     def bug_options(self):
         return json.dumps({
             'numOfBugs': 1,
             'speed': self.bug_speed,
             'bugType': self.bug_type,
-            'movementType': self.movement_type
+            'movementType': self.movement_type,
+            'timeBetweenBugs': self.time_between_bugs
         })
 
     @property
