@@ -11,8 +11,8 @@ import pandas as pd
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
-# from Prediction import predictor
-# from Prediction import LSTM_predict
+from Prediction import predictor
+from Prediction import LSTM_predict
 from mqtt import MQTTClient
 from utils import get_logger, calculate_fps, mkdir, get_log_stream
 
@@ -60,10 +60,9 @@ class SpinCamera:
         self.name = self.get_camera_name()
         if self.is_realtime:
             self.mqtt_client = MQTTClient()
-            self.predictor = predictor.HitPredictor(predictor.MockTrajectoryPredictor(10))
-            # LSTM_predict.REDPredictor(
-            #     'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_state=64
-            # )
+            self.predictor = predictor.HitPredictor(LSTM_predict.REDPredictor(
+                'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_size=64
+            ))
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
@@ -82,7 +81,7 @@ class SpinCamera:
         """Configure camera for trigger mode before acquisition"""
         try:
             self.cam.AcquisitionFrameRateEnable.SetValue(False)
-            self.cam.AcquisitionFrameRate.SetValue(FPS)
+            # self.cam.AcquisitionFrameRate.SetValue(FPS)
             self.cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
             self.cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
             self.cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
