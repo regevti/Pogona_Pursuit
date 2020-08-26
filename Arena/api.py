@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response, request, make_response, send_file
+from flask import Flask, render_template, Response, request, make_response, send_file, stream_with_context
 from dotenv import load_dotenv
 import PySpin
 import cv2
@@ -44,7 +44,7 @@ def start_experiment():
         data = request.json
         data['cache'] = cache
         e = Experiment(**data)
-        return Response(e.start())
+        return Response(stream_with_context(e.start()))
 
 
 @app.route('/get_experiment')
