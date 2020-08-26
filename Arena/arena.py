@@ -183,11 +183,11 @@ class SpinCamera:
 
     def handle_prediction(self, img):
         forecast, hit_point, hit_steps = _predictor.handle_frame(img)
-        if hit_point is None:
+        if hit_point is None or not hit_steps:
             return
 
         time2hit = (1 / FPS) * hit_steps  # seconds
-        self.mqtt_client.publish_event('event/log/prediction', json.dumps({'hit_point': hit_point, 'time2hit': time2hit}))
+        self.mqtt_client.publish_event('event/log/prediction', json.dumps({'hit_point': hit_point.tolist(), 'time2hit': time2hit}))
 
     def log_info(self):
         """Print into logger the info of the camera"""
