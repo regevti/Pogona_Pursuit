@@ -183,7 +183,7 @@ class SpinCamera:
 
     def handle_prediction(self, img):
         forecast, hit_point, hit_steps = _predictor.handle_frame(img)
-        if not hit_point:
+        if hit_point is None:
             return
 
         time2hit = (1 / FPS) * hit_steps  # seconds
