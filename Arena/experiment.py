@@ -71,8 +71,9 @@ class Experiment:
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:
             f.write(str(self))
 
-    def trial_summary(self, i):
-        log = f'Trial {i}:\n'
+    @property
+    def trial_summary(self):
+        log = f'Trial {self.current_trial}:\n'
         touches_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("touch", '')
         hits_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("hits", '')
         if touches_file.exists() and touches_file.is_file():
