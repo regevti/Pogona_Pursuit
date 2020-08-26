@@ -137,6 +137,7 @@ class SpinCamera:
             mean_fps, std_fps = self.analyze_timestamps(frame_times)
             self.logger.info(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
             self.logger.info(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
+            self.save_predictions()
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
