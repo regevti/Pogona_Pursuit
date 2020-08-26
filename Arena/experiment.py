@@ -75,7 +75,7 @@ class Experiment:
     def trial_summary(self):
         log = f'Trial {self.current_trial}:\n'
         touches_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("touch", '')
-        hits_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("hits", '')
+        hits_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("hit", '')
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
             log += f'Number of touches on the screen: {len(touches_df)}\n'
