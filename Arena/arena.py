@@ -381,13 +381,14 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_start=False, cache=None,
+def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, folder_prefix=None, is_auto_start=False, cache=None,
            is_use_predictions=False, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
     :param exposure: The exposure time to be set to the cameras
     :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
-    :param output: The output folder for saving the records and log
+    :param output: Output dir for videos
+    :param folder_prefix: Prefix to be added to folder name
     :param is_auto_start: Start record automatically or wait for user input
     :param cache: memory cache to be used by the cameras
     :param is_use_predictions: relevant for realtime camera only - using strike prediction
@@ -400,8 +401,10 @@ def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_star
     if cameras:
         filter_cameras(cam_list, cameras)
 
-    label = datetime.now().strftime('%Y%m%d-%H%M%S')
-    dir_path = mkdir(f"{output}/{label}")
+    folder_name = datetime.now().strftime('%Y%m%d-%H%M%S')
+    if folder_prefix:
+        folder_name = f'{folder_prefix}_{folder_name}'
+    dir_path = mkdir(f"{output}/{folder_name}")
 
     filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]
     print(f'\nCameras detected: {len(filtered)}')
