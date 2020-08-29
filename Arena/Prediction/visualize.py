@@ -2,10 +2,11 @@ import os
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import matplotlib.patches as patches
 
-from Prediction.detector import xywh_to_centroid, nearest_detection
+from Prediction.detector import xyxy_to_centroid, nearest_detection
+import Prediction.calibration as calib
 
 
 def plot_image(detections, img, output_path=None, show_img=True):
@@ -97,14 +98,14 @@ def time_to_bgr(k, arrowWindow):  # DOES NOT WORK - TODO
 
 
 def draw_arrow(
-    frame,
-    frameCounter,
-    centroids,
-    arrowWindow,
-    k,
-    vis_angle=True,
-    windowSize=1,
-    scale=2.5,
+        frame,
+        frameCounter,
+        centroids,
+        arrowWindow,
+        k,
+        vis_angle=True,
+        windowSize=1,
+        scale=2.5,
 ):
     """
     draws the direction of the velocity vector from (arrowWindow) frames back
@@ -118,7 +119,7 @@ def draw_arrow(
 
     # if no prediction at t - windowSize, bo drawing
     if np.isnan(centroids[frameCounter - windowSize, 0]) or np.isnan(
-        centroids[frameCounter, 0]
+            centroids[frameCounter, 0]
     ):
         return
 
@@ -203,7 +204,7 @@ def draw_bounding_boxes(frame, detections, color=(0, 0, 255)):
 
 
 def draw_k_arrows(
-    frame, frameCounter, centroids, arrowWindow, visAngle, windowSize, scale=5
+        frame, frameCounter, centroids, arrowWindow, visAngle, windowSize, scale=5
 ):
     for k in range(arrowWindow):
         draw_arrow(
@@ -274,7 +275,7 @@ def online_centroid_visualizer(detector, color, window_size):
 
 
 def missed_frames_saver(
-    detector, output_dir, prefix="frame", save_thresh=0.8, above=False, draw_bbox=True
+        detector, output_dir, prefix="frame", save_thresh=0.8, above=False, draw_bbox=True
 ):
     saved_counter = 0
 
@@ -293,7 +294,7 @@ def missed_frames_saver(
     except FileExistsError:
         pass
 
-    def fn(orig_frame, write_frame, width, height, frame_counter):
+    def fn(orig_frame, write_frame, frame_counter):
         nonlocal saved_counter
 
         detections = detector.detect_image(orig_frame)
@@ -328,7 +329,7 @@ def video_sampler(output_path, freq):
     if not os.path.exists(output_path):
         os.mkdir(output_path)
 
-    def fn(orig_frame, write_frame, width, height, frame_counter):
+    def fn(orig_frame, write_frame, frame_counter):
         if frame_counter % freq == 0:
             fname = os.path.join(output_path, "chkr_" + str(frame_counter) + ".jpg")
             cv.imwrite(fname, orig_frame)
@@ -337,14 +338,14 @@ def video_sampler(output_path, freq):
 
 
 def offline_centroid_visualizer(centroids, color, window_size):
-    def fn(orig_frame, write_frame, width, height, frame_counter):
+    def fn(orig_frame, write_frame, frame_counter):
         draw_k_centroids(write_frame, frame_counter, centroids, window_size, color)
 
     return fn
 
 
 def offline_arrow_visualizer(centroids, window_size, vis_angle=True, scale=5):
-    def fn(orig_frame, write_frame, width, height, frame_counter):
+    def fn(orig_frame, write_frame, frame_counter):
         draw_k_arrows(
             write_frame, frame_counter, centroids, window_size, vis_angle, 2, scale
         )
@@ -353,7 +354,7 @@ def offline_arrow_visualizer(centroids, window_size, vis_angle=True, scale=5):
 
 
 def offline_kalman_visualizer(cents_df, max_k):
-    def fn(orig_frame, write_frame, width, height, frame_counter):
+    def fn(orig_frame, write_frame, frame_counter):
         if any(np.isnan(cents_df[["det_x", "det_y"]].iloc[frame_counter])):
             return
 
@@ -377,67 +378,133 @@ def offline_kalman_visualizer(cents_df, max_k):
     return fn
 
 
+def visualize_prediction(predictor, write_frame, forecast, hit_point, hit_steps):
+    bbox = predictor.history[predictor.frame_num - 1]
+    if not np.isnan(bbox[0]):
+        x1, y1, x2, y2 = bbox.astype(int)
+        c = xyxy_to_centroid(bbox).astype(int)
+
+        x1 = max(x1, 0)
+        y1 = max(y1, 0)
+        x2 = max(x2, 0)
+        y2 = max(y2, 0)
+        c[0] = max(c[0], 0)
+        c[1] = max(c[1], 0)
+
+        cv.rectangle(write_frame, (x1, y1), (x2, y2), (255, 0, 0), 1)
+        cv.circle(
+            write_frame,
+            center=tuple(c),
+            radius=4,
+            color=(255, 0, 0),
+            thickness=-1,
+            lineType=cv.LINE_AA,
+        )
+
+    if forecast is not None:
+        for p in forecast:
+            cent = xyxy_to_centroid(p).astype(int)
+            px, py = cent
+            px = max(px, 0)
+            py = max(py, 0)
+
+            cv.circle(
+                write_frame,
+                center=(px, py),
+                radius=2,
+                color=(0, 255, 0),
+                thickness=-1,
+                lineType=cv.LINE_AA,
+            )
+
+    if hit_point is not None:
+        center = (int(hit_point), py)
+
+        cv.circle(
+            write_frame,
+            center=center,
+            radius=4,
+            color=(0, 0, 255),
+            thickness=-1,
+            lineType=cv.LINE_AA,
+        )
+
+        cv.putText(
+            write_frame,
+            str(hit_steps),
+            center,
+            cv.FONT_HERSHEY_COMPLEX,
+            fontScale=0.4,
+            color=(255, 0, 0),
+            thickness=1,
+            lineType=cv.LINE_AA,
+        )
+
+
+def offline_predictor_visualizer(predictor, bboxes):
+    def fn(orig_frame, write_frame, frame_counter):
+        forecast, hit_point, hit_steps = predictor.handle_detection(bboxes[frame_counter])
+        visualize_prediction(predictor, write_frame, forecast, hit_point, hit_steps)
+
+    return fn
+
+
 def predictor_visualizer(predictor):
-    def fn(orig_frame, write_frame, width, height, frame_counter):
+    def fn(orig_frame, write_frame, frame_counter):
         forecast, hit_point, hit_steps = predictor.handle_frame(orig_frame)
+        visualize_prediction(predictor, write_frame, forecast, hit_point, hit_steps)
 
-        bbox = predictor.history[predictor.frame_num - 1]
-        if not np.isnan(bbox[0]):
-            x, y, w, h = bbox.astype(int)
-            c = xywh_to_centroid(bbox).astype(int)
+    return fn
 
-            cv.rectangle(write_frame, (x, y), (x + w, y + h), (255, 0, 0), 1)
-            cv.circle(
-                write_frame,
-                center=tuple(c),
-                radius=4,
-                color=(255, 0, 0),
-                thickness=-1,
-                lineType=cv.LINE_AA,
-            )
 
-        if forecast is not None:
-            for p in forecast:
-                cv.circle(
-                    write_frame,
-                    center=tuple(p.astype(int)),
-                    radius=2,
-                    color=(0, 255, 0),
-                    thickness=-1,
-                    lineType=cv.LINE_AA,
-                )
+def get_correction_fn(aff_mat,
+                      screen_width,
+                      screen_x_res,  # 1920
+                      mtx=calib.MTX,
+                      dist=calib.DIST):
+    """
+    Receive the parameters to conduct the lense correction and coordinate transformation
+    on the write_frame image.
 
-        if hit_point is not None:
-            cv.circle(
-                write_frame,
-                center=tuple(hit_point.astype(int)),
-                radius=4,
-                color=(0, 0, 255),
-                thickness=-1,
-                lineType=cv.LINE_AA,
-            )
+    :param aff_mat: affine transformation to touch screen coordinates
+    :param screen_width: size of screen in frame pixels
+    :param screen_x_res: screen resolution
+    :param mtx: camera model matrix
+    :param dist: distortion matrix
+    :return:
+    """
 
-            cv.putText(
-                write_frame,
-                str(hit_steps),
-                tuple(hit_point.astype(int)),
-                cv.FONT_HERSHEY_COMPLEX,
-                fontScale=0.4,
-                color=(255, 0, 0),
-                thickness=1,
-                lineType=cv.LINE_AA,
-            )
+    first_frame = True
+    #  compute the distortion mapping once, according to (w, h)
+    mapx, mapy, roi = None, None, None
+
+    def fn(frame):
+        nonlocal mapx, mapy, roi, first_frame
+        if first_frame:
+            first_frame = False
+            frame_height, frame_width = frame.shape[0], frame.shape[1]
+            (mapx, mapy), roi = calib.get_undistort_mapping(frame_width,
+                                                            frame_height,
+                                                            mtx=mtx,
+                                                            dist=dist)
+
+        # write over write frame and use the corrected
+        write_frame = calib.undistort_image(frame, (mapx, mapy))
+        if aff_mat is not None:
+            write_frame = calib.transform_image(write_frame, aff_mat, screen_x_res, screen_width)
+        return write_frame
 
     return fn
 
 
 def process_video(
-    video_path,
-    output_path,
-    process_fns,
-    start_frame=0,
-    num_frames=None,
-    frame_rate=None,
+        video_path,
+        output_path,
+        process_fns,
+        correction_fn=None,
+        start_frame=0,
+        num_frames=None,
+        frame_rate=None,
 ):
     """
     Open a video file, run all functions in process_fns, and write the
@@ -452,11 +519,10 @@ def process_video(
 
     Each function in process_fns has the following signature
 
-    fn(orig_frame, write_frame, width, height, frame_counter)
+    fn(orig_frame, write_frame, frame_counter)
 
     orig_frame - the original video frame.
     write_frame - the frame that will be written to file.
-    width, height - frame width and height.
     frame_counter - current frame number.
     """
 
@@ -468,27 +534,31 @@ def process_video(
     if num_frames is None:
         num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT)) - start_frame
 
-    width = int(vcap.get(3))
-    height = int(vcap.get(4))
+    # width = int(vcap.get(3))
+    # height = int(vcap.get(4))
 
     if frame_rate is None:
         frame_rate = vcap.get(cv.CAP_PROP_FPS)
 
-    if output_path is not None:
-        videowriter = cv.VideoWriter(
-            output_path, cv.VideoWriter_fourcc(*"mp4v"), frame_rate, (width, height)
-        )
-
-    for frame_counter in tqdm(range(num_frames)):
+    for frame_counter in tqdm(range(start_frame, start_frame + num_frames)):
         ret, orig_frame = vcap.read()
-        write_frame = orig_frame.copy()
 
         if not ret:
             print("error reading frame")
             break
 
+        if correction_fn is not None:
+            orig_frame = correction_fn(orig_frame)
+
+        write_frame = orig_frame.copy()
+
+        if output_path is not None and frame_counter == start_frame:
+            videowriter = cv.VideoWriter(
+                output_path, cv.VideoWriter_fourcc(*"mp4v"), frame_rate, (write_frame.shape[1], write_frame.shape[0])
+            )
+
         for fn in process_fns:
-            fn(orig_frame, write_frame, width, height, frame_counter)
+            fn(orig_frame, write_frame, frame_counter)
 
         if output_path is not None:
             videowriter.write(write_frame)

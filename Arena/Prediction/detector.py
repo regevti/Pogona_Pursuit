@@ -190,7 +190,7 @@ class Detector_v4:
         res = np.zeros((num, 5))
         for i in range(num):
             b = dets[i].bbox
-            res[i] = [b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, dets[i].prob[0]]
+            res[i] = [b.x - b.w / 2, b.y - b.h / 2, b.x + b.w / 2, b.y + b.h / 2, dets[i].prob[0]]
         nonzero = res[:, 4] > 0
         res = res[nonzero]
 
@@ -217,6 +217,57 @@ def xywh_to_centroid(xywh):
     box_h = xywh[:, 3]
 
     return np.stack([x1 + (box_w // 2), y1 + (box_h // 2)], axis=1)
+
+
+def xywh_to_xyxy(xywh):
+    """
+    :param xywh: bboxes in xywh format
+    :return: bboxes in xyxy format
+    """
+    if len(xywh.shape) == 1:
+        x, y, w, h = xywh[:4]
+        return np.array([x, y, x + w, y + h])
+
+    x1 = xywh[:, 0]
+    y1 = xywh[:, 1]
+    box_w = xywh[:, 2]
+    box_h = xywh[:, 3]
+
+    return np.stack([x1, y1, x1 + box_w, y1 + box_h], axis=1)
+
+
+def xyxy_to_xywh(xyxy):
+    """
+    :param xywh: bboxes in xyxy format
+    :return: bboxes in xywh format
+    """
+    if len(xyxy.shape) == 1:
+        x1, y1, x2, y2 = xyxy[:4]
+        return np.array([x1, y1, (x2 - x1), (y2 - y1)])
+
+    x1 = xyxy[:, 0]
+    y1 = xyxy[:, 1]
+    x2 = xyxy[:, 2]
+    y2 = xyxy[:, 3]
+
+    return np.stack([x1, y1, (x2 - x1), (y2 - y1)], axis=1)
+
+
+def xyxy_to_centroid(xyxy):
+    """
+    Return the centroids of a bbox array (1 or 2 dimensional).
+    xyxy - bbox array in x1, y1, x2, y2
+    """
+    if len(xyxy.shape) == 1:
+        x1, y1, x2, y2 = xyxy[:4]
+        return np.array([(x2 + x1)//2, (y2 + y1)// 2])
+
+    x1 = xyxy[:, 0]
+    y1 = xyxy[:, 0]
+    x2 = xyxy[:, 2]
+    y2 = xyxy[:, 3]
+
+    return np.stack([(x1 + x2)//2, (y1 + y2)//2], axis=1)
 
 
 def nearest_detection(detections, prev_centroid):
