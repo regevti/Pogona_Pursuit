@@ -438,11 +438,11 @@ def get_unified_dataframe(vid_dims,
 
                 if to_correct:
                     #print(f'{exper} trial{k} ')
-                    (mapx, mapy), roi = calib.get_undistort_mapping(vid_stat['width'], vid_stat['height'],
+                    _, roi, newcameramtx = calib.get_undistort_mapping(vid_stat['width'], vid_stat['height'],
                                                                   calib.MTX, calib.DIST)
 
-                    trial_df = calib.undistort_data(trial_df, (mapx, mapy))
-                    """
+                    trial_df = calib.undistort_data(trial_df, vid_stat['width'], vid_stat['height'])
+
                     if vid_stat['affine_mat'] is not None:
                         aff_mat = np.array(vid_stat['affine_mat'])
                         #screen_size = vid_stat['screen_size']
@@ -450,7 +450,7 @@ def get_unified_dataframe(vid_dims,
                         trial_df = calib.transform_data(trial_df, aff_mat)
                     else:
                         print(f'{exper} trial{k} is not calibrated')
-                    """
+
                 if align_touch_screen:
                     align_screen_touches(exper, trial_df, k)
 

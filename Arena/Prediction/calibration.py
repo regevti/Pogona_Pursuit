@@ -15,12 +15,25 @@ if we move the camera (or at all), may be redundent.
 
 # Undistort matrices for the Flir camera.
 
-MTX = np.array([[1.14515564e+03, 0.00000000e+00, 7.09060713e+02],
-                [0.00000000e+00, 1.14481967e+03, 5.28220061e+02],
-                [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+MTX = np.array(
+    [
+        [1.14515564e03, 0.00000000e00, 7.09060713e02],
+        [0.00000000e00, 1.14481967e03, 5.28220061e02],
+        [0.00000000e00, 0.00000000e00, 1.00000000e00],
+    ]
+)
 
-DIST = np.array([[-4.25580120e-01, 3.02361751e-01, -1.56952670e-03,
-                  -4.04385846e-04, -2.27525587e-01]])
+DIST = np.array(
+    [
+        [
+            -4.25580120e-01,
+            3.02361751e-01,
+            -1.56952670e-03,
+            -4.04385846e-04,
+            -2.27525587e-01,
+        ]
+    ]
+)
 
 
 class CalibrationException(Exception):
@@ -66,8 +79,7 @@ def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
         if ret is True:
             objpoints.append(objp)
 
-            corners2 = cv.cornerSubPix(gray, corners, (11, 11),
-                                       (-1, -1), criteria)
+            corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
             imgpoints.append(corners2)
 
             # Draw and display the corners
@@ -75,10 +87,11 @@ def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
             # drawings.append(img)
 
     ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(
-        objpoints, imgpoints, shape[::-1][1:], None, None)
+        objpoints, imgpoints, shape[::-1][1:], None, None
+    )
 
     if not ret:
-        raise CalibrationException('Error finding distortion matrix')
+        raise CalibrationException("Error finding distortion matrix")
 
     return mtx, dist
 
@@ -86,16 +99,19 @@ def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
 def get_undistort_mapping(width, height, mtx=MTX, dist=DIST, alpha=0):
     """
     Undistort mapping for the given mtx and dist matrices.
-    Returns (mapx, mapy), roi
-    mapx - x coordinate for each image coordinate
-    mapy - y coordinate for each image coordinate
+    Returns (mapx, mapy), roi, newcameramtx
+    mapx, mapy - x,y coordinates for each image coordinate for undistorting an image.
     roi - (x, y, w, h) region of interest tuple
+    newcameramtx - new camera matrix for undistorting points.
     """
-    newcameramtx, roi = cv.getOptimalNewCameraMatrix(mtx, dist,
-                                                     (width, height),
-                                                     alpha, (width, height))
-    return cv.initUndistortRectifyMap(mtx, dist, None, newcameramtx,
-                                      (width, height), 5), roi
+    newcameramtx, roi = cv.getOptimalNewCameraMatrix(
+        mtx, dist, (width, height), alpha, (width, height)
+    )
+    return (
+        cv.initUndistortRectifyMap(mtx, dist, None, newcameramtx, (width, height), 5),
+        roi,
+        newcameramtx,
+    )
 
 
 def undistort_image(img, mapping, roi=None):
@@ -112,31 +128,31 @@ def undistort_image(img, mapping, roi=None):
     # crop the image
     if roi:
         x, y, w, h = roi
-        dst = dst[y:y + h, x:x + w]
+        dst = dst[y : y + h, x : x + w]
 
     return dst
 
-"""
-TODO  - correct the formula for mapx mapy
-"""
-def undistort_point(p, mapping):
+
+def undistort_point(p, newcameramtx, dist=DIST):
     """
     Undistort point p.
-    Notice: mapx, mapy are 2D arrays with opencv shape, i.e, (dim_y, dim_x)
-    mapping - a (mapx, mapy) tuple returned by gen_undistort_mapping.
+    newcameramtx - the matrix returned by get_undistort_mapping
     """
-    mapx, mapy = mapping
-    x, y = p
+    x, y = p.astype(int)
     if np.isnan(x):
         return np.nan, np.nan
 
-    x = int(x)
-    y = int(y)  # in case x and y are floats, round down to an integer for indexing
-    return mapx[y, x], mapy[y, x]
+    return cv.undisortPoints([[[x, y]]], newcameramtx, dist)
 
 
-def undistort_data(data, mapping,
-                   cols=(('cent_x', 'cent_y'), ('x1', 'y1'),('x2','y2'))):
+def undistort_data(
+    data,
+    width,
+    height,
+    cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2")),
+    mtx=MTX,
+    dist=DIST,
+):
     """
     Undistorts a bulk of data. assumes location data in (cent_x, cent_y, x1, y1, x2, y2) format
     TODO possible to make more generic
@@ -145,21 +161,25 @@ def undistort_data(data, mapping,
     :param cols: an iterable of iterables, each nested iterable is a pair of column names to undistort.
     for example [(cent_x, cent_y), (x, y)]
     :return: dataframe with the same columns (returns copy, doesn't change inplace)
-    """
-    mapx, mapy = mapping
-    ret_df = data.copy()
 
-    """
-    for each pair of (x,y) points to undistort, create new dataframe with corrected data, 
+    for each pair of (x,y) points to undistort, create new dataframe with corrected data,
     and assign to the returned dataframe
     """
+
+    ret_df = data.copy()
+
+    _, _, newcameramtx = get_undistort_mapping(
+        width, height, mtx=MTX, dist=DIST, alpha=0
+    )
+
     for xy in cols:
         x = xy[0]
         y = xy[1]
-        undist = pd.DataFrame(ret_df.apply(lambda r: undistort_point((r[x], r[y]),
-                                                                (mapx, mapy)), axis=1).to_list())
-        undist.columns = [x, y]
-        ret_df[[x, y]] = undist
+        points = data[[x, y]].values
+        undistorted = cv.undistortPoints(
+            np.expand_dims(points, axis=0), newcameramtx, dist, P=newcameramtx
+        )
+        ret_df[[x, y]] = undistorted.squeeze(1)
 
     return ret_df
 
@@ -196,20 +216,25 @@ def get_points(polygons):
 
 def thresh_dist(poly, min_thresh, max_thresh):
     """
-    Return True if the distance between each pair of points is larger than 
+    Return True if the distance between each pair of points is larger than
     min_thresh and smaller than max_thresh.
     """
     for i, p1 in enumerate(poly):
-        for j, p2 in enumerate(poly[i + 1:]):
+        for j, p2 in enumerate(poly[i + 1 :]):
             norm = np.linalg.norm(p1 - p2)
             if norm < min_thresh or norm > max_thresh:
                 return False
     return True
 
 
-def calibrate(cal_img, screen_x_res=1920,
-              contrast=2.2, brightness=0,
-              min_edge_size=20, max_edge_size=100):
+def calibrate(
+    cal_img,
+    screen_x_res=1920,
+    contrast=2.2,
+    brightness=0,
+    min_edge_size=20,
+    max_edge_size=100,
+):
     """
     Calculate the affine transform matrix to go from camera coordinates to
     a coordinate system relative to the touch screen.
@@ -242,14 +267,13 @@ def calibrate(cal_img, screen_x_res=1920,
         polygons.append(approx)
 
     if count != 2:
-        raise CalibrationException('Could not find two square marks in the image.')
+        raise CalibrationException("Could not find two square marks in the image.")
 
     polygons = [poly.squeeze() for poly in polygons]
     p_right, p_left = get_points(polygons)
 
     # Draw the screen line.
-    cv.line(img, pt1=tuple(p_right), pt2=tuple(p_left), color=(0, 255, 0),
-            thickness=10)
+    cv.line(img, pt1=tuple(p_right), pt2=tuple(p_left), color=(0, 255, 0), thickness=10)
 
     v = p_left - p_right
     p_norm = np.linalg.norm(p_left - p_right)
@@ -282,7 +306,7 @@ def transform_image(img, aff, screen_x_res, screen_width):
     return cv.warpAffine(img, aff, img_shape)
 
 
-def transform_data(data, aff, cols=(('cent_x', 'cent_y'), ('x1','y1'), ('x2','y2'))):
+def transform_data(data, aff, cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2"))):
     """
     Comutes the transformed coordinates of undistorted 2D data by matrix multiplication
     :param data: pandas DataFrame, columns assume to contain ('cent_x', 'cent_y', 'x', 'y') and optionally 'w' and 'h'
@@ -294,9 +318,10 @@ def transform_data(data, aff, cols=(('cent_x', 'cent_y'), ('x1','y1'), ('x2','y2
     for xy in cols:
         x = xy[0]
         y = xy[1]
-        data_matrix = np.concatenate([data[[x, y]].values, np.ones((data.shape[0], 1))], axis=1)
+        data_matrix = np.concatenate(
+            [data[[x, y]].values, np.ones((data.shape[0], 1))], axis=1
+        )
         transformed_data = np.dot(data_matrix, aff.T)
         ret_df[[x, y]] = transformed_data
 
     return ret_df
-
