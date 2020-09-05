@@ -7,3 +7,6 @@ COPY ./requirements/arena.txt .
 COPY ./Arena .
 
 RUN pip install -r arena.txt
+
+ENV TZ=Asia/Jerusalem
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
