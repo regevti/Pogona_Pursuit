@@ -4,7 +4,6 @@ RUN mkdir /logger
 WORKDIR /logger
 
 COPY ./requirements/arena.txt .
-COPY ./Arena .
 
 RUN pip install -r arena.txt
 
