@@ -1,5 +1,6 @@
 <template>
     <div class="board-canvas-wrapper" oncontextmenu="return false;">
+        <p style="float: right">SCORE: {{$store.state.score}}</p>
         <Slide style="z-index: 20;">
             <div>
                 <form id='game-configuration' v-on:change="initBoard">
@@ -55,7 +56,6 @@
                         <input v-model.number="currentBugOptions.speed" id="speed" type="number"
                                style="width: 3em">
                     </div>
-                    <h3 style="margin-top: 3em">SCORE: {{$store.state.score}}</h3>
                     <p>Written by Reggev Eyal</p>
                 </form>
             </div>
@@ -131,6 +131,7 @@
         this.movementType = options.movementType ? options.movementType : this.movementType
         this.timeBetweenBugs = options.timeBetweenBugs ? Number(options.timeBetweenBugs) * 1000 : this.timeBetweenBugs
         this.currentBugOptions.speed = options.speed ? Number(options.speed) : this.currentBugOptions.speed
+        this.$store.commit('reset_score')
         this.initBoard()
       },
       'event/log/prediction'(options) {
@@ -177,17 +178,19 @@
         x -= this.canvas.offsetLeft
         y -= this.canvas.offsetTop
         console.log(x, y)
-
         for (let i = 0; i < this.$refs.bugChild.length; i++) {
+          let isHit = false
+          if (distance(x, y, this.$refs.bugChild[i].x, this.$refs.bugChild[i].y) <= this.$refs.bugChild[i].radius / 1.5) {
+            this.destruct(i, x, y)
+            isHit = true
+          }
           this.$mqtt.publish('event/log/touch', JSON.stringify({
             x: x,
             y: y,
             bug_x: this.$refs.bugChild[i].x,
-            bug_y: this.$refs.bugChild[i].y
+            bug_y: this.$refs.bugChild[i].y,
+            is_hit: isHit
           }))
-          if (distance(x, y, this.$refs.bugChild[i].x, this.$refs.bugChild[i].y) <= this.$refs.bugChild[i].radius / 1.5) {
-            this.destruct(i, x, y)
-          }
         }
       },
       destruct(bugIndex, x, y) {
@@ -196,7 +199,7 @@
         }
         this.$refs.bugChild[bugIndex].isDead = true
         this.$store.commit('increment')
-        this.$mqtt.publish('event/log/hit', JSON.stringify({x: x, y: y}))
+        // this.$mqtt.publish('event/log/hit', JSON.stringify({x: x, y: y}))
         const bloodTimeout = setTimeout(() => {
           this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
           if (this.$refs.bugChild.length === 0) {

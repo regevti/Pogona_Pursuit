@@ -13,7 +13,7 @@ from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
 from mqtt import MQTTClient
-from utils import get_logger, calculate_fps, mkdir, get_log_stream
+from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode
 
 
 DEFAULT_NUM_FRAMES = 1000
@@ -117,6 +117,11 @@ class SpinCamera:
                     if i == 0:
                         self.start_acquire_time = time.time()
                         self.logger.info('Acquisition Started')
+
+                    if i % 20:
+                        self.is_use_predictions = True
+                    else:
+                        self.is_use_predictions = False
 
                     if image_result.IsIncomplete():  # Ensure image completion
                         sts = image_result.GetImageStatus()
@@ -393,6 +398,8 @@ def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, folder_prefi
     :param cache: memory cache to be used by the cameras
     :param is_use_predictions: relevant for realtime camera only - using strike prediction
     """
+    if is_debug_mode():
+        return 'DEBUG MODE'
     assert all(k in ACQUIRE_STOP_OPTIONS for k in acquire_stop.keys())
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()

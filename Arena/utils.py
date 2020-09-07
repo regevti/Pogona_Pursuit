@@ -1,3 +1,4 @@
+import os
 import logging
 from pathlib import Path
 import numpy as np
@@ -41,6 +42,10 @@ def get_logger(device_id: str, dir_path: str, log_stream=None) -> logging.Logger
         logger.addHandler(sh)
 
     return logger
+
+
+def is_debug_mode():
+    return os.environ.get('DEBUG', False)
 
 
 def calculate_fps(frame_times):

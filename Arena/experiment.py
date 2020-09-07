@@ -1,4 +1,4 @@
-from utils import get_datetime_string, mkdir
+from utils import get_datetime_string, mkdir, is_debug_mode
 from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTClient, SUBSCRIPTION_TOPICS
@@ -59,8 +59,11 @@ class Experiment:
         mkdir(self.trial_path)
         mqtt_client.publish_command('init_bugs', self.bug_options)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration)
-        record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration,
-               cache=self.cache, is_use_predictions=self.is_use_predictions)
+        if not is_debug_mode():
+            record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration,
+                   cache=self.cache, is_use_predictions=self.is_use_predictions)
+        else:
+            time.sleep(self.trial_duration)
         mqtt_client.publish_command('hide_bugs')
 
     def end_experiment(self):
@@ -75,16 +78,14 @@ class Experiment:
     def trial_summary(self):
         log = f'Trial {self.current_trial}:\n'
         touches_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("touch", '')
-        hits_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("hit", '')
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
             log += f'Number of touches on the screen: {len(touches_df)}\n'
+            log += f'Number of successful hits: {len(touches_df.query("is_hit == True"))}'
+        else:
+            log += 'No screen strikes were recorded.'
 
-        if hits_file.exists() and hits_file.is_file():
-            hits_df = pd.read_csv(hits_file, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
-            log += f'Number of hits: {len(hits_df)}\n'
-
-        log += '\n'
+        log += 2 * '\n'
         return log
 
     @property
