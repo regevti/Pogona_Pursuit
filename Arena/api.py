@@ -6,7 +6,7 @@ import json
 import os
 load_dotenv()
 
-from utils import titlize
+from utils import titlize, get_predictor_model
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTClient
 from experiment import Experiment
@@ -59,6 +59,23 @@ def stop_experiment():
         cache.delete(CacheColumns.EXPERIMENT_NAME)
         return Response(f'Experiment: {experiment_name} was stopped')
     return Response('No available experiment')
+
+
+@app.route('/calibrate')
+def calibrate():
+    """Calibrate camera"""
+    try:
+        from arena import _models
+    except ImportError:
+        return Response('Unable to locate HitPredictor')
+    pred = _models[get_predictor_model()].hit_pred
+    # TODO: return image from record
+    # record(EXPOSURE_TIME,'realtime', is_auto_start=True,)
+    img = None
+    h, h_im, error = pred.calibrate(img)
+    if error:
+        return Response(error)
+    return Response('ok')
 
 
 @app.route('/cameras_info')

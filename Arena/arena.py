@@ -13,7 +13,7 @@ from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
 from mqtt import MQTTClient
-from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode, is_predictor_experiment
+from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode, is_predictor_experiment, get_predictor_model
 
 
 DEFAULT_NUM_FRAMES = 1000
@@ -41,12 +41,28 @@ ACQUIRE_STOP_OPTIONS = {
 IS_PREDICTOR_READY = False
 IS_PREDICTOR_EXPERIMENT = is_predictor_experiment()
 try:
-    from Prediction import predictor, detector, LSTM_predict
+    from Prediction import predictor, detector, seq2seq_predict
 
-    _lstm = LSTM_predict.REDPredictor(
-        'Prediction/traj_models/RED/model_16_24_h64_best.pth', 16, 24, hidden_size=64
-    )
     _detector = detector.Detector_v4()
+
+    class PredictModel:
+        def __init__(self, weigths, traj_model):
+            self.weights = weigths
+            self.traj_model = traj_model
+            self.history_len = 20
+            self.forecast_horizon = 20
+            self.seq2seq_predictor = seq2seq_predict.Seq2SeqPredictor(model=self.traj_model,
+                                                                      weights_path=self.weights,
+                                                                      history_len=self.history_len,
+                                                                      forecast_horizon=self.forecast_horizon)
+            self.hit_pred = predictor.HitPredictor(trajectory_predictor=self.seq2seq_predictor, detector=_detector)
+
+    _models = {
+        'gru': PredictModel('Prediction/traj_models/model_20_20_h64_b64_l1_EncDec_6_best.pth', seq2seq_predict.GRUEncDec()),
+        'lstm': PredictModel('Prediction/traj_models/model_20_20_h64_b128_l1_lstmDense_feeding_51_best.pth',
+                             seq2seq_predict.LSTMdense(output_seq_size=20, hidden_size=64, LSTM_layers=1,
+                                                       embedding_size=16))
+    }
     IS_PREDICTOR_READY = True
 except Exception as exc:
     print(f'Error loading detector: {exc}')
@@ -71,9 +87,9 @@ class SpinCamera:
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
         self.name = self.get_camera_name()
         if self.is_realtime_mode:
-            self.logger.info('Working in realrime mode')
+            self.logger.info('Working in realtime mode')
             self.predictor_experiment_ids = []
-            self.predictor = predictor.HitPredictor(_lstm, detector=_detector)
+            self.predictor = _models[get_predictor_model()].hit_pred
             self.mqtt_client = MQTTClient()
 
     def begin_acquisition(self, exposure):

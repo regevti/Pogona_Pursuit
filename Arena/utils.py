@@ -52,6 +52,10 @@ def is_predictor_experiment():
     return os.environ.get('PREDICTOR_EXPERIMENT', False)
 
 
+def get_predictor_model():
+    return os.environ.get('PREDICTOR_MODEL', 'lstm')
+
+
 def calculate_fps(frame_times):
     diffs = [j - i for i, j in zip(frame_times[:-1], frame_times[1:])]
     fps = 1 / np.mean(diffs)
