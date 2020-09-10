@@ -1,106 +1,97 @@
+import numpy as np
 from filterpy.kalman import KalmanFilter
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
-import numpy as np
-import pandas as pd
-
 from Prediction.predictor import TrajectoryPredictor
-from Prediction.detector import xywh_to_centroid
 
 
-def constant_velocity_kalman_filter(init_x=None, dt=1, r_var=5.0, q_var=0.1, dim=2):
+def create_kalman_filter(
+    init_x=None, input_dim=2, num_terms=2, dt=1, r_var=5.0, q_var=0.1
+):
     """
     Return a constant velocity kalman filter
+    input_dim - dimensions of input
+    num_derivatives - number of terms in the dynamic system (i.e. 2 for constant velocity, 3 for constant accel, etc.).
     dt - time step
     r_var - variance of state uncertainty matrix R
     q_var - variance of white noise matrix Q
-    dim - dimensions of input
     """
 
-    kf = KalmanFilter(dim_x=dim * 2, dim_z=dim)
+    kf = KalmanFilter(dim_x=input_dim * num_terms, dim_z=input_dim)
     if init_x is None:
-        kf.x = np.zeros(dim * 2)
+        kf.x = np.zeros(input_dim * num_terms)
     else:
         kf.x = init_x
 
     # state transition matrix
-    f = np.array([[1.0, dt], [0.0, 1.0]])
-    kf.F = block_diag(*([f] * dim))
+    f = np.zeros((num_terms, num_terms), dtype=np.float)
+    for i in range(num_terms):
+        for j in range(i, num_terms):
+            p = j - i
+            f[i, j] = (dt ** p) / max(1, p)
+
+    kf.F = block_diag(*([f] * input_dim))
 
     # Measurement function
-    kf.H = block_diag(*([np.array([[1.0, 0.0]])] * dim))
+    h_block = np.zeros(num_terms, dtype=np.float)
+    h_block[0] = 1.0
+    kf.H = block_diag(*([h_block] * input_dim))
 
     kf.P *= 1.0  # covariance matrix
     kf.R *= r_var  # state uncertainty
 
-    q = Q_discrete_white_noise(dim=dim, dt=dt, var=q_var)
-    kf.Q = block_diag(q, q)
+    q = Q_discrete_white_noise(dim=num_terms, dt=dt, var=q_var)
+    kf.Q = block_diag(*([q] * input_dim))
 
     return kf
 
 
-def batch_predict_hits(f, centroids, y_threshold=930, max_timesteps=60):
-    """
-    Run the filter in order to predict the number of time steps until passing
-    the given y coordinate.
+class KalmanPredictor(TrajectoryPredictor):
+    def __init__(self, forecast_horizon, num_derivatives, q_var=0.01, r_var=5.0):
+        super().__init__(forecast_horizon)
+        self.num_terms = num_derivatives + 1
+        self.q_var = q_var
+        self.r_var = r_var
 
-    f - The filter used for prediction. Expecting predict(), update(x)
-        functions, and an x property.
-    y_threshold - When passing this y value we assume a hit has occurred.
-    max_timesteps - maximum number of time steps to predict.
-
-    Return a data frame containing position, velocity, predicted position and
-    number of time steps until the predicted hit (or nan if there's no hit in
-    max_timesteps steps).
-    """
-    cents_pred = np.zeros((centroids.shape[0], 7))
-    cents_pred[:] = np.nan
-
-    for i in range(len(centroids)):
-        meas = centroids[i, :2]
-        if np.isnan(meas[0]) or np.isnan(meas[1]):
-            continue
-
-        f.predict()
-        f.update(meas)
-
-        cents_pred[i, :4] = f.x
-        new_pred = f.x
-
-        for j in range(max_timesteps):
-            new_pred = np.dot(f.F, new_pred)
-            pred_x, pred_y = new_pred[0], new_pred[2]
-            if pred_y > y_threshold or j == max_timesteps - 1:
-                cents_pred[i, 4:] = np.array([pred_x, pred_y, j])
-                break
-
-    cents_df = pd.DataFrame(
-        data=cents_pred, columns=["x", "vx", "y", "vy", "pred_x", "pred_y", "k"]
-    )
-    cents_df = pd.concat(
-        [pd.DataFrame(centroids, columns=["det_x", "det_y"]), cents_df], axis=1
-    )
-
-    return cents_df
-
-
-class ConstantVelocityKalmanPredictor(TrajectoryPredictor):
     def init_trajectory(self, detection):
-        init_x = np.zeros(4, np.float)
-        init_x[0::2] = xywh_to_centroid(detection[:4])
+        init_x1 = np.zeros(2 * self.num_terms, np.float)
+        init_x1[0 :: self.num_terms] = detection[:2]
 
-        self.kf = constant_velocity_kalman_filter(init_x=init_x, dim=2)
+        init_x2 = np.zeros(2 * self.num_terms, np.float)
+        init_x2[0 :: self.num_terms] = detection[2:4]
+
+        self.kf1 = create_kalman_filter(
+            init_x=init_x1,
+            input_dim=2,
+            num_terms=self.num_terms,
+            q_var=self.q_var,
+            r_var=self.r_var,
+        )
+        self.kf2 = create_kalman_filter(
+            init_x=init_x2,
+            input_dim=2,
+            num_terms=self.num_terms,
+            q_var=self.q_var,
+            r_var=self.r_var,
+        )
 
     def update_and_predict(self, history):
-        self.kf.predict()
-        if not np.isnan(history[-1, 0]):
-            self.kf.update(xywh_to_centroid(history[-1]))
+        self.kf1.predict()
+        self.kf2.predict()
 
-        forecast = np.empty((self.forecast_horizon, 2), np.float)
-        pred = self.kf.x
+        if not np.isnan(history[-1, 0]):
+            self.kf1.update(history[-1, :2])
+            self.kf2.update(history[-1, 2:])
+
+        forecast = np.empty((self.forecast_horizon, 4), np.float)
+        pred1 = self.kf1.x
+        pred2 = self.kf2.x
 
         for i in range(self.forecast_horizon):
-            forecast[i] = pred[0::2]
-            pred = np.dot(self.kf.F, pred)
+            forecast[i] = np.concatenate(
+                (pred1[0 :: self.num_terms], pred2[0 :: self.num_terms])
+            )
+            pred1 = np.dot(self.kf1.F, pred1)
+            pred2 = np.dot(self.kf2.F, pred2)
 
         return forecast
