@@ -151,7 +151,7 @@ def undistort_point(p, newcameramtx, dist=DIST):
     if np.any(np.isnan(p)):
         return np.nan, np.nan
 
-    return cv.undistortPoints(np.expand_dims(p, axis=0), newcameramtx, dist)
+    return cv.undistortPoints(np.expand_dims(p, axis=0), newcameramtx, dist).squeeze()
 
 
 def undistort_data(

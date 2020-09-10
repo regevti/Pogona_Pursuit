@@ -109,8 +109,9 @@ class HitPredictor:
         """
         if self.homography is None:
             raise calib.CalibrationException("HitPredictor has no homography configured")
+
         x1y1 = calib.undistort_point(detection[:2], self.camera_matrix)
-        x2y2 = calib.undistort_point(detection[2:], self.camera_matrix)
+        x2y2 = calib.undistort_point(detection[2:4], self.camera_matrix)
         x1y1 = calib.transform_point(x1y1, self.homography)
         x2y2 = calib.transform_point(x2y2, self.homography)
         return np.concatenate([x1y1, x2y2])
