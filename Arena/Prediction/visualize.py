@@ -250,7 +250,7 @@ def online_centroid_visualizer(detector, color, window_size):
             else:
                 detection = detections[0]
 
-            centroid = xywh_to_centroid(detection)
+            centroid = xyxy_to_centroid(detection)
             if len(centroids) >= window_size:
                 centroids.pop(0)
 
@@ -406,6 +406,7 @@ def visualize_prediction(
     if forecast is not None:
         for bbox in forecast:
             bbox = bbox.astype(int)
+            bbox = bbox * (bbox > 0)  # zero out negative coords.
 
             # center of bottom bbox edge
             c = xyxy_to_centroid(bbox).astype(int)
@@ -420,10 +421,11 @@ def visualize_prediction(
                 )
 
             if show_forecast_bbox:
-                bbox = bbox * (bbox > 0)  # zero out negative coords.
+
                 cv.rectangle(
                     write_frame, tuple(bbox[:2]), tuple(bbox[2:]), (255, 255, 0), 1
                 )
+
 
     if hit_x is not None:
         hp = (int(hit_x), predictor.prediction_y_threshold)
@@ -478,14 +480,13 @@ def predictor_visualizer(predictor, show_forecast_bbox=False):
 
 
 def get_correction_fn(
-    aff_mat, screen_width, screen_x_res, mtx=calib.MTX, dist=calib.DIST  # 1920
+    homography, screen_x_res, mtx=calib.MTX, dist=calib.DIST  # 1920
 ):
     """
     Receive the parameters to conduct the lense correction and coordinate transformation
     on the write_frame image.
 
     :param aff_mat: affine transformation to touch screen coordinates
-    :param screen_width: size of screen in frame pixels
     :param screen_x_res: screen resolution
     :param mtx: camera model matrix
     :param dist: distortion matrix
@@ -507,10 +508,8 @@ def get_correction_fn(
 
         # write over write frame and use the corrected
         write_frame = calib.undistort_image(frame, (mapx, mapy))
-        if aff_mat is not None:
-            write_frame = calib.transform_image(
-                write_frame, aff_mat, screen_x_res, screen_width
-            )
+        if homography is not None:
+            write_frame = calib.transform_image(write_frame, homography, screen_x_res)
         return write_frame
 
     return fn
@@ -533,17 +532,23 @@ def process_video(
     video_path - path of original video
     output_path - path of processed video or None if writing is not necessary.
     process_fns - a list of process functions
+    correction_fn - a function responsible for undistorting and transforming the image
     start_frame - the first frame to be processed.
     num_frames - number of frames to process or None to process the whole video.
     frame_rate - the framerate of the processed video or None to use the original framerate.
+    resize_to_width - when not None, the output is resized after processing each frame.
 
-    Each function in process_fns has the following signature
+    Each function in process_fns has the following signature:
 
     fn(orig_frame, write_frame, frame_counter)
 
     orig_frame - the original video frame.
     write_frame - the frame that will be written to file.
     frame_counter - current frame number.
+
+    correction_fn has the following signature:
+    fn(input_frame) -> output_frame
+    output_frame is the transformed frame.
     """
 
     vcap = cv.VideoCapture(video_path)
@@ -553,9 +558,6 @@ def process_video(
 
     if num_frames is None:
         num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT)) - start_frame
-
-    # width = int(vcap.get(3))
-    # height = int(vcap.get(4))
 
     if frame_rate is None:
         frame_rate = vcap.get(cv.CAP_PROP_FPS)

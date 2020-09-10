@@ -1,34 +1,64 @@
 # Module responsible for real-time analysis and prediction of the pogona
 
-from Prediction.detector import Detector_v4, nearest_detection, xyxy_to_centroid
-from Prediction.calibration import undistort_point, transform_point
+from Prediction.detector import nearest_detection, xyxy_to_centroid
+from Prediction import calibration as calib
 import numpy as np
+from datetime import datetime
+import json
+import os
 
 
 class HitPredictor:
     def __init__(
         self,
         trajectory_predictor,
-        undist_mapping=None,
-        aff_transform=None,
         detector=None,
         history_size=512,
-        prediction_y_threshold=930,
+        prediction_y_threshold=0,
         y_thresh_above=True,
     ):
 
-        if detector is None:
-            detector = Detector_v4()
+        # look for last homography in some folder and load it. maybe also save dims
+        self.homography, cam_width, cam_height = calib.get_last_homography()
+        if self.homography is not None:
+            _, _, self.camera_matrix = calib.get_undistort_mapping(cam_width, cam_height)
+
+        # TODO: need to calibrate if no homography is found
 
         self.trajectory_predictor = trajectory_predictor
         self.detector = detector
         self.prediction_y_threshold = prediction_y_threshold
-        self.undist_mapping = undist_mapping
-        self.aff_transform = aff_transform
         self.y_thresh_above = y_thresh_above
 
         self.reset(history_size=history_size)
 
+    def calibrate(self, cal_img):
+        """
+        Finds homography from markers in the image. If homography is found,
+        saves it to file and returns the homography and the marked image to caller,
+        and also updates the HitPredictor homography.
+        If homography is not found, doesn't save anything to file, returns None,
+        marked image and the error.
+        :param cal_img: numpy opencv image to extract homography from
+        :return: Homography, marked image with markers, error
+        """
+        cam_width, cam_height = cal_img.shape[1], cal_img.shape[0]
+        (mapx, mapy), _, self.camera_matrix = calib.get_undistort_mapping(cam_width, cam_height)
+        cal_img = calib.undistort_image(cal_img, (mapx, mapy))
+        h, h_im, error = calib.find_arena_homography(cal_img)
+
+        if error is None:
+            self.homography = h
+            date = datetime.now().strftime('%Y%m%d-%H%M%S')
+            json_name = os.path.join(calib.HOMOGRAPHIES_FOLDER, 'homog_'+date+'.json')
+            d = {'homography': h.tolist(),
+                 'width': cam_width,
+                 'height': cam_height}
+
+            with open(json_name, 'w') as fp:
+                json.dump(d, fp)
+
+        return h, h_im, error
 
     def handle_frame(self, frame):
         """
@@ -72,15 +102,17 @@ class HitPredictor:
 
         return forecast, hit_point, hit_steps
 
-    def correct_detection(self,detection):
+    def correct_detection(self, detection):
         """
         :param detection: xyxy bbox
         :return: corrected bbox after undistortion and transformation for screen coordinates
         """
-        x1y1 = undistort_point(detection[:2], self.undist_mapping)
-        x2y2 = undistort_point(detection[2:], self.undist_mapping)
-        x1y1 = transform_point(x1y1, aff)
-        x2y2 = transform_point(x2y2, aff)
+        if self.homography is None:
+            raise calib.CalibrationException("HitPredictor has no homography configured")
+        x1y1 = calib.undistort_point(detection[:2], self.camera_matrix)
+        x2y2 = calib.undistort_point(detection[2:], self.camera_matrix)
+        x1y1 = calib.transform_point(x1y1, self.homography)
+        x2y2 = calib.transform_point(x2y2, self.homography)
         return np.concatenate([x1y1, x2y2])
 
     def detect_pogona_head(self, frame):
@@ -95,11 +127,11 @@ class HitPredictor:
                 detection = nearest_detection(detections, prev_centroid)
             else:
                 detection = detections[0]
+            if self.camera_matrix is not None and self.homography is not None:
+                detection = self.correct_detection(detection)
         else:
             detection = None
 
-        if self.undist_mapping is not None and self.aff_transform is not None:
-            detection = self.correct_detection(detection)
         return detection
 
     def predict_hit(self, forecast):
@@ -121,7 +153,7 @@ class HitPredictor:
             return None, None
 
         hit_idx = int(hit_idxs[0])
-        x_val = (forecast[hit_idx][0] + forecast[hit_idx][2])/2
+        x_val = (forecast[hit_idx][0] + forecast[hit_idx][2]) / 2
         return x_val, hit_idx
 
     def update_history(self, detection):

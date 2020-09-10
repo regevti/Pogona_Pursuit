@@ -3,52 +3,30 @@ from torch import nn
 import numpy as np
 
 from Prediction.predictor import TrajectoryPredictor
-from Prediction.detector import xywh_to_centroid, xywh_to_xyxy
+from Prediction.detector import xywh_to_centroid
 import math
 
 
-class REDPredictor(TrajectoryPredictor):
-    def __init__(self, model_path, history_len, forecast_horizon, **kwargs):
-        super().__init__(forecast_horizon)
-        self.history_len = history_len
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.net = LSTMdense(4, 2, forecast_horizon, **kwargs).double().to(self.device)
-        self.net.load_state_dict(torch.load(model_path))
-        self.net.eval()
-
-    def init_trajectory(self, detection):
-        pass
-
-    def update_and_predict(self, history):
-        """
-        Receive an updated bbox history and generate and return a forecast
-        trajectory.
-        """
-        if history.shape[0] >= self.history_len:
-            with torch.no_grad():
-                bboxes = history[-self.history_len :]
-                centroids = xywh_to_centroid(bboxes)
-                inp = torch.from_numpy(centroids.astype(np.double)).to(self.device)
-                torch_bboxes = torch.from_numpy(bboxes[:, 2:].astype(np.double)).to(
-                    self.device
-                )
-                inp = torch.cat([inp, torch_bboxes], dim=1)
-                inp = inp.unsqueeze(0).double()
-                forecast = self.net(inp)
-                return forecast.squeeze().cpu().numpy()
-        else:
-            return None
-
-
 class Seq2SeqPredictor(TrajectoryPredictor):
-    def __init__(self, model, model_path, history_len, forecast_horizon):
+    """
+    Represents a seq2seq trajectory predictor that uses a pytorch model to generate forecasts.
+    """
+
+    def __init__(self, model, weights_path, history_len, forecast_horizon):
+        """
+        model - A pytorch seq2seq model (torch.nn.Module).
+        weights_path - Path to a pickled state dictionary containing trained weights for the model.
+        history_len - Number of timesteps to look back in order to generate a forecast.
+        forecast_horizon - The forecast size in timesteps into the future.
+
+        The model is sent to the available device, and weights are loaded from the file.
+        """
         super().__init__(forecast_horizon)
         self.history_len = history_len
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device).double()
-        self.model.load_state_dict(torch.load(model_path))
+        self.model.load_state_dict(torch.load(weights_path))
         self.model.eval()
 
     def init_trajectory(self, detection):
@@ -62,14 +40,7 @@ class Seq2SeqPredictor(TrajectoryPredictor):
         if history.shape[0] >= self.history_len:
             with torch.no_grad():
                 bboxes = history[-self.history_len :]
-                centroids = xywh_to_centroid(bboxes)
-                inp = torch.from_numpy(centroids).to(self.device)
-
-                torch_bboxes = torch.from_numpy(bboxes[:, 2:].astype(np.double)).to(
-                    self.device
-                )
-                inp = torch.cat([inp, torch_bboxes], dim=1)
-
+                inp = torch.from_numpy(bboxes).to(self.device)
                 inp = inp.unsqueeze(0).double()
                 forecast = self.model(inp)
                 return forecast.squeeze().cpu().numpy()
@@ -80,30 +51,28 @@ class Seq2SeqPredictor(TrajectoryPredictor):
 class LSTMdense(nn.Module):
     def __init__(
         self,
-        input_size,
-        output_size,
         output_seq_size,
-        embedding_size=16,
-        hidden_size=256,
+        embedding_size=None,
+        hidden_size=128,
         LSTM_layers=2,
         dropout=0.0,
     ):
         super(LSTMdense, self).__init__()
 
-        self.input_size = input_size
         self.hidden_size = hidden_size
         self.LSTM_layers = LSTM_layers
-        self.output_size = output_size
         self.output_seq_size = output_seq_size
-        self.output_dim = output_size * output_seq_size
+        self.output_dim = 4 * output_seq_size
 
         if embedding_size is not None:
             self.embedding_encoder = nn.Linear(
-                in_features=input_size, out_features=embedding_size
+                in_features=4, out_features=embedding_size
             )
         else:
-            embedding_size = input_size
+            embedding_size = 4
             self.embedding_encoder = None
+
+        self.dropout = nn.Dropout(dropout)
 
         self.LSTM = nn.LSTM(
             input_size=embedding_size,
@@ -117,21 +86,19 @@ class LSTMdense(nn.Module):
         )
 
     def forward(self, input_seq):
-        offset = (
-            input_seq[:, -1, :2].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-        )  # TODO: use batch_first in lstm
-        diffs = input_seq[:, 1:, :2] - input_seq[:, :-1, :2]
+        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
+        diffs = input_seq[:, 1:] - input_seq[:, :-1]
 
-        inp = torch.cat([diffs, input_seq[:, 1:, 2:]], dim=2)
-        inp = inp.transpose(0, 1)
         if self.embedding_encoder is not None:
-            inp = self.embedding_encoder(inp)
+            diffs = self.embedding_encoder(diffs)
 
-        # ignore output (0) and cell (1,1)
-        _, (h_out, _) = self.LSTM(inp)
+        inp = self.dropout(diffs)
+
+        # ignores output (0) and cell (1,1)
+        _, (h_out, _) = self.LSTM(inp.transpose(0, 1))
 
         output = self.out_dense(h_out[-1])  # take hidden state of last layer
-        output_mat = output.view(-1, self.output_seq_size, self.output_size)
+        output_mat = output.view(-1, self.output_seq_size, 4)
 
         return offset + output_mat
 
@@ -159,8 +126,6 @@ class PositionalEncoding(nn.Module):
 class GRUEncDec(nn.Module):
     def __init__(
         self,
-        input_size=2,
-        output_size=2,
         output_seq_size=20,
         hidden_size=64,
         GRU_layers=1,
@@ -171,8 +136,6 @@ class GRUEncDec(nn.Module):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.input_size = input_size
-        self.output_size = output_size
         self.output_seq_size = output_seq_size
         self.hidden_size = hidden_size
         self.tie_enc_dec = tie_enc_dec
@@ -180,7 +143,7 @@ class GRUEncDec(nn.Module):
         self.dropout_layer = torch.nn.Dropout(dropout)
 
         self.encoderGRU = nn.GRU(
-            input_size=input_size,
+            input_size=4,
             hidden_size=hidden_size,
             num_layers=GRU_layers,
             batch_first=True,
@@ -188,7 +151,7 @@ class GRUEncDec(nn.Module):
 
         if not tie_enc_dec:
             self.decoderGRU = nn.GRU(
-                input_size=input_size,
+                input_size=4,
                 hidden_size=hidden_size,
                 num_layers=GRU_layers,
                 batch_first=True,
@@ -196,11 +159,11 @@ class GRUEncDec(nn.Module):
         else:
             self.decoderGRU = self.encoderGRU
 
-        self.linear = nn.Linear(in_features=hidden_size, out_features=output_size)
+        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
 
     def forward(self, input_seq):
-        offset = input_seq[:, -1, :2].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-        diffs = input_seq[:, 1:, :2] - input_seq[:, :-1, :2]
+        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
+        diffs = input_seq[:, 1:] - input_seq[:, :-1]
 
         diffs = self.dropout_layer(diffs)
 

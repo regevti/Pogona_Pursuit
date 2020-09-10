@@ -260,14 +260,14 @@ def xyxy_to_centroid(xyxy):
     """
     if len(xyxy.shape) == 1:
         x1, y1, x2, y2 = xyxy[:4]
-        return np.array([(x2 + x1)//2, (y2 + y1)// 2])
+        return np.array([(x2 + x1) / 2, (y2 + y1) / 2])
 
     x1 = xyxy[:, 0]
     y1 = xyxy[:, 0]
     x2 = xyxy[:, 2]
     y2 = xyxy[:, 3]
 
-    return np.stack([(x1 + x2)//2, (y1 + y2)//2], axis=1)
+    return np.stack([(x1 + x2) / 2, (y1 + y2) / 2], axis=1)
 
 
 def nearest_detection(detections, prev_centroid):

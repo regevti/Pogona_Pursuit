@@ -97,9 +97,11 @@ def trial_to_samples(
 
     if std_threshold is not None:
         var_threshold = std_threshold ** 2
-        XY = torch.cat((X[:, :, :2], Y), dim=1)
+        XY = torch.cat((X, Y), dim=1)
         XYmeans = XY.mean(dim=1).repeat(XY.shape[1], 1, 1).transpose(0, 1)
-        XYnorms = (XY - XYmeans).norm(dim=2)
+        XYnorms = (XY - XYmeans).norm(
+            dim=2
+        )  # this is now 4d norms should we change it?
         XYvar = (XYnorms ** 2).mean(dim=1)
 
         keep_lowvar = torch.rand(XYvar.shape)
@@ -391,14 +393,9 @@ def eval_trajectory_predictor(trajectory_predictor, bboxes):
         if forecast is None:
             continue
 
-        # TODO: forecast bboxes
-        centroids = xywh_to_centroid(bboxes[i + 1 : i + len(forecast) + 1])
-        sum_ADE += calc_ADE(
-            torch.from_numpy(forecast), torch.from_numpy(centroids)
-        ).item()
-        sum_FDE += calc_FDE(
-            torch.from_numpy(forecast), torch.from_numpy(centroids)
-        ).item()
+        target = bboxes[i + 1 : i + len(forecast) + 1]
+        sum_ADE += calc_ADE(torch.from_numpy(forecast), torch.from_numpy(target)).item()
+        sum_FDE += calc_FDE(torch.from_numpy(forecast), torch.from_numpy(target)).item()
 
     results = {}
     results["avg ADE"] = sum_ADE / len(forecasts)

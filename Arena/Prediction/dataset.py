@@ -3,41 +3,70 @@ import pandas as pd
 import numpy as np
 import re
 import os
-import sys
+import random
 import cv2 as cv
 import pickle
-from tqdm import tqdm
-import torch
+from tqdm.auto import tqdm
 import json
 import pickle
 
 from Prediction.detector import nearest_detection, xyxy_to_centroid
 import Prediction.calibration as calib
-#  maybe import less from the calibration module?
 
-REALTIME_ID = '19506468'
-DLC_FILENAME = REALTIME_ID + 'DLC_resnet50_pogona_pursuitJul19shuffle1_400000.csv'
-BASE_PATH = '../../Pogona_Pursuit/Arena/experiments/'  # depending on from where the program is run, add ../..
-RT_DATA_FOLDER = 'rt_data'
-HEAD_CROPS_FN = 'head_crops.p'
-DETECTIONS_DF_FN = 'detections_df.csv'
-VID_STATS_FN = 'vid_stats.json'
+REALTIME_ID = "19506468"
 
-EXP_DONT = ['initial', 'delete', 'fps', 'vegetables', 'test-no-streaming','sleepy']
+# depending on from where the program is run, add ../..
+EXPERIMENTS_ROOT = "../../Pogona_Pursuit/Arena/experiments/"
+OUTPUT_ROOT = "../../Pogona_Pursuit/Arena/output/"
 
-DF_COLUMNS = ['cent_x', 'cent_y', 'x1', 'y1', 'x2', 'y2', 'conf', 'num_bbox']
+RT_DATA_FOLDER = "rt_data"
+HEAD_CROPS_FN = "head_crops.p"
+DETECTIONS_DF_FN = "detections.csv"
+DLC_FN = REALTIME_ID + "DLC_resnet50_pogona_pursuitJul19shuffle1_400000.csv"
+TIMESTAMPS_FN = "timestamps/" + REALTIME_ID + ".csv"
+VID_STATS_FN = "vid_stats.json"
+TOUCHES_FN = "screen_touches.csv"
+HOMOGRAPHY_IM_FN = "homography.jpg"
 
-"""
-TODO these variables are useless
-"""
+EXCLUDE_TERMS = [
+    "initial",
+    "delete",
+    "fps",
+    "vegetables",
+    "test-no-streaming",
+    "sleepy",
+    "predictor",
+    "forecasts",
+    "feeding3_20200902-122338",  # false positive in homography
+    "feeding3_20200902-122611",  # same
+    "cockroach_circle_20200902T121652",  # same
+    "cockroach_20200907T152020",  # carpet fucks up calibration
+    "cockroach_20200907T145302",  # same
+    "circle_20200907T145105",  # same
+    'feeding3_20200902-142400',  # alpha 0.3 probably caused a corner black hole
+    "202007",
+    "20200902"
+]
+
+OUTPUT_TERMS = ["feeding"]
+
+DF_COLUMNS = ["cent_x", "cent_y", "x1", "y1", "x2", "y2", "conf", "num_bbox"]
+
+# DEFAULT_HOMOGRAPHY_JSON = "homographies.json"
+DEFAULT_HOMOGRAPHY_JSON = "Prediction/homographies.json"
 
 
-# FIRST_EXPR_TIMESTAMP = 'line_20200803T081429'
-# FIRST_TIMESTAMP = ret_date(FIRST_EXPR_TIMESTAMP)
+""" --------------- Data Analysis Functions --------------- """
 
 """
 TODO - cropped heads are saved before any correction. coordinate transformation might also be relevant
 """
+
+
+class DatasetException(Exception):
+    pass
+
+
 def get_cropped_head(img, detection, orig_dim):
     """
     Returns the flattened cropped head
@@ -70,10 +99,9 @@ def get_cropped_head(img, detection, orig_dim):
     dst_x1, dst_x2 = min(img_x, dst_x1), min(img_x, dst_x2)
     dst_y1, dst_y2 = min(img_y, dst_y1), min(img_y, dst_y2)
 
-    cropped_head = img[dst_y1: dst_y2, dst_x1: dst_x2].copy()  # open_cv shape order - (Y,X) not (X,Y)
-
-    if resize_size is not None:
-        cropped_head = cv.resize(cropped_head, (resize_size, resize_size))
+    cropped_head = img[
+        dst_y1:dst_y2, dst_x1:dst_x2
+    ].copy()  # open_cv shape order - (Y,X) not (X,Y)
 
     cropped_head = cv.cvtColor(cropped_head, cv.COLOR_BGR2GRAY)
     cropped_head = 255 - cropped_head
@@ -81,16 +109,90 @@ def get_cropped_head(img, detection, orig_dim):
     return cropped_head
 
 
-def stats_save_frames_data(video_path,
-                           detector,
-                           resize_head=40,
-                           start_frame=0,
-                           num_frames=None):
+# TODO: write an online version for this function to be called from the experiment UI
+def get_homography_from_video(
+    video_path, undist_alpha=0, max_test_frames=50, **homography_args
+):
     """
-    Analyze a single video by running each frame through the detector, and returning a 2d array
+    An offline function to get the homography transformation from a video. Grid searching values of brightness and
+    contrast until the correct number of polygons is found
+    :param video_path: path to video
+    :param undist_alpha: alpha paramater to the lense undistortion function
+    :param max_test_frames: maximal number of random frames to try
+    :param homography_args: arguments for find_arena_homography function
+    :return: homography, or None if no homography found
+    """
+    vcap = cv.VideoCapture(video_path)
+    width = int(vcap.get(3))
+    height = int(vcap.get(4))
+    num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT))
+
+    (mapx, mapy), roi, _ = calib.get_undistort_mapping(
+        width, height, calib.MTX, calib.DIST, alpha=undist_alpha
+    )
+
+    error = None
+
+    # Try random video frames until one works.
+    for _ in range(max_test_frames):
+        ret, frame = vcap.read()
+        if not ret:
+            raise DatasetException("Error reading frame.")
+
+        undistorted_img = calib.undistort_image(frame, (mapx, mapy))
+
+        # Try a few contrast and brightness values until one works.
+        for contrast in np.arange(0, 3.1, 0.1):
+            for brightness in np.arange(-40, 20, 5):
+                homography, homography_im, error = calib.find_arena_homography(
+                    undistorted_img,
+                    contrast=contrast,
+                    brightness=brightness,
+                    **homography_args,
+                )
+                if homography is not None:
+                    print(
+                        f"Found homography with brightness: {brightness}, contrast: {contrast}"
+                    )
+                    break
+
+            if homography is not None:
+                break
+
+        if homography is not None:
+            break
+        else:
+            random_frame = random.randint(0, num_frames)
+            vcap.set(cv.CAP_PROP_POS_FRAMES, random_frame)
+
+    if error is not None:
+        print("Could not find homography:", error)
+
+    vcap.release()
+
+    return homography, homography_im
+
+
+def analyze_single_video(
+    video_path,
+    detector,
+    start_frame=0,
+    num_frames=None,
+    undist_alpha=0,
+    homography_args={},
+):
+    """
+    Analyze a single video by running each frame through the detector, and returning a 2d array of detections.
     also saving the flattened resized cropped head images in 2d array
-    return: 2 2d arrays, one with detections and one with cropped head
+    return: A 2D array with detections and a list with cropped heads images which are numpy 2d arrays
     """
+
+    # Find homography matrix from the video. Assumes that 4 black squares are visible in the arena.
+    homography, homography_im = get_homography_from_video(
+        video_path, undist_alpha=undist_alpha, **homography_args
+    )
+    if homography is None:
+        print(f"Could not calibrate video at {video_path}")
 
     vcap = cv.VideoCapture(video_path)
 
@@ -104,40 +206,19 @@ def stats_save_frames_data(video_path,
     height = int(vcap.get(4))
     detector.set_input_size(width, height)
 
-    # frames_data: centroid x,centroid y, left x, top y, w, h,
-    #              confidence, num_boxes
+    # frames_data: centroid x,centroid y, x1, y1, x2, y2, confidence, num_boxes
     frames_data = np.empty((num_frames, 8))
     frames_data[:] = np.nan
 
-    # num frames rows by resize^2 columns to store crops of head
-    # head_crops = np.empty((num_frames, resize_head ** 2))
-    # head_crops[:] = np.nan
-
     head_crops = []
-    aff, aff_im, screen_size = None, None, None
 
-    print(f'num_frames {num_frames}')
+    vcap.set(cv.CAP_PROP_POS_FRAMES, start_frame)
 
     for frameCounter in tqdm(range(num_frames)):
         ret, frame = vcap.read()
 
         if not ret:
-            print("error reading frame")
-            break
-
-        """
-        calculate and save affine calibration matrix and p_norm on the first frame
-        assumes that the black squares used for calibration are visible in the arena
-        ************************** not tested yet **********************************
-        """
-        if frameCounter == 0:
-            mapx, mapy, roi = calib.get_undistort_mapping(width, height, calib.MTX, calib.DIST)
-            undistorted_img = calib.undistort_image(frame,(mapx, mapy))
-            try:
-                aff, aff_im, screen_size = calibrate(undistorted_img)
-            except calib.CalibrationException:
-                print(f'Could not calibrate video at {video_path}')
-
+            raise DatasetException("Error reading frame.")
 
         detections = detector.detect_image(frame)
 
@@ -155,13 +236,10 @@ def stats_save_frames_data(video_path,
             frames_data[frameCounter][2:7] = detection
             frames_data[frameCounter][7] = detections.shape[0]
 
-            cropped_head = get_cropped_head(detector.curr_img,
-                                            detection, (height, width))
+            cropped_head = get_cropped_head(
+                detector.curr_img, detection, (height, width)
+            )
 
-            """
-            # save flattened cropped head image to matrix
-            head_crops[frameCounter][:] = cropped_head
-            """
             # append cropped head to list
             head_crops.append(cropped_head)
 
@@ -172,324 +250,471 @@ def stats_save_frames_data(video_path,
 
     vcap.release()
 
-    return frames_data, head_crops, width, height, aff, aff_im, screen_size
+    return frames_data, head_crops, width, height, homography, homography_im
 
 
-def parse_exper_log(exper):
+def save_homography_data(path, undist_alpha=0, homography_args={}):
+    vid_path = os.path.join(path, REALTIME_ID + ".avi")
+    rt_data_path = os.path.join(path, RT_DATA_FOLDER)
+    json_fn = os.path.join(rt_data_path, VID_STATS_FN)
+    homography_im_fn = os.path.join(rt_data_path, HOMOGRAPHY_IM_FN)
+
+    homography, homography_im = get_homography_from_video(
+        vid_path, undist_alpha=undist_alpha, **homography_args
+    )
+
+    if not os.path.exists(rt_data_path):
+        os.mkdir(rt_data_path)
+
+    if homography is not None:
+        homography = homography.tolist()
+
+    if homography_im is not None:
+        cv.imwrite(homography_im_fn, homography_im)
+
+    vcap = cv.VideoCapture(vid_path)
+    vid_width = int(vcap.get(3))
+    vid_height = int(vcap.get(4))
+    vcap.release()
+
+    with open(json_fn, "w") as fp:
+        vid_stats = {"width": vid_width, "height": vid_height, "homography": homography}
+        if undist_alpha != 0:
+            vid_stats["undist_alpha"] = undist_alpha
+
+        json.dump(vid_stats, fp)
+
+"""
+    TODO - Get last homography for offline data analysis:
+         for a trial from a certain date, go to the homographies folder,
+         and find the last homography to that date. Save the homography to vid_stats json
+         as before. No change to the data selection functions.
+"""
+def analyze_rt_data(path, detector, undist_alpha=0, homography_args={}):
     """
-    Parse the log file of an experiment
+    Analyze a single video and save data to the realtime directory:
+    parse detections and other metadata into a single trial dict
+
+    path: path of the folder containing the video.
+    detector: a bbox detector for the pogona head.
+
+    Does not return a value, saves files to disk.
     """
-    with open(os.path.join(exper, 'experiment.log'), 'r') as f:
-        exp_log = f.read()
+    vid_path = os.path.join(path, REALTIME_ID + ".avi")
 
-    name = re.search(r'experiment_name: (.*)', exp_log)
-    animal_id = re.search(r'animal_id: (\d+)\n', exp_log)
-    num_trials = re.search(r'num_trials: (\d+)\n', exp_log)
-    bug_type = re.search(r'bug_type: (.*)', exp_log)
-    bug_speed = re.search(r'bug_speed: (\d+)\n', exp_log)
-    mov_type = re.search(r'movement_type: (.*)', exp_log)
-
-    d = dict()
-
-    if name is not None:
-        d['name'] = name.group(1)
-    if animal_id is not None:
-        d['animal_id'] = int(animal_id.group(1))
-    if num_trials is not None:
-        d['num_trials'] = int(num_trials.group(1))
-    if bug_type is not None:
-        d['bug_type'] = bug_type.group(1)
-    if bug_speed is not None:
-        d['bug_speed'] = int(bug_speed.group(1))
-    if mov_type is not None:
-        d['mov_type'] = mov_type.group(1)
-
-    return d
-
-
-def get_trial_path(exper, trial_k):
-    """
-    :param exper: path of the root of a single experiment
-    :param trial_k: number of trial
-    :return: paths to the video and timestamps files in the trial folder
-    """
-    vid_time = os.listdir(os.path.join(exper, f'trial{trial_k}', 'videos'))[0]
-    vid_path = os.path.join(exper, f'trial{trial_k}', 'videos', vid_time, REALTIME_ID + '.avi')
-    ts_path = os.path.join(exper, f'trial{trial_k}', 'videos', vid_time, 'timestamps', REALTIME_ID + '.csv')  # not here
-    return vid_path, ts_path
-
-
-def trial_analyze_video(exper, k, detector):
-    """
-    Analyze a single video: parse detections and other metadata into single trial dict
-    exper: path of experiment
-    """
-    try:
-        vid_path, timestamp_path = get_vid_path(exper, k)
-    except FileNotFoundError:
-        return
-
-    rt_data_path = os.path.join(exper, f"trial{k}", RT_DATA_FOLDER)
+    rt_data_path = os.path.join(path, RT_DATA_FOLDER)
     head_crops_fn = os.path.join(rt_data_path, HEAD_CROPS_FN)
     detections_df_fn = os.path.join(rt_data_path, DETECTIONS_DF_FN)
-    affine_trans_fn = os.path.join(rt_data_path, )
+    json_fn = os.path.join(rt_data_path, VID_STATS_FN)
+    homography_im_fn = os.path.join(rt_data_path, HOMOGRAPHY_IM_FN)
 
-    # if already analyzed, continue
-
-    if os.path.exists(head_crops_fn) and os.path.exists(detections_df_fn):
-        print(f'skipped {exper}, already analyzed')
-        return
-
-    # ignore trial if there's no realtime recording or no timestamps
-    if (not os.path.exists(vid_path)) or (not os.path.exists(timestamp_path)):
-        print(f'{vid_path} or {timestamp_path} dont exist')
+    try:
+        # analyze video with detector
+        (
+            detections,
+            head_crops,
+            vid_width,
+            vid_height,
+            homography,
+            homography_im,
+        ) = analyze_single_video(
+            video_path=vid_path,
+            detector=detector,
+            undist_alpha=undist_alpha,
+            homography_args=homography_args,
+        )
+    except DatasetException:
+        print(f"Error reading video file: {vid_path}")
         return
 
     if not os.path.exists(rt_data_path):
         os.mkdir(rt_data_path)
 
-    # analyze video with YOLO detector
-    frames_data_test, head_crops, wid, hgt, \
-    aff, aff_im, screen_size = stats_save_frames_data(video_path=vid_path,
-                                                      detector=detector)
-    detections_df = pd.DataFrame(data=frames_data_test, columns=DF_COLUMNS)
-
-    # parse frames timestamps and add as a column
-    timestamps = pd.read_csv(timestamp_path, parse_dates=['0'], usecols=['0'])
-    timestamps.columns = ['frame_ts']
-    timestamps = timestamps.values.squeeze()
-    detections_df['frame_ts'] = timestamps
+    detections_df = pd.DataFrame(data=detections, columns=DF_COLUMNS)
+    detections_df.to_csv(detections_df_fn, index=False)
 
     # save data to file
-    with open(head_crops_fn, 'wb') as fp:
+    with open(head_crops_fn, "wb") as fp:
         pickle.dump(head_crops, fp)
-    detections_df.to_csv(detections_df_fn, index=False)
-    json_fn = os.path.join(rt_data_path, VID_STATS_FN)
 
-    # save affine transformation as a 2D list if not None, convert back to numpy upon loading
-    if aff is not None:
-        aff = aff.tolist()
-    with open(json_fn, 'w') as fp:
-        json.dump({'width': wid, 'height': hgt, 'affine_mat': aff, 'screen_size': screen_size}, fp)
+    # save homography transformation as a 2D list if not None, convert back to numpy upon loading
+    if homography is not None:
+        homography = homography.tolist()
 
-    print(f'saved {detections_df_fn}\n {head_crops_fn}\n {json_fn}')
+    if homography_im is not None:
+        cv.imwrite(homography_im_fn, homography_im)
+
+    with open(json_fn, "w") as fp:
+        vid_stats = {"width": vid_width, "height": vid_height, "homography": homography}
+        if undist_alpha != 0:
+            vid_stats["undist_alpha"] = undist_alpha
+
+        json.dump(vid_stats, fp)
+
+    print(f"Saved {detections_df_fn}\n {head_crops_fn}\n {json_fn}")
 
 
-def align_screen_touches(exper, detections_df, k):
+def collect_analysis_paths(
+    output_root=OUTPUT_ROOT,
+    experiments_root=EXPERIMENTS_ROOT,
+    output_terms=OUTPUT_TERMS,
+):
     """
-    Gets the detections dataframe and adds the screen touches data inplace
-    does not return a value
-    TODO - maybe return a new dataframe instead
+    Return all paths that contain a video from the realtime camera, a timestamp file, 
+    that do not already contain an rt_data folder and that don't contain an excluding term in their name.
+
+    output_root: path to the output directory (general video recordings)
+    experiments_root: path to the experiments directory
+    return: List of paths to analyse
+    """
+    output_paths = []
+    for term in output_terms:
+        output_paths += glob.glob(os.path.join(output_root, f"*{term}*"))
+    trial_paths = glob.glob(os.path.join(experiments_root, "*/trial*/videos/*"))
+    all_paths = output_paths + trial_paths
+
+    def path_filter(path):
+        if os.path.exists(os.path.join(path, RT_DATA_FOLDER)):
+            return False
+        if not os.path.exists(os.path.join(path, REALTIME_ID + ".avi")):
+            return False
+        if not os.path.exists(os.path.join(path, "timestamps", REALTIME_ID + ".csv")):
+            return False
+        if any([dont in path for dont in EXCLUDE_TERMS]):
+            return False
+        return True
+
+    return list(filter(path_filter, all_paths))
+
+
+def analyze_new_data(
+    detector, output_root=OUTPUT_ROOT, experiments_root=EXPERIMENTS_ROOT
+):
+    """
+    Get all new trials from output and experiment folders, and analyze them. A function to be called
+    from console or from a notebook.
+    """
+    paths = collect_analysis_paths(output_root, experiments_root)
+
+    for path in paths:
+        print(f"Analyzing {path}:")
+        analyze_rt_data(path, detector)
+
+
+""" --------------- Data Selection Functions --------------- """
+
+
+def parse_exper_log(exper):
+    """
+    Parse the log file of an experiment
+    TODO - possible to use yaml parser
+    """
+    with open(os.path.join(exper, "experiment.log"), "r") as f:
+        exp_log = f.read()
+
+    name = re.search(r"experiment_name: (.*)", exp_log)
+    animal_id = re.search(r"animal_id: (\d+)\n", exp_log)
+    num_trials = re.search(r"num_trials: (\d+)\n", exp_log)
+    bug_type = re.search(r"bug_type: (.*)", exp_log)
+    bug_speed = re.search(r"bug_speed: (\d+)\n", exp_log)
+    mov_type = re.search(r"movement_type: (.*)", exp_log)
+
+    d = dict()
+
+    if name is not None:
+        d["name"] = name.group(1)
+    if animal_id is not None:
+        d["animal_id"] = int(animal_id.group(1))
+    if num_trials is not None:
+        d["num_trials"] = int(num_trials.group(1))
+    if bug_type is not None:
+        d["bug_type"] = bug_type.group(1)
+    if bug_speed is not None:
+        d["bug_speed"] = int(bug_speed.group(1))
+    if mov_type is not None:
+        d["mov_type"] = mov_type.group(1)
+
+    return d
+
+
+def get_data_paths(path, data_sources):
+    """
+    :param path: a path to an trial folder
+    :param data_sources: files to find paths to
+    :return: a dictionary of paths to files
+    """
+    data_paths = {key: None for key, val in data_sources.items()}
+
+    p = os.path.join(path, RT_DATA_FOLDER, VID_STATS_FN)
+    if os.path.exists(p):
+        data_paths["vid_stats"] = p
+    else:
+        return None
+
+    if data_sources["detections"]:
+        p = os.path.join(path, RT_DATA_FOLDER, DETECTIONS_DF_FN)
+        if os.path.exists(p):
+            data_paths["detections"] = p
+        else:
+            return None
+
+    if data_sources["timestamps"]:
+        p = os.path.join(path, TIMESTAMPS_FN)
+        if os.path.exists(p):
+            data_paths["timestamps"] = p
+        else:
+            return None
+
+    if data_sources["dlc"]:
+        p = os.path.join(path, DLC_FN)
+        if os.path.exists(p):
+            data_paths["dlc"] = p
+        else:
+            return None
+
+    if data_sources["touches"]:
+        trial_path = os.path.split(os.path.split(path)[0])[0]
+        p = os.path.join(trial_path, TOUCHES_FN)
+        if os.path.exists(p):
+            data_paths["touches"] = p
+
+    return data_paths
+
+
+def select_paths(
+    output_root=OUTPUT_ROOT,
+    experiments_root=EXPERIMENTS_ROOT,
+    output_terms=OUTPUT_TERMS,
+    data_sources={"detections": True, "timestamps": True, "dlc": True, "touches": True},
+):
+    """
+    Find all of the paths from which to parse data, called by collect_data function
+    :param output_root: path of folder containing videos only, no additional data
+    :param experiments_root: path of folder containing the experiments data
+    :param output_terms: parse folders in the output folder that contain these strings
+    :param data_sources: files to parse: detections, timestamps, etc.
+    :return: a dictionary of dictionaries of paths, dictionary for each trial
+    """
+    output_paths = []
+    for term in output_terms:
+        output_paths += glob.glob(os.path.join(output_root, f"*{term}*"))
+    trial_paths = glob.glob(os.path.join(experiments_root, "*/trial*/videos/*"))
+    out_dict = {}
+
+    for path in output_paths:
+        if any([exclude in path for exclude in EXCLUDE_TERMS]):
+            continue
+        key = (os.path.split(path)[1], None)
+        data_paths = get_data_paths(path, data_sources)
+        if data_paths:
+            out_dict[key] = data_paths
+
+    for path in trial_paths:
+        if any([exclude in path for exclude in EXCLUDE_TERMS]):
+            continue
+        split_path = path.split(os.path.sep)
+        trial = split_path[-3]
+        experiment = split_path[-4]
+        key = (experiment, trial)
+        data_paths = get_data_paths(path, data_sources)
+        if data_paths:
+            out_dict[key] = data_paths
+
+    return out_dict
+
+
+def collect_data(
+    output_root=OUTPUT_ROOT,
+    experiments_root=EXPERIMENTS_ROOT,
+    output_terms=OUTPUT_TERMS,
+    data_sources={"detections": True, "timestamps": True, "dlc": True, "touches": True},
+    dlc_joints=("nose", "left_ear", "right_ear"),
+    video_dims=(1440, 1080),
+):  # TODO more filtering, according to data in JSON?
+    """
+    Load experimental data to RAM as a Pandas DataFrame. Assumes that the number of columns is relatively small,
+    so the DataFrame can be fitted in the RAM even with hundreds of trials.
+    :param output_root: path of folder containing videos only, no additional data
+    :param experiments_root: path of folder containing the experiments data
+    :param output_terms: parse folders in the output folder that contain these strings
+    :param data_sources: files to parse: detections, timestamps, etc.
+    :param dlc_joints: columns from the DLC dataframe to parse (nose, ears, etc.)
+    :param video_dims: dimensions of videos to parse
+    :return: a Pandas DataFrame containing all of the data
     """
 
-    screen_path = os.path.join(exper, f'trial{k}', 'screen_touches.csv')
-    if not os.path.exists(screen_path):
+    data_paths = select_paths(output_root, experiments_root, output_terms, data_sources)
+
+    dataframes_list = []
+
+    for trial in data_paths.keys():
+        trial_dict = {key: None for key, val in data_sources.items()}
+
+        with open(data_paths[trial]["vid_stats"], "r") as f:
+            vid_stats = json.load(f)
+
+        # skip trial if video dimensions do not fit
+        if (
+            not vid_stats["width"] == video_dims[0]
+            or not vid_stats["height"] == video_dims[1]
+        ):
+            continue
+
+        # parse source to a Pandas Dataframe
+        for source in data_sources.keys():
+            if data_paths[trial][source]:
+                trial_dict[source] = pd.read_csv(data_paths[trial][source])
+
+        # initialize empty dataframe and join sources to it
+        df = pd.DataFrame()
+        homography_column_pairs = []  # dataframe columns to calibrate later
+
+        if data_paths[trial]["detections"]:
+            df[trial_dict["detections"].columns] = trial_dict["detections"]
+
+            homography_column_pairs += [
+                ("cent_x", "cent_y",),
+                ("x1", "y1"),
+                ("x2", "y2"),
+            ]
+
+        if data_paths[trial]["timestamps"]:
+            df["frame_ts"] = pd.to_datetime(trial_dict["timestamps"]["0"])
+
+        # TODO: maybe arrange in a function after all
+        if data_paths[trial]["dlc"] and trial_dict["dlc"] is not None:
+            temp_dlc = trial_dict["dlc"]
+            temp_dlc.drop(columns=["scorer"], inplace=True)
+            temp_dlc.columns = [
+                tup[0] + "_" + tup[1] for tup in zip(temp_dlc.iloc[0], temp_dlc.iloc[1])
+            ]
+            temp_dlc.drop(labels=[0, 1], inplace=True).reset_index(
+                drop=True, inplace=True
+            )
+            drop_dlc_cols = [
+                col
+                for col in temp_dlc.columns
+                if not any([joint in col for joint in dlc_joints])
+            ]
+            temp_dlc.drop(columns=drop_dlc_cols)
+            df[temp_dlc.columns] = temp_dlc
+
+            homography_column_pairs += [
+                (joint + "_x", joint + "_y") for joint in dlc_joints
+            ]
+
+        if data_paths[trial]["touches"]:
+            assert data_paths[trial][
+                "timestamps"
+            ], "Attempted aligning touches without timestamps"
+
+            # if file exists but no touches recorded, pass
+            if not trial_dict["touches"].shape[0] == 0:
+                align_touches(df, trial_dict["touches"])
+
+        df = transform_df(df, homography_column_pairs, vid_stats)
+
+        df.index = [str(trial[0]) + "_" + str(trial[1])] * df.shape[0]
+
+        dataframes_list.append(df)
+
+    if len(dataframes_list) == 0:
+        print("No data found with specified data sources")
         return
 
-    screen_df = pd.read_csv(screen_path,
-                            usecols=['x', 'y', 'bug_x',
-                                     'bug_y', 'timestamp'],
-                            parse_dates=['timestamp'])
+    unified_df = pd.concat(dataframes_list)
+    if "hit" in unified_df.columns:
+        unified_df.hit = unified_df.hit.fillna(False)
 
-    # if file exists but no touches recorded, pass
-    if screen_df.shape[0] == 0:
-        return
+    # place NaN's instead of 0's where there are no detections
+    # TODO: where they become zeros anyway?
+    unified_df.loc[unified_df.num_bbox == 0, DF_COLUMNS] = np.nan
 
-    screen_df.columns = ['hit_x', 'hit_y', 'bug_x', 'bug_y', 'timestamp']
+    print(f"{len(dataframes_list)} trials loaded")
+    return unified_df
+
+
+def transform_df(df, cols, vid_stats):
+    """
+    Applies the  lense undistortion and homography transformation according to pairs of columns
+    :param df: panads dataframe to correct
+    :param cols: iterable of pairs of columns (x,y) to correct
+    :param vid_stats: dictionary containing the homography
+    :return: the corrected dataframe
+    """
+    if vid_stats["homography"] is not None:
+        homography = np.array(vid_stats["homography"])
+    else:
+        with open(DEFAULT_HOMOGRAPHY_JSON, "r") as fp:
+            homography_dict = json.load(fp)
+        homography = np.array(homography_dict["new_h"])
+
+    if "undist_alpha" in vid_stats:
+        alpha = vid_stats["undist_alpha"]
+    else:
+        alpha = 0
+
+    df = calib.undistort_data(
+        df, vid_stats["width"], vid_stats["height"], cols, alpha=alpha
+    )
+
+    df = calib.transform_data(df, homography, cols)
+
+    return df
+
+
+def align_touches(df, temp_touches):
+    """
+    Align the the screen touching data to the detections data, by aligning the data accoring to closest timestamps
+    changes dataframe inplace
+    :param df: detections dataframe
+    :param temp_touches: screen touches dataframe
+    """
+    temp_touches.drop(columns=[temp_touches.columns[0]], inplace=True)
+    if 'is_hit' in temp_touches.columns:
+        temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y","is_hit", "timestamp"]
+    else:
+        temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y", "timestamp"]
+        ### TODO add  new experiments (07/09/2020) onward have a another column, add column
+    #temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y", "timestamp"]
+    temp_touches["timestamp"] = pd.to_datetime(temp_touches["timestamp"])
 
     # initalize columns for screen touching data
-    for col in ['hit_x', 'hit_y', 'bug_x', 'bug_y', 'touch_ts']:
-        detections_df[col] = np.nan
-    detections_df['hit'] = False
+    for col in ["hit_x", "hit_y", "bug_x", "bug_y", "touch_ts"]:
+        df[col] = np.nan
+    df["hit"] = False
 
     # for timestamp of each touch, get frame with closest timestamp
-    for i, ts in enumerate(screen_df.timestamp):
-        frame_argmin = np.argmin((detections_df['frame_ts'] - ts).dt.total_seconds().abs())
+    for i, ts in enumerate(temp_touches.timestamp):
+        frame_argmin = np.argmin((df["frame_ts"] - ts).dt.total_seconds().abs())
 
-        col_inds = [detections_df.columns.get_loc(col) for col in
-                    ['hit_x', 'hit_y', 'bug_x', 'bug_y', 'touch_ts']]
-        to_set = [screen_df.columns.get_loc(col) for col in
-                  ['hit_x', 'hit_y', 'bug_x', 'bug_y', 'timestamp']]
+        col_inds = [
+            df.columns.get_loc(col)
+            for col in ["hit_x", "hit_y", "bug_x", "bug_y", "touch_ts"]
+        ]
+        to_set = [
+            temp_touches.columns.get_loc(col)
+            for col in ["hit_x", "hit_y", "bug_x", "bug_y", "timestamp"]
+        ]
 
         # setting values for part of row
-        detections_df.iloc[frame_argmin, col_inds] = \
-            screen_df.iloc[i, to_set].values
-        detections_df.iloc[frame_argmin,
-                           detections_df.columns.get_loc('hit')] = True
+        df.iloc[frame_argmin, col_inds] = temp_touches.iloc[i, to_set].values
+        df.iloc[frame_argmin, df.columns.get_loc("hit")] = True
+    df["touch_ts"] = pd.to_datetime(df["touch_ts"])
 
 
-def trial_parse_dlc(dlc_path):
-    """
-    Parse DLC csv file to multiindexed dataframe
-    assumes that row 0 can be ignored, row 1 includes bodyparts, row 2 includes coordinates
-    """
-    return pd.read_csv(dlc_path, header=[1, 2]).drop(columns=['bodyparts'], level=0).astype('float64')
-
-
-def trial_add_dlc(det_df, dlc_path, joints=('nose')):
-    """
-    add DLC data if not already in the dictionary
-    changes the detections dataframe in place
-    TODO maybe return a new dataframe instead
-    """
-
-    dlc = trial_parse_dlc(dlc_path)
-    for joint in joints:
-        if joint + '_x' not in det_df.columns:
-            det_df[joint + '_x'] = dlc[joint]['x']
-            det_df[joint + '_y'] = dlc[joint]['y']
-
-
-def analyze_experiment(exper, detector):
-    """
-    Receive a path for an experiment and a detector,
-    return dictionary with dataframes of analyzed trials
-    """
-
-    print(f'Analysing {exper}')
-
-    # TODO parse experiment log data?
-    exper_details = parse_exper_log(exper)
-
-    # Parse and analyse a single trial
-    for k in range(1, exper_details['num_trials'] + 1):
-        trial_analyze_video(exper, k, detector)
-
-    print(f'Finished {exper}')
+# TODO:
 
 
 def ret_date(st):
-    tokens = st.split('_')
+    tokens = st.split("_")
     date = tokens[-1]
     return pd.to_datetime(date)
 
 
-def analyze_new_experiments(detector,
-                            first_date,
-                            all_path=BASE_PATH):
-    """
-    finds experiments who are not analyzed yet after first date,
-    """
-    for exper in glob.glob(all_path + '*'):
-
-        if not os.path.isdir(exper):
-            continue
-
-        exper_date = ret_date(exper)
-        if exper_date < first_date:
-            continue
-
-        # ignore words
-        if any([dont in exper for dont in EXP_DONT]):
-            print(f'skipped {exper}, ignored word')
-            continue
-
-        analyze_experiment(exper, detector)
-
-
-def get_unified_dataframe(vid_dims,
-                          first_date=None,
-                          all_path=BASE_PATH,
-                          align_touch_screen=False,
-                          add_dlc=False,
-                          multi_index=True,
-                          to_correct=False,
-                          ):
-
-    df_list = []
-    count = 0
-    for exper in glob.glob(all_path + '*'):
-
-        if not os.path.isdir(exper):
-            continue
-
-        exper_date = ret_date(exper)
-        if first_date is not None and exper_date < first_date:
-            continue
-
-        # ignore words
-        if any([dont in exper for dont in EXP_DONT]):
-            print(f'skipped {exper}, ignored word')
-            continue
-
-        try:
-            exper_log = parse_exper_log(exper)
-        except FileNotFoundError:
-            print(f'skipped {exper}, no experiment log file')
-            continue
-
-        for k in range(1, exper_log['num_trials'] + 1):
-
-            rt_data_path = os.path.join(exper, f"trial{k}", RT_DATA_FOLDER)
-            #head_crops_fn = os.path.join(rt_data_path, HEAD_CROPS_FN)
-            detections_df_fn = os.path.join(rt_data_path, DETECTIONS_DF_FN)
-            json_fn = os.path.join(rt_data_path, VID_STATS_FN)
-            try:
-                with open(json_fn, 'r') as fp:
-                    vid_stat = json.load(fp)
-
-                if vid_stat['width'] != vid_dims[0]:
-                    print(f'ignored {exper} trial{k}, {vid_stat["width"]} != {vid_dims[0]}')
-                    continue
-
-                trial_df = pd.read_csv(detections_df_fn, parse_dates=['frame_ts'])
-                trial_df['exper'] = os.path.split(exper)[-1]
-                trial_df['trial'] = k
-
-                if to_correct:
-                    #print(f'{exper} trial{k} ')
-                    _, roi, newcameramtx = calib.get_undistort_mapping(vid_stat['width'], vid_stat['height'],
-                                                                  calib.MTX, calib.DIST)
-
-                    trial_df = calib.undistort_data(trial_df, vid_stat['width'], vid_stat['height'])
-
-                    if vid_stat['affine_mat'] is not None:
-                        aff_mat = np.array(vid_stat['affine_mat'])
-                        #screen_size = vid_stat['screen_size']
-
-                        trial_df = calib.transform_data(trial_df, aff_mat)
-                    else:
-                        print(f'{exper} trial{k} is not calibrated')
-
-                if align_touch_screen:
-                    align_screen_touches(exper, trial_df, k)
-
-                if add_dlc:
-
-                    vid_time = os.listdir(os.path.join(exper, f'trial{k}', 'videos'))[0] # TODO fucntion to get vid_time
-                    dlc_path = os.path.join(exper, f'trial{k}', 'videos', vid_time, DLC_FILENAME)
-                    trial_add_dlc(trial_df, dlc_path)
-
-            except FileNotFoundError:
-                print(f'did not find files in {exper} trial{k}')
-                continue
-
-            df_list.append(trial_df)
-            count += 1
-
-    unified_df = pd.concat(df_list)
-
-    if multi_index:
-        unified_df.set_index(['exper', 'trial'], inplace=True)
-
-    # not clear where this column was added to the dataframe
-    if 'Unnamed: 0' in unified_df.columns:
-        unified_df.drop(columns=['Unnamed: 0'], inplace=True)
-
-    if 'hit' in unified_df:
-        unified_df['hit'] = unified_df['hit'].fillna(False)
-
-    unified_df.rename(columns={'left_x': 'x', 'right_x': 'w', 'top_y': 'y', 'bottom_y': 'h'}, inplace=True)
-
-    print(f'Finished, loaded {count} trials')
-    return unified_df
-
-
-def get_cropped_dict(vid_dims,
-                     first_date,
-                     all_path=BASE_PATH):
+def get_cropped_dict(vid_dims, first_date, all_path=EXPERIMENTS_ROOT):
     heads_dict = dict()
-    for exper in glob.glob(all_path + '*'):
+    for exper in glob.glob(all_path + "*"):
 
         if not os.path.isdir(exper):
             continue
@@ -500,28 +725,30 @@ def get_cropped_dict(vid_dims,
 
         # ignore words
         if any([dont in exper for dont in EXP_DONT]):
-            print(f'skipped {exper}, ignored word')
+            print(f"skipped {exper}, ignored word")
             continue
 
         exper_log = parse_exper_log(exper)
         exper_name = os.path.split(exper)[-1]
         heads_dict[exper_name] = dict()
 
-        for k in range(1, exper_log['num_trials'] + 1):
+        for k in range(1, exper_log["num_trials"] + 1):
             try:
                 rt_data_path = os.path.join(exper, f"trial{k}", RT_DATA_FOLDER)
 
                 json_fn = os.path.join(rt_data_path, VID_STATS_FN)
-                with open(json_fn, 'r') as fp:
+                with open(json_fn, "r") as fp:
                     vid_stat = json.load(fp)
 
-                if vid_stat['width'] != vid_dims[0]:
-                    print(f'ignored {exper} trial{k}, {vid_stat["width"]} != {vid_dims[0]}')
+                if vid_stat["width"] != vid_dims[0]:
+                    print(
+                        f'ignored {exper} trial{k}, {vid_stat["width"]} != {vid_dims[0]}'
+                    )
                     continue
 
                 head_crops_fn = os.path.join(rt_data_path, HEAD_CROPS_FN)
 
-                with open(head_crops_fn, 'rb') as fp:
+                with open(head_crops_fn, "rb") as fp:
                     heads_dict[exper_name][k] = pickle.load(fp)
             except FileNotFoundError:
                 continue
@@ -539,24 +766,24 @@ def heads_list2mat(l, resize):
 
     for i, img in enumerate(l):
         if img is not None:
-            resized_img = cv.resize(img, (resize,resize))
+            resized_img = cv.resize(img, (resize, resize))
             flt_imgs[i, :] = resized_img.flatten()
-    return flt_imgs.astype('uint8')  # TODO returning as uint8 converts np.nan to zero (0)
+    return flt_imgs.astype(
+        "uint8"
+    )  # TODO returning as uint8 converts np.nan to zero (0)
+
 
 """
 Generating the full matrix from 25~ trials is 1GB, should not use or maybe restrict sizes
 or number of trials
 """
-def get_unified_heads_mat(vid_dims,
-                          first_date,
-                          resize=32,
-                          all_path=BASE_PATH):
 
-    heads_dict = get_cropped_dict(vid_dims, first_date,all_path)
+
+def get_unified_heads_mat(vid_dims, first_date, resize=32, all_path=EXPERIMENTS_ROOT):
+    heads_dict = get_cropped_dict(vid_dims, first_date, all_path)
     mat_list = []
 
     for key in heads_dict.keys():
         for trial in heads_dict[key].keys():
             mat_list.append(heads_list2mat(heads_dict[key][trial], resize))
-    return np.concatenate(mat_list).astype('uint8')
-
+    return np.concatenate(mat_list).astype("uint8")
