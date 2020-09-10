@@ -13,7 +13,7 @@ from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
 from mqtt import MQTTClient
-from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode
+from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode, is_predictor_experiment
 
 
 DEFAULT_NUM_FRAMES = 1000
@@ -39,6 +39,7 @@ ACQUIRE_STOP_OPTIONS = {
     'experiment_alive': 'cache'
 }
 IS_PREDICTOR_READY = False
+IS_PREDICTOR_EXPERIMENT = is_predictor_experiment()
 try:
     from Prediction import predictor, detector, LSTM_predict
 
@@ -70,6 +71,7 @@ class SpinCamera:
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
         self.name = self.get_camera_name()
         if self.is_realtime_mode:
+            self.predictor_experiment_ids = []
             self.predictor = predictor.HitPredictor(_lstm, detector=_detector)
             self.mqtt_client = MQTTClient()
 
@@ -118,11 +120,6 @@ class SpinCamera:
                         self.start_acquire_time = time.time()
                         self.logger.info('Acquisition Started')
 
-                    if i % 20:
-                        self.is_use_predictions = True
-                    else:
-                        self.is_use_predictions = False
-
                     if image_result.IsIncomplete():  # Ensure image completion
                         sts = image_result.GetImageStatus()
                         self.logger.warning(f'Image incomplete with image status {sts}')
@@ -132,6 +129,8 @@ class SpinCamera:
                             break
                     else:
                         frame_times.append(image_result.GetTimeStamp())
+                        if IS_PREDICTOR_EXPERIMENT:
+                            self.predictor_experiment(i)
                         t0 = time.time()
                         self.image_handler(image_result)
                         image_handler_times.append(time.time() - t0)
@@ -227,6 +226,9 @@ class SpinCamera:
 
         frame_times = pd.to_datetime(frame_times, unit='s')
         frame_times.to_csv(self.timestamp_path)
+        if IS_PREDICTOR_EXPERIMENT:
+            predictor_times = frame_times[self.predictor_experiment_ids]
+            predictor_times.to_csv(f'{self.dir_path}/predictor_times.csv')
 
         return mean_fps, std_fps
 
@@ -265,6 +267,13 @@ class SpinCamera:
             max_throughput = DEFAULT_MAX_THROUGHPUT
 
         return max_throughput
+
+    def predictor_experiment(self, i):
+        if not i % 60:  # use predictions every 60 frames
+            self.is_use_predictions = True
+            self.predictor_experiment_ids.append(i)
+        else:
+            self.is_use_predictions = False
 
     def is_firefly(self):
         """Check whether cam is a Firefly camere"""

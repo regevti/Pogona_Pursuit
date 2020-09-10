@@ -109,7 +109,7 @@
       }
     },
     mounted() {
-      this.$mqtt.subscribe('event/detect/+')
+      this.$mqtt.subscribe('event/log/prediction')
       this.$mqtt.subscribe('event/command/+')
       this.canvas = document.getElementById('canvas')
       this.ctx = this.canvas.getContext('2d')
@@ -137,6 +137,11 @@
       'event/log/prediction'(options) {
         options = JSON.parse(options)
         console.log(`Prediction detected coords: ${options.hit_point}, time2hit:${options.time2hit}`)
+        this.ctx.fillRect(this.canvasParams.width / 2, this.canvasParams.height / 2, 300, 200)
+        let t = setTimeout(() => {
+          this.ctx.clearRect(0, 0, this.canvasParams.width, this.canvasParams.height)
+          clearTimeout(t)
+        }, 500)
       }
     },
     computed: {
