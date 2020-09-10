@@ -436,8 +436,9 @@ def capture_image(camera: str, exposure=EXPOSURE_TIME) -> (np.ndarray, None):
         print(f'No camera matches name: {camera}')
         return
     cam = SpinCamera(cam_list[0])
+    img = cam.capture_image(exposure)
     cam_list.Clear()
-    return cam.capture_image(exposure)
+    return img
 
 
 def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, folder_prefix=None, is_auto_start=False, cache=None,
