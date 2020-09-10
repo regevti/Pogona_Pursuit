@@ -147,11 +147,11 @@ def undistort_point(p, newcameramtx, dist=DIST):
     Undistort point p.
     newcameramtx - the matrix returned by get_undistort_mapping
     """
-    x, y = p.astype(int)
-    if np.isnan(x):
+    p = np.array(p)
+    if np.any(np.isnan(p)):
         return np.nan, np.nan
 
-    return cv.undistortPoints([[[x, y]]], newcameramtx, dist)
+    return cv.undistortPoints(np.expand_dims(p, axis=0), newcameramtx, dist)
 
 
 def undistort_data(
