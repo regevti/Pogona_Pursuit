@@ -2,8 +2,8 @@ pandas==1.0.3
 pyserial==3.4
 python-dateutil==2.8.1
 jupyterlab
-torch==1.2
-torchvision==0.4.0
+torch==1.6
+torchvision==0.7.0
 tqdm
 matplotlib
 seaborn

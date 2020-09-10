@@ -124,6 +124,20 @@ class SpinCamera:
         except PySpin.SpinnakerException as exc:
             self.logger.error(f'(configure_images); {exc}')
 
+    def capture_image(self, exposure):
+        """Capture single image"""
+        self.begin_acquisition(exposure)
+        try:
+            image_result = self.cam.GetNextImage()
+            img = image_result.GetNDArray()
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            image_result.Release()
+            return img
+        except PySpin.SpinnakerException as exc:
+            self.logger.error(f'(image_capture); {exc}')
+        finally:
+            self.cam.EndAcquisition()
+
     def acquire(self):
         """Acquire images and measure FPS"""
         if self.is_ready:
@@ -406,6 +420,24 @@ def start_streaming(sc: SpinCamera):
     """Thread function for start acquiring frames from camera"""
     sc.acquire()
     del sc
+
+
+def capture_image(camera: str, exposure=EXPOSURE_TIME) -> (np.ndarray, None):
+    """
+    Capture single image from a camera
+    :param camera: The camera name (don't use more than one camera)
+    :param exposure: The exposure of the camera
+    :return: Image numpy array
+    """
+    system = PySpin.System.GetInstance()
+    cam_list = system.GetCameras()
+    filter_cameras(cam_list, camera)
+    if len(cam_list) < 1:
+        print(f'No camera matches name: {camera}')
+        return
+    cam = SpinCamera(cam_list[0])
+    cam_list.Clear()
+    return cam.capture_image(exposure)
 
 
 def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, folder_prefix=None, is_auto_start=False, cache=None,

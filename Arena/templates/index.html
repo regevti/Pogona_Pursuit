@@ -153,6 +153,9 @@
                 <div class="row mb-2">
                     <button id="hide_bugs" class="btn btn-lg btn-primary mx-auto">Hide Bugs</button>
                 </div>
+                <div class="row mb-2">
+                    <button id="calibrate" class="btn btn-lg btn-primary mx-auto">Calibrate</button>
+                </div>
             </div>
         </div>
         <pre class="row" id="record-output"></pre>
@@ -287,6 +290,12 @@
     })
     $("#hide_bugs").click(function (e) {
       $.get('/hide_bugs')
+    })
+    $("#calibrate").click(function (e) {
+      $("#record-output").text('Calibrating...')
+      $.get('/calibrate', function (data) {
+        $("#record-output").text(data)
+      })
     })
 
     function getCheckedCameras() {

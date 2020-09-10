@@ -10,7 +10,7 @@ from utils import titlize, get_predictor_model
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTClient
 from experiment import Experiment
-from arena import SpinCamera, record, filter_cameras, display_info, \
+from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
     CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
 
 app = Flask(__name__)
@@ -69,13 +69,11 @@ def calibrate():
     except ImportError:
         return Response('Unable to locate HitPredictor')
     pred = _models[get_predictor_model()].hit_pred
-    # TODO: return image from record
-    # record(EXPOSURE_TIME,'realtime', is_auto_start=True,)
-    img = None
+    img = capture_image('realtime')
     h, h_im, error = pred.calibrate(img)
     if error:
         return Response(error)
-    return Response('ok')
+    return Response('Calibration completed')
 
 
 @app.route('/cameras_info')
