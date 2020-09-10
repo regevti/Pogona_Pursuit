@@ -151,7 +151,7 @@ def undistort_point(p, newcameramtx, dist=DIST):
     if np.isnan(x):
         return np.nan, np.nan
 
-    return cv.undisortPoints([[[x, y]]], newcameramtx, dist)
+    return cv.undistortPoints([[[x, y]]], newcameramtx, dist)
 
 
 def undistort_data(
@@ -333,7 +333,7 @@ def find_arena_homography_black_squares(
     cv.line(img, pt1=tuple(p_bottom_l), pt2=tuple(p_top_l), color=(0, 255, 0), thickness=10)
     cv.line(img, pt1=tuple(p_top_r), pt2=tuple(p_top_l), color=(0, 255, 0), thickness=10)
 
-    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENC_W_CM)
+    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
     dst_p = np.array([[0, 0],
                       [screen_x_res, 0],
                       [0, arena_h_pixels],
@@ -402,7 +402,7 @@ def find_arena_homography(
     cv.line(frame_markers, pt1=tuple(p_bottom_l), pt2=tuple(p_top_l), color=color, thickness=thickness)
     cv.line(frame_markers, pt1=tuple(p_top_r), pt2=tuple(p_top_l), color=color, thickness=thickness)
 
-    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENC_W_CM)
+    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
     dst_p = np.array([[0, 0],
                       [screen_x_res, 0],
                       [0, arena_h_pixels],
@@ -432,7 +432,7 @@ def transform_image(img, h, screen_x_res=1920):
     :param screen_width: size of the screen in the image, as returned from calibrate function
     :return:image in the new coordinate space
     """
-    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENC_W_CM)
+    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
     img_shape = (screen_x_res, int(arena_h_pixels))
     return cv.warpPerspective(img, h, img_shape)
 
