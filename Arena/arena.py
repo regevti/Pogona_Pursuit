@@ -71,6 +71,7 @@ class SpinCamera:
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
         self.name = self.get_camera_name()
         if self.is_realtime_mode:
+            self.logger.info('Working in realrime mode')
             self.predictor_experiment_ids = []
             self.predictor = predictor.HitPredictor(_lstm, detector=_detector)
             self.mqtt_client = MQTTClient()
@@ -129,10 +130,8 @@ class SpinCamera:
                             break
                     else:
                         frame_times.append(image_result.GetTimeStamp())
-                        if IS_PREDICTOR_EXPERIMENT:
-                            self.predictor_experiment(i)
                         t0 = time.time()
-                        self.image_handler(image_result)
+                        self.image_handler(image_result, i)
                         image_handler_times.append(time.time() - t0)
 
                     image_result.Release()  # Release image
@@ -156,12 +155,12 @@ class SpinCamera:
             self.video_out.release()
         self.is_ready = False
 
-    def image_handler(self, image_result: PySpin.ImagePtr):
+    def image_handler(self, image_result: PySpin.ImagePtr, i: int):
         img = image_result.GetNDArray()
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         if self.is_realtime_mode:
-            self.handle_prediction(img)
+            self.handle_prediction(img, i)
         else:
             if self.dir_path and self.video_out is None:
                 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
@@ -201,7 +200,12 @@ class SpinCamera:
     def check_experiment_alive(self, iteration):
         return self.cache.get(CacheColumns.EXPERIMENT_NAME)
 
-    def handle_prediction(self, img):
+    def handle_prediction(self, img, i):
+        if IS_PREDICTOR_EXPERIMENT:
+            if not i % 60:
+                self.predictor_experiment_ids.append(i)
+            else:
+                return
         forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
         if hit_point is None or not hit_steps:
             return
@@ -226,7 +230,7 @@ class SpinCamera:
 
         frame_times = pd.to_datetime(frame_times, unit='s')
         frame_times.to_csv(self.timestamp_path)
-        if IS_PREDICTOR_EXPERIMENT:
+        if IS_PREDICTOR_EXPERIMENT and self.is_realtime_mode:
             predictor_times = frame_times[self.predictor_experiment_ids]
             predictor_times.to_csv(f'{self.dir_path}/predictor_times.csv')
 
@@ -267,13 +271,6 @@ class SpinCamera:
             max_throughput = DEFAULT_MAX_THROUGHPUT
 
         return max_throughput
-
-    def predictor_experiment(self, i):
-        if not i % 60:  # use predictions every 60 frames
-            self.is_use_predictions = True
-            self.predictor_experiment_ids.append(i)
-        else:
-            self.is_use_predictions = False
 
     def is_firefly(self):
         """Check whether cam is a Firefly camere"""
