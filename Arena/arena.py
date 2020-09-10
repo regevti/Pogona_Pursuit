@@ -437,6 +437,7 @@ def capture_image(camera: str, exposure=EXPOSURE_TIME) -> (np.ndarray, None):
         return
     cam = SpinCamera(cam_list[0])
     img = cam.capture_image(exposure)
+    del cam
     cam_list.Clear()
     return img
 
