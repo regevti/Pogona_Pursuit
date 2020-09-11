@@ -15,13 +15,15 @@ class HitPredictor:
         detector=None,
         history_size=512,
         prediction_y_threshold=0,
-        y_thresh_above=True,
+        y_thresh_above=False,
     ):
 
         # look for last homography in some folder and load it. maybe also save dims
         self.homography, cam_width, cam_height = calib.get_last_homography()
         if self.homography is not None:
-            _, _, self.camera_matrix = calib.get_undistort_mapping(cam_width, cam_height)
+            _, _, self.camera_matrix = calib.get_undistort_mapping(
+                cam_width, cam_height
+            )
 
         # TODO: need to calibrate if no homography is found
 
@@ -43,28 +45,29 @@ class HitPredictor:
         :return: Homography, marked image with markers, error
         """
         cam_width, cam_height = cal_img.shape[1], cal_img.shape[0]
-        (mapx, mapy), _, self.camera_matrix = calib.get_undistort_mapping(cam_width, cam_height)
-        cal_img = calib.undistort_image(cal_img, (mapx, mapy))
+        mapping, _, self.camera_matrix = calib.get_undistort_mapping(
+            cam_width, cam_height
+        )
+        cal_img = calib.undistort_image(cal_img, mapping)
         h, h_im, error = calib.find_arena_homography(cal_img)
 
         if error is None:
             self.homography = h
-            date = datetime.now().strftime('%Y%m%d-%H%M%S')
-            json_name = os.path.join(calib.HOMOGRAPHIES_FOLDER, 'homog_'+date+'.json')
-            d = {'homography': h.tolist(),
-                 'width': cam_width,
-                 'height': cam_height}
+            date = datetime.now().strftime("%Y%m%d-%H%M%S")
+            json_name = os.path.join(
+                calib.HOMOGRAPHIES_FOLDER, "homog_" + date + ".json"
+            )
+            d = {"homography": h.tolist(), "width": cam_width, "height": cam_height}
 
-            with open(json_name, 'w') as fp:
+            with open(json_name, "w") as fp:
                 json.dump(d, fp)
 
         return h, h_im, error
 
     def handle_frame(self, frame):
         """
-        Process a single frame, update prediction, and send prediction as
-        an MQTT message (TBD).
-
+        Process a single frame, update trajectory forecast and predict screen touches (hits.
+        See handle_detection for returned values.
         """
         if self.frame_num == 0:
             height, width, _ = frame.shape
@@ -77,7 +80,7 @@ class HitPredictor:
     def handle_detection(self, detection):
         """
         Return forecast, hit point and hit steps based on detection (x, y, x, y, conf)
-        :param detection: xyxy
+        :param detection: xyxy bounding box
         :return:
         """
         self.update_history(detection)
@@ -108,7 +111,9 @@ class HitPredictor:
         :return: corrected bbox after undistortion and transformation for screen coordinates
         """
         if self.homography is None:
-            raise calib.CalibrationException("HitPredictor has no homography configured")
+            raise calib.CalibrationException(
+                "HitPredictor has no homography configured"
+            )
 
         x1y1 = calib.undistort_point(detection[:2], self.camera_matrix)
         x2y2 = calib.undistort_point(detection[2:4], self.camera_matrix)
@@ -142,6 +147,8 @@ class HitPredictor:
         the predicted hit.
         :param forecast: an (forecast horizon length, 4) array, each row wth x1 y1 x2 y2
         :return: x value of hit (middle of edge) ,index of first touch in screen in forcast array
+
+        TODO: what about when the x_val is out of bounds? perhaps should not count as a hit.
         """
 
         # if data is corrected, screen is above, else it's below

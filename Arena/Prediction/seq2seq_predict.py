@@ -1,9 +1,6 @@
 import torch
 from torch import nn
-import numpy as np
-
 from Prediction.predictor import TrajectoryPredictor
-from Prediction.detector import xywh_to_centroid
 import math
 
 
