@@ -17,14 +17,13 @@ SUBSCRIPTION_LOG_TOPICS = {
     'hit': 'hits.csv',
     'prediction': 'predictions.csv'
 }
-_feeder = None
 
 
 class MQTTClient:
-    def __init__(self):
+    def __init__(self, feeder=None):
         self.client = mqtt.Client()
         self.cache = RedisCache()
-        self.reward_manager = RewardManager(self.cache)
+        self.reward_manager = RewardManager(self.cache, feeder)
 
     def loop(self):
         self.client.on_connect = self.on_connect
@@ -79,12 +78,13 @@ class MQTTClient:
 
 
 class RewardManager:
-    def __init__(self, cache):
+    def __init__(self, cache, feeder):
         self.cache = cache
+        self.feeder = feeder
 
     def reward(self, is_force=False):
-        if _feeder and (is_force or self.is_reward_allowed()):
-            _feeder.feed()
+        if self.feeder and (is_force or self.is_reward_allowed()):
+            self.feeder.feed()
             return True
 
     def is_reward_allowed(self):
@@ -95,9 +95,10 @@ class RewardManager:
 
 
 if __name__ == '__main__':
+    _feeder = None
     try:
         _feeder = Feeder()
     except Exception as exc:
         print(f'Error loading feeder: {exc}')
 
-    MQTTClient().loop()
+    MQTTClient(_feeder).loop()
