@@ -57,6 +57,16 @@
                     </div>
                 </div>
                 <div class="form-group row pr-3">
+                    <label for="rewardTypeSelect" class="col col-form-label">Reward Type</label>
+                    <div class="col">
+                        <select id="rewardTypeSelect" class="form-control col">
+                            {% for reward_type in reward_types %}
+                            <option value="{{reward_type}}">{{reward_type}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group row pr-3">
                     <label for="movementTypeSelect" class="col col-form-label">Movement Type</label>
                     <div class="col">
                         <select id="movementTypeSelect" class="form-control col">
@@ -156,6 +166,9 @@
                 <div class="row mb-2">
                     <button id="calibrate" class="btn btn-lg btn-primary mx-auto">Calibrate</button>
                 </div>
+                <div class="row mb-2">
+                    <button id="reward" class="btn btn-lg btn-primary mx-auto">Reward</button>
+                </div>
             </div>
         </div>
         <pre class="row" id="record-output"></pre>
@@ -225,6 +238,7 @@
           trial_duration: Number($("#experimentTrialDuration").val()),
           num_trials: Number($("#experimentNumTrials").val()),
           iti: Number($("#experimentITI").val()),
+          reward_type: $("#rewardTypeSelect").val(),
           is_use_predictions: $("#use_predictions").is(":checked"),
           bug_type: $("#bugTypeSelect").val(),
           bug_speed: Number($("#bugSpeed").val()),
@@ -296,6 +310,10 @@
       $.get('/calibrate', function (data) {
         $("#record-output").text(data)
       })
+    })
+
+    $("#reward").click(function (e) {
+      $.get('/reward', function (data) {})
     })
 
     function getCheckedCameras() {

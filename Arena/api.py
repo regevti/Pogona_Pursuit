@@ -8,14 +8,15 @@ load_dotenv()
 
 from utils import titlize, get_predictor_model
 from cache import RedisCache, CacheColumns
-from mqtt import MQTTClient
-from experiment import Experiment
+from mqtt import MQTTClient, RewardManager
+from experiment import Experiment, REWARD_TYPES
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
     CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
 
 app = Flask(__name__)
 cache = RedisCache()
 mqtt_client = MQTTClient()
+reward_manager = RewardManager(cache)
 
 
 @app.route('/')
@@ -25,7 +26,7 @@ def index():
     with open('../pogona_hunter/src/config.json', 'r') as f:
         config = json.load(f)
     return render_template('index.html', cameras=CAMERA_NAMES.keys(), exposure=EXPOSURE_TIME, config=config,
-                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()})
+                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES)
 
 
 @app.route('/record', methods=['POST'])
@@ -74,6 +75,12 @@ def calibrate():
     if error:
         return Response(error)
     return Response('Calibration completed')
+
+
+@app.route('/reward')
+def reward():
+    """Activate Feeder"""
+    reward_manager.reward()
 
 
 @app.route('/cameras_info')

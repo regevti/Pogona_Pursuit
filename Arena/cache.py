@@ -1,6 +1,7 @@
 import redis
 import os
 REDIS_HOST = os.environ.get('REDIS_HOST', 'cache')
+EXPERIMENTS_TIMEOUT = 60 * 60
 
 
 class Column:
@@ -12,9 +13,10 @@ class Column:
 
 class CacheColumns:
     """Cache Columns used by RedisCache"""
-    EXPERIMENT_NAME = Column('EXPERIMENT_NAME', str, 60 * 60)
-    EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, 60 * 60)
-    EXPERIMENT_TRIAL_PATH = Column('EXPERIMENT_TRIAL_PATH', str, 60 * 60)
+    EXPERIMENT_NAME = Column('EXPERIMENT_NAME', str, EXPERIMENTS_TIMEOUT)
+    EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, EXPERIMENTS_TIMEOUT)
+    EXPERIMENT_TRIAL_PATH = Column('EXPERIMENT_TRIAL_PATH', str, EXPERIMENTS_TIMEOUT)
+    ALWAYS_REWARD = Column('ALWAYS_REWARD', bool, EXPERIMENTS_TIMEOUT)
     STREAM_CAMERA = Column('STREAM_CAMERA', str, 60)
     MANUAL_RECORD_STOP = Column('MANUAL_RECORD_STOP', bool, 5)
 

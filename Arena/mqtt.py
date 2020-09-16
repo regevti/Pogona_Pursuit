@@ -5,6 +5,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from cache import CacheColumns, RedisCache
+from parallel_port import Feeder
 import paho.mqtt.client as mqtt
 
 HOST = os.environ.get('MQTT_HOST', 'mqtt')
@@ -15,11 +16,18 @@ SUBSCRIPTION_TOPICS = {
     'prediction': 'predictions.csv'
 }
 
+_feeder = None
+try:
+    _feeder = Feeder()
+except Exception as exc:
+    print(f'Error loading feeder: {exc}')
+
 
 class MQTTClient:
     def __init__(self):
         self.client = mqtt.Client()
         self.cache = RedisCache()
+        self.reward_manager = RewardManager(self.cache)
 
     def loop(self):
         self.client.on_connect = self.on_connect
@@ -36,6 +44,8 @@ class MQTTClient:
         payload = msg.payload.decode('utf-8')
         topic = msg.topic.replace(TOPIC_PREFIX, '')
         if topic in SUBSCRIPTION_TOPICS:
+            if topic == 'hit':
+                self.reward_manager.reward()
             self.save_to_csv(topic, payload)
 
     def publish_event(self, topic, payload, retain=False):
@@ -68,6 +78,18 @@ class MQTTClient:
 
         return Path(f'{parent}/{SUBSCRIPTION_TOPICS[topic]}')
 
+
+class RewardManager:
+    def __init__(self, cache):
+        self.cache = cache
+
+    def reward(self, is_force=False):
+        if _feeder and (is_force or self.is_reward_allowed()):
+            _feeder.feed()
+            return True
+
+    def is_reward_allowed(self):
+        return self.cache.get(CacheColumns.ALWAYS_REWARD)
 
 # def is_match_topic(msg, topic_key):
 #     return re.match(SUBSCRIPTION_TOPICS[topic_key].replace('+', r'\w+'), msg.topic)
