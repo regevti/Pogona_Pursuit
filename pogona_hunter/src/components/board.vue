@@ -208,6 +208,9 @@
         const bloodTimeout = setTimeout(() => {
           this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
           if (this.$refs.bugChild.length === 0) {
+            if (this.timeBetweenBugs === 0) {
+                this.numOfBugs = 0
+            }
             const startNewGameTimeout = setTimeout(() => {
               cancelAnimationFrame(this.animationHandler)
               this.initBoard()
