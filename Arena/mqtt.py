@@ -51,9 +51,13 @@ class MQTTClient:
 
         elif msg.topic.startswith(LOG_TOPIC_PREFIX):
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
-            if topic == 'hit':
-                self.live_manager.handle_hit()
-            self.save_to_csv(topic, payload)
+            try:
+                payload = json.loads(payload)
+                if topic == 'touch' and payload.get('is_hit'):
+                    self.live_manager.handle_hit()
+                self.save_to_csv(topic, payload)
+            except Exception as exc:
+                print(f'Unable to parse log payload of {topic}: {exc}')
 
     def publish_event(self, topic, payload, retain=False):
         self.client.connect(HOST)
@@ -64,8 +68,7 @@ class MQTTClient:
 
     def save_to_csv(self, topic, payload):
         try:
-            data = json.loads(payload)
-            df = pd.DataFrame([data])
+            df = pd.DataFrame([payload])
             df['timestamp'] = datetime.now()
             filename = self.get_csv_filename(topic)
             if filename.exists():
