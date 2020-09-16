@@ -37,7 +37,7 @@ ACQUIRE_STOP_OPTIONS = {
     'num_frames': int,
     'record_time': int,
     'manual_stop': 'cache',
-    'experiment_alive': 'cache'
+    'trial_alive': 'cache'
 }
 IS_PREDICTOR_READY = False
 IS_PREDICTOR_EXPERIMENT = is_predictor_experiment()
@@ -228,8 +228,8 @@ class SpinCamera:
     def check_manual_stop(self, iteration):
         return not self.cache.get(CacheColumns.MANUAL_RECORD_STOP)
 
-    def check_experiment_alive(self, iteration):
-        return self.cache.get(CacheColumns.EXPERIMENT_NAME)
+    def check_trial_alive(self, iteration):
+        return self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON)
 
     def handle_prediction(self, img, i):
         if IS_PREDICTOR_EXPERIMENT:

@@ -64,8 +64,9 @@ class Experiment:
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.trial_duration)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration)
         if not is_debug_mode():
-            record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration,
-                   cache=self.cache, is_use_predictions=self.is_use_predictions)
+            record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
+                   is_use_predictions=self.is_use_predictions,
+                   record_time=self.trial_duration, trial_alive=self.reward_type == 'always')
         else:
             time.sleep(self.trial_duration)
         mqtt_client.publish_command('hide_bugs')
