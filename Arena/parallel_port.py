@@ -25,4 +25,4 @@ class Feeder(ParallelPort):
     output = 0x01
 
     def feed(self):
-        self.turn_on_for(1)
+        self.turn_on_for(2)
