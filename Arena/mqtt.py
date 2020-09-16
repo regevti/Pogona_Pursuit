@@ -39,6 +39,7 @@ class MQTTClient:
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
         if msg.topic == REWARD_TOPIC:
+            print('Feed command received, sending reward')
             self.reward_manager.reward(is_force=True)
         elif msg.topic in [LOG_TOPIC_PREFIX + t for t in SUBSCRIPTION_LOG_TOPICS]:
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
