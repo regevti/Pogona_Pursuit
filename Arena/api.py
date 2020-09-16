@@ -81,6 +81,7 @@ def calibrate():
 def reward():
     """Activate Feeder"""
     reward_manager.reward()
+    return Response('ok')
 
 
 @app.route('/cameras_info')
