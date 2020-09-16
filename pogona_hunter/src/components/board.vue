@@ -129,7 +129,7 @@
         this.numOfBugs = Number(options.numOfBugs) ? Number(options.numOfBugs) : 1
         this.bugType = options.bugType ? options.bugType : this.bugType
         this.movementType = options.movementType ? options.movementType : this.movementType
-        this.timeBetweenBugs = options.timeBetweenBugs ? Number(options.timeBetweenBugs) * 1000 : this.timeBetweenBugs
+        this.timeBetweenBugs = options.timeBetweenBugs !== undefined ? Number(options.timeBetweenBugs) * 1000 : this.timeBetweenBugs
         this.currentBugOptions.speed = options.speed ? Number(options.speed) : this.currentBugOptions.speed
         this.$store.commit('reset_score')
         this.initBoard()
