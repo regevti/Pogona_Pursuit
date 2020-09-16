@@ -8,7 +8,7 @@ load_dotenv()
 
 from utils import titlize, get_predictor_model
 from cache import RedisCache, CacheColumns
-from mqtt import MQTTClient, RewardManager
+from mqtt import MQTTClient, REWARD_TOPIC
 from experiment import Experiment, REWARD_TYPES
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
     CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
@@ -16,7 +16,6 @@ from arena import SpinCamera, record, capture_image, filter_cameras, display_inf
 app = Flask(__name__)
 cache = RedisCache()
 mqtt_client = MQTTClient()
-reward_manager = RewardManager(cache)
 
 
 @app.route('/')
@@ -80,7 +79,7 @@ def calibrate():
 @app.route('/reward')
 def reward():
     """Activate Feeder"""
-    reward_manager.reward()
+    mqtt_client.publish_event(REWARD_TOPIC, '')
     return Response('ok')
 
 

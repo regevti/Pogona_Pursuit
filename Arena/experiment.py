@@ -1,7 +1,7 @@
 from utils import get_datetime_string, mkdir, is_debug_mode
 from arena import record
 from cache import CacheColumns, RedisCache
-from mqtt import MQTTClient, SUBSCRIPTION_TOPICS, RewardManager
+from mqtt import MQTTClient, SUBSCRIPTION_LOG_TOPICS, REWARD_TOPIC
 from pathlib import Path
 import pandas as pd
 import time
@@ -30,7 +30,6 @@ class Experiment:
         self.movement_type = movement_type
         self.time_between_bugs = time_between_bugs
         self.reward_type = reward_type
-        self.reward_manager = RewardManager(cache)
 
     def __str__(self):
         output = ''
@@ -88,7 +87,7 @@ class Experiment:
     @property
     def trial_summary(self):
         log = f'Trial {self.current_trial}:\n'
-        touches_file = Path(self.trial_path) / SUBSCRIPTION_TOPICS.get("touch", '')
+        touches_file = Path(self.trial_path) / SUBSCRIPTION_LOG_TOPICS.get("touch", '')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
@@ -101,7 +100,7 @@ class Experiment:
         log += 2 * '\n'
 
         if num_hits and self.reward_type == 'end_trial':
-            self.reward_manager.reward(is_force=True)
+            mqtt_client.publish_event(REWARD_TOPIC, '')
 
         return log
 

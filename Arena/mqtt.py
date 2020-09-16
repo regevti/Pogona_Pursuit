@@ -9,18 +9,15 @@ from parallel_port import Feeder
 import paho.mqtt.client as mqtt
 
 HOST = os.environ.get('MQTT_HOST', 'mqtt')
-TOPIC_PREFIX = 'event/log/'
-SUBSCRIPTION_TOPICS = {
+
+REWARD_TOPIC = 'event/command/reward'
+LOG_TOPIC_PREFIX = 'event/log/'
+SUBSCRIPTION_LOG_TOPICS = {
     'touch': 'screen_touches.csv',
     'hit': 'hits.csv',
     'prediction': 'predictions.csv'
 }
-
 _feeder = None
-try:
-    _feeder = Feeder()
-except Exception as exc:
-    print(f'Error loading feeder: {exc}')
 
 
 class MQTTClient:
@@ -38,12 +35,15 @@ class MQTTClient:
     @staticmethod
     def on_connect(client, userdata, flags, rc):
         print(f'MQTT connecting to host: {HOST}; rc: {rc}')
-        client.subscribe([(TOPIC_PREFIX + topic, 0) for topic in SUBSCRIPTION_TOPICS.keys()])
+        client.subscribe([(LOG_TOPIC_PREFIX + topic, 0) for topic in SUBSCRIPTION_LOG_TOPICS.keys()])
 
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
-        topic = msg.topic.replace(TOPIC_PREFIX, '')
-        if topic in SUBSCRIPTION_TOPICS:
+        if msg.topic == REWARD_TOPIC:
+            self.reward_manager.reward(is_force=True)
+
+        if msg.topic in [LOG_TOPIC_PREFIX + t for t in SUBSCRIPTION_LOG_TOPICS]:
+            topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
             if topic == 'hit':
                 self.reward_manager.reward()
             self.save_to_csv(topic, payload)
@@ -76,7 +76,7 @@ class MQTTClient:
             parent = f'events/{datetime.today().strftime("%Y%m%d")}'
             Path(parent).mkdir(parents=True, exist_ok=True)
 
-        return Path(f'{parent}/{SUBSCRIPTION_TOPICS[topic]}')
+        return Path(f'{parent}/{SUBSCRIPTION_LOG_TOPICS[topic]}')
 
 
 class RewardManager:
@@ -96,5 +96,9 @@ class RewardManager:
 
 
 if __name__ == '__main__':
-    MQTTClient().loop()
+    try:
+        _feeder = Feeder()
+    except Exception as exc:
+        print(f'Error loading feeder: {exc}')
 
+    MQTTClient().loop()
