@@ -40,6 +40,8 @@ services:
     container_name: logger
     restart: always
     command: 'python mqtt.py'
+    devices:
+      - /dev/parport0
     volumes:
       - ../Arena:/logger
     environment:
