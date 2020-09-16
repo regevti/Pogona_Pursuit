@@ -313,7 +313,9 @@
     })
 
     $("#reward").click(function (e) {
-      $.get('/reward', function (data) {})
+      $.get('/reward', function (data) {
+        $("#record-output").text(data)
+      })
     })
 
     function getCheckedCameras() {
