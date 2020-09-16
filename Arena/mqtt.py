@@ -92,7 +92,7 @@ class LiveExperimentManager:
         self.parport = parport
 
     def handle_hit(self):
-        if self.cache.get(CacheColumns.ALWAYS_REWARD):
+        if self.is_always_reward():
             self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, False)
             self.reward()
 

@@ -33,7 +33,7 @@ class Experiment:
 
     def __str__(self):
         output = ''
-        for obj in ['experiment_name', 'animal_id', 'num_trials', 'cameras', 'trial_duration', 'iti',
+        for obj in ['experiment_name', 'animal_id', 'num_trials', 'cameras', 'trial_duration', 'iti', 'reward_type',
                     'bug_type', 'bug_speed', 'movement_type', 'is_use_predictions', 'time_between_bugs']:
             output += f'{obj}: {getattr(self, obj)}\n'
         return output
@@ -66,7 +66,7 @@ class Experiment:
         if not is_debug_mode():
             record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
                    is_use_predictions=self.is_use_predictions,
-                   record_time=self.trial_duration, trial_alive=self.reward_type == 'always')
+                   record_time=self.trial_duration, trial_alive=self.is_always_reward)
         else:
             time.sleep(self.trial_duration)
         mqtt_client.publish_command('hide_bugs')
@@ -75,7 +75,7 @@ class Experiment:
     def end_experiment(self):
         self.cache.delete(CacheColumns.EXPERIMENT_NAME)
         self.cache.delete(CacheColumns.EXPERIMENT_PATH)
-        if self.reward_type == 'always':
+        if self.is_always_reward:
             self.cache.delete(CacheColumns.ALWAYS_REWARD)
 
         mqtt_client.publish_command('led_light', 'off')
@@ -87,7 +87,7 @@ class Experiment:
     def init_experiment_cache(self):
         self.cache.set(CacheColumns.EXPERIMENT_NAME, self.experiment_name, timeout=self.experiment_duration)
         self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
-        if self.reward_type == 'always':
+        if self.is_always_reward:
             self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.experiment_duration)
 
     @property
@@ -117,7 +117,7 @@ class Experiment:
             'speed': self.bug_speed,
             'bugType': self.bug_type,
             'movementType': self.movement_type,
-            'timeBetweenBugs': self.time_between_bugs
+            'timeBetweenBugs': self.time_between_bugs if not self.is_always_reward else 0
         })
 
     @property
@@ -135,3 +135,7 @@ class Experiment:
     @property
     def videos_path(self):
         return f'{self.trial_path}/videos'
+
+    @property
+    def is_always_reward(self):
+        return self.reward_type == 'always'
