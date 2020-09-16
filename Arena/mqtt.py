@@ -10,13 +10,16 @@ import paho.mqtt.client as mqtt
 
 HOST = os.environ.get('MQTT_HOST', 'mqtt')
 
-REWARD_TOPIC = 'event/command/reward'
 LOG_TOPIC_PREFIX = 'event/log/'
-SUBSCRIPTION_LOG_TOPICS = {
+LOG_TOPICS = {
     'touch': 'screen_touches.csv',
     'hit': 'hits.csv',
     'prediction': 'predictions.csv'
 }
+SUBSCRIPTION_TOPICS = {
+    'reward': 'event/command/reward'
+}
+SUBSCRIPTION_TOPICS.update({k: LOG_TOPIC_PREFIX + k for k in LOG_TOPICS.keys()})
 
 
 class MQTTClient:
@@ -34,14 +37,13 @@ class MQTTClient:
     @staticmethod
     def on_connect(client, userdata, flags, rc):
         print(f'MQTT connecting to host: {HOST}; rc: {rc}')
-        client.subscribe([(LOG_TOPIC_PREFIX + topic, 0) for topic in SUBSCRIPTION_LOG_TOPICS.keys()])
+        client.subscribe([(topic, 0) for topic in SUBSCRIPTION_TOPICS.values()])
 
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
-        if msg.topic == REWARD_TOPIC:
-            print('Feed command received, sending reward')
+        if msg.topic == SUBSCRIPTION_TOPICS['reward']:
             self.reward_manager.reward(is_force=True)
-        elif msg.topic in [LOG_TOPIC_PREFIX + t for t in SUBSCRIPTION_LOG_TOPICS]:
+        elif msg.topic.startswith(LOG_TOPIC_PREFIX):
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
             if topic == 'hit':
                 self.reward_manager.reward()
@@ -75,7 +77,7 @@ class MQTTClient:
             parent = f'events/{datetime.today().strftime("%Y%m%d")}'
             Path(parent).mkdir(parents=True, exist_ok=True)
 
-        return Path(f'{parent}/{SUBSCRIPTION_LOG_TOPICS[topic]}')
+        return Path(f'{parent}/{LOG_TOPICS[topic]}')
 
 
 class RewardManager:
