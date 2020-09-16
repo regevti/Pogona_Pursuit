@@ -123,7 +123,7 @@ def hide_bugs():
 
 
 class VideoStream:
-    def __init__(self):
+    def __init__(self, exposure_time=EXPOSURE_TIME):
         self.system = PySpin.System.GetInstance()
         self.cam_list = self.system.GetCameras()
         filter_cameras(self.cam_list, cache.get(CacheColumns.STREAM_CAMERA))
@@ -132,7 +132,7 @@ class VideoStream:
             raise Exception('No cameras were found')
 
         self.sc = SpinCamera(self.cam_list[0])
-        self.sc.begin_acquisition(EXPOSURE_TIME)
+        self.sc.begin_acquisition(exposure_time)
         # self.serializer = Serializer()
         # self.serializer.start_acquisition()
 

@@ -2,6 +2,7 @@
 
 import time
 import re
+import os
 import cv2
 import json
 import argparse
@@ -18,7 +19,7 @@ from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mod
 
 DEFAULT_NUM_FRAMES = 1000
 DEFAULT_MAX_THROUGHPUT = 94578303
-EXPOSURE_TIME = 8000
+EXPOSURE_TIME = int(os.environ.get('EXPOSURE_TIME', 8000))
 OUTPUT_DIR = 'output'
 UNSORTED_DIR = mkdir('output/unsorted')
 FPS = 60
