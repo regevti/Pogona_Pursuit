@@ -28,7 +28,7 @@ class MQTTClient:
         self.client = mqtt.Client()
         self.cache = RedisCache()
         self.parport = parport
-        self.reward_manager = RewardManager(self.cache, parport)
+        self.live_manager = LiveExperimentManager(self.cache, parport)
 
     def loop(self):
         self.client.on_connect = self.on_connect
@@ -44,16 +44,15 @@ class MQTTClient:
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
         if msg.topic == SUBSCRIPTION_TOPICS['reward']:
-            self.reward_manager.reward(is_force=True)
+            self.live_manager.reward(is_force=True)
+
         elif msg.topic == SUBSCRIPTION_TOPICS['led_light']:
-            if payload == 'on':
-                self.parport.led_lighting_on()
-            else:
-                self.parport.led_lighting_off()
+            self.parport.led_lighting(payload)
+
         elif msg.topic.startswith(LOG_TOPIC_PREFIX):
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
             if topic == 'hit':
-                self.reward_manager.reward()
+                self.live_manager.handle_hit()
             self.save_to_csv(topic, payload)
 
     def publish_event(self, topic, payload, retain=False):
@@ -87,17 +86,22 @@ class MQTTClient:
         return Path(f'{parent}/{LOG_TOPICS[topic]}')
 
 
-class RewardManager:
+class LiveExperimentManager:
     def __init__(self, cache, parport):
         self.cache = cache
         self.parport = parport
 
+    def handle_hit(self):
+        if self.cache.get(CacheColumns.ALWAYS_REWARD):
+            self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, False)
+            self.reward()
+
     def reward(self, is_force=False):
-        if self.parport and (is_force or self.is_reward_allowed()):
+        if self.parport and (is_force or self.is_always_reward()):
             self.parport.feed()
             return True
 
-    def is_reward_allowed(self):
+    def is_always_reward(self):
         return self.cache.get(CacheColumns.ALWAYS_REWARD)
 
 # def is_match_topic(msg, topic_key):

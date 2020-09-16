@@ -16,6 +16,7 @@ class CacheColumns:
     EXPERIMENT_NAME = Column('EXPERIMENT_NAME', str, EXPERIMENTS_TIMEOUT)
     EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, EXPERIMENTS_TIMEOUT)
     EXPERIMENT_TRIAL_PATH = Column('EXPERIMENT_TRIAL_PATH', str, EXPERIMENTS_TIMEOUT)
+    EXPERIMENT_TRIAL_ON = Column('EXPERIMENT_TRIAL_ON', bool, EXPERIMENTS_TIMEOUT)
     ALWAYS_REWARD = Column('ALWAYS_REWARD', bool, EXPERIMENTS_TIMEOUT)
     STREAM_CAMERA = Column('STREAM_CAMERA', str, 60)
     MANUAL_RECORD_STOP = Column('MANUAL_RECORD_STOP', bool, 5)
@@ -28,7 +29,10 @@ class RedisCache:
     def get(self, cache_column: Column):
         res = self._redis.get(cache_column.name)
         if res and type(res) == bytes:
-            return res.decode("utf-8")
+            decoded = res.decode("utf-8")
+            if cache_column.type == bool:
+                decoded = int(decoded)
+            return decoded
         return res
 
     def set(self, cache_column: Column, value, timeout=None):
@@ -36,6 +40,8 @@ class RedisCache:
             f'Bad type for {cache_column.name}; received {type(value)} expected {cache_column.type}'
         if not timeout and cache_column.timeout:
             timeout = cache_column.timeout
+        if cache_column.type == bool:
+            value = int(value)
         return self._redis.set(cache_column.name, value, ex=timeout)
 
     def delete(self, cache_column: Column):

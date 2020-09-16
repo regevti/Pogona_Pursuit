@@ -389,9 +389,9 @@ def display_info():
     return output
 
 
-def start_camera(cam, dir_path, num_frames, exposure, cache, log_stream, is_use_predictions):
+def start_camera(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_use_predictions):
     """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam, dir_path, num_frames, cache=cache, log_stream=log_stream, is_use_predictions=is_use_predictions)
+    sc = SpinCamera(cam, acquire_stop, dir_path, cache=cache, log_stream=log_stream, is_use_predictions=is_use_predictions)
     sc.begin_acquisition(exposure)
     return sc
 

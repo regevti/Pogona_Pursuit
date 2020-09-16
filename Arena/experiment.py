@@ -41,9 +41,8 @@ class Experiment:
     def start(self):
         mkdir(self.experiment_path)
         self.save_experiment_log()
-        self.cache.set(CacheColumns.EXPERIMENT_NAME, self.experiment_name, timeout=self.experiment_duration)
-        self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
-        self.init_reward_type()
+        self.init_experiment_cache()
+        mqtt_client.publish_command('led_light', 'on')
         mqtt_client.publish_command('hide_bugs')
         for i in range(self.num_trials):
             if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
@@ -62,6 +61,7 @@ class Experiment:
     def run_trial(self):
         mkdir(self.trial_path)
         mqtt_client.publish_command('init_bugs', self.bug_options)
+        self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.trial_duration)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration)
         if not is_debug_mode():
             record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, record_time=self.trial_duration,
@@ -69,6 +69,7 @@ class Experiment:
         else:
             time.sleep(self.trial_duration)
         mqtt_client.publish_command('hide_bugs')
+        self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
 
     def end_experiment(self):
         self.cache.delete(CacheColumns.EXPERIMENT_NAME)
@@ -76,11 +77,15 @@ class Experiment:
         if self.reward_type == 'always':
             self.cache.delete(CacheColumns.ALWAYS_REWARD)
 
+        mqtt_client.publish_command('led_light', 'off')
+
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:
             f.write(str(self))
 
-    def init_reward_type(self):
+    def init_experiment_cache(self):
+        self.cache.set(CacheColumns.EXPERIMENT_NAME, self.experiment_name, timeout=self.experiment_duration)
+        self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
         if self.reward_type == 'always':
             self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.experiment_duration)
 
