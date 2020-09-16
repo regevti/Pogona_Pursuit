@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from cache import CacheColumns, RedisCache
-from parallel_port import Feeder
+from parallel_port import ParallelPort
 import paho.mqtt.client as mqtt
 
 HOST = os.environ.get('MQTT_HOST', 'mqtt')
@@ -17,16 +17,18 @@ LOG_TOPICS = {
     'prediction': 'predictions.csv'
 }
 SUBSCRIPTION_TOPICS = {
-    'reward': 'event/command/reward'
+    'reward': 'event/command/reward',
+    'led_light': 'event/command/led_light'
 }
 SUBSCRIPTION_TOPICS.update({k: LOG_TOPIC_PREFIX + k for k in LOG_TOPICS.keys()})
 
 
 class MQTTClient:
-    def __init__(self, feeder=None):
+    def __init__(self, parport: ParallelPort = None):
         self.client = mqtt.Client()
         self.cache = RedisCache()
-        self.reward_manager = RewardManager(self.cache, feeder)
+        self.parport = parport
+        self.reward_manager = RewardManager(self.cache, parport)
 
     def loop(self):
         self.client.on_connect = self.on_connect
@@ -43,6 +45,11 @@ class MQTTClient:
         payload = msg.payload.decode('utf-8')
         if msg.topic == SUBSCRIPTION_TOPICS['reward']:
             self.reward_manager.reward(is_force=True)
+        elif msg.topic == SUBSCRIPTION_TOPICS['led_light']:
+            if payload == 'on':
+                self.parport.led_lighting_on()
+            else:
+                self.parport.led_lighting_off()
         elif msg.topic.startswith(LOG_TOPIC_PREFIX):
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
             if topic == 'hit':
@@ -81,13 +88,13 @@ class MQTTClient:
 
 
 class RewardManager:
-    def __init__(self, cache, feeder):
+    def __init__(self, cache, parport):
         self.cache = cache
-        self.feeder = feeder
+        self.parport = parport
 
     def reward(self, is_force=False):
-        if self.feeder and (is_force or self.is_reward_allowed()):
-            self.feeder.feed()
+        if self.parport and (is_force or self.is_reward_allowed()):
+            self.parport.feed()
             return True
 
     def is_reward_allowed(self):
@@ -98,10 +105,10 @@ class RewardManager:
 
 
 if __name__ == '__main__':
-    _feeder = None
+    _parport = None
     try:
-        _feeder = Feeder()
+        _parport = ParallelPort()
     except Exception as exc:
         print(f'Error loading feeder: {exc}')
 
-    MQTTClient(_feeder).loop()
+    MQTTClient(_parport).loop()
