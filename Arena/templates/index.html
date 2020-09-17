@@ -328,6 +328,10 @@
         $.get('/led_light/on')
     })
 
+    $("led_light_off").click(function (e) {
+        $.get('/led_light/off')
+    })
+
     function getCheckedCameras() {
       let a = []
       $("#cams-checkboxes input").each(function (e) {
