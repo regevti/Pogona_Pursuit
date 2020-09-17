@@ -169,12 +169,15 @@
                 <div class="row mb-2">
                     <button id="reward" class="btn btn-lg btn-primary mx-auto">Reward</button>
                 </div>
-                <div class="row mb-2">
-                    <button id="led_light_on" class="btn btn-lg btn-primary mx-auto">LED Light ON</button>
+                <div class="row">
+                    <div class="col mr-0">
+                        <button id="led_light_on" class="btn btn-lg btn-primary mx-auto">LED ON</button>
+                    </div>
+                    <div class="col">
+                        <button id="led_light_off" class="btn btn-lg btn-primary mx-auto">LED OFF</button>
+                    </div>
                 </div>
-                <div class="row mb-2">
-                    <button id="led_light_off" class="btn btn-lg btn-primary mx-auto">LED Light OFF</button>
-                </div>
+
             </div>
         </div>
         <pre class="row" id="record-output"></pre>
@@ -324,12 +327,12 @@
       })
     })
 
-    $("led_light_on").click(function (e) {
-        $.get('/led_light/on')
+    $("#led_light_on").click(function (e) {
+      $.get('/led_light/on')
     })
 
-    $("led_light_off").click(function (e) {
-        $.get('/led_light/off')
+    $("#led_light_off").click(function (e) {
+      $.get('/led_light/off')
     })
 
     function getCheckedCameras() {
