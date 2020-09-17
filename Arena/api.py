@@ -83,6 +83,11 @@ def reward():
     return Response('ok')
 
 
+@app.route('/led_light/<state>')
+def led_light(state):
+    mqtt_client.publish_event(SUBSCRIPTION_TOPICS['led_light'], state)
+
+
 @app.route('/cameras_info')
 def cameras_info():
     """Get cameras info"""
