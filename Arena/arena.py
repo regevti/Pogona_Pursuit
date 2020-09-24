@@ -41,11 +41,13 @@ ACQUIRE_STOP_OPTIONS = {
 }
 IS_PREDICTOR_READY = False
 IS_PREDICTOR_EXPERIMENT = is_predictor_experiment()
+DETECTOR_THRESH = float(os.environ.get('DETECTOR_THRESH', 0.9))
+REALTIME_CAMERA = os.environ.get('REALTIME_CAMERA', 'realtime')
 if not os.environ.get('DISABLE_PREDICTOR'):
     try:
         from Prediction import predictor, detector, seq2seq_predict
 
-        _detector = detector.Detector_v4()
+        _detector = detector.Detector_v4(conf_thres=DETECTOR_THRESH)
 
         class PredictModel:
             def __init__(self, weigths, traj_model):
@@ -340,7 +342,7 @@ class SpinCamera:
 
     @property
     def is_realtime_mode(self):
-        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == 'realtime'
+        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == REALTIME_CAMERA
 
 
 
