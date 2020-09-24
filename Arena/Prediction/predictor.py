@@ -218,7 +218,8 @@ class TrajectoryPredictor:
         self.last_forecast = None
         self.last_forecast_age = None
         self.past_input = np.empty((input_len, 4))
-        self.past_input[:] = np.nan
+        # self.past_input[:] = np.nan
+        self.past_input[:] = 3
 
     def init_trajectory(self, detection):
         pass
