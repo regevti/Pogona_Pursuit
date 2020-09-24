@@ -1,4 +1,4 @@
-version: '3'
+version: '2.3'
 
 services:
   arena:
@@ -7,10 +7,15 @@ services:
       dockerfile: ./docker/Dockerfile-arena
     container_name: arena
     privileged: true
+    depends_on:
+      - cache
+      - mqtt
+      - logger
     volumes:
     - ../Arena:/arena
     - ../pogona_hunter:/pogona_hunter
     restart: always
+    runtime: nvidia
     command: "flask run --host=0.0.0.0"
     ports:
       - 3350:8888
@@ -19,12 +24,15 @@ services:
       - FLASK_APP=api.py
       - LC_ALL=C.UTF-8
       - LANG=C.UTF-8
+      - PYTHONUNBUFFERED=1
 
   app:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile-app
     container_name: pogona_hunter
+    depends_on:
+      - mqtt
     restart: always
     volumes:
     - ../pogona_hunter:/app
@@ -36,8 +44,13 @@ services:
       context: ..
       dockerfile: ./docker/Dockerfile-logger
     container_name: logger
+    depends_on:
+      - mqtt
+      - cache
     restart: always
     command: 'python mqtt.py'
+    devices:
+      - /dev/parport0
     volumes:
       - ../Arena:/logger
     environment:

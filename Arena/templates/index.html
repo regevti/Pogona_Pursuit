@@ -57,6 +57,16 @@
                     </div>
                 </div>
                 <div class="form-group row pr-3">
+                    <label for="rewardTypeSelect" class="col col-form-label">Reward Type</label>
+                    <div class="col">
+                        <select id="rewardTypeSelect" class="form-control col">
+                            {% for reward_type in reward_types %}
+                            <option value="{{reward_type}}">{{reward_type}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group row pr-3">
                     <label for="movementTypeSelect" class="col col-form-label">Movement Type</label>
                     <div class="col">
                         <select id="movementTypeSelect" class="form-control col">
@@ -70,6 +80,12 @@
                     <label for="bugSpeed" class="col col-form-label">Bug Speed:</label>
                     <div class="col-sm-5">
                         <input type="number" class="form-control" id="bugSpeed" value="2" required>
+                    </div>
+                </div>
+                <div class="form-group row pr-3">
+                    <label for="timeBetweenBugs" class="col col-form-label">Time Between Bugs [sec]:</label>
+                    <div class="col-sm-5">
+                        <input type="number" class="form-control" id="timeBetweenBugs" value="2" required>
                     </div>
                 </div>
                 <div class="row">
@@ -95,6 +111,10 @@
                             <label class="form-check-label" for="camera-{{cam}}">{{cam}}</label>
                         </div>
                         {% endfor %}
+                        <div class="row ml-4 mt-3">
+                            <input class="form-check-input" type="checkbox" id="use_predictions">
+                            <label class="form-check-label" for="use_predictions">Use Predictions</label>
+                        </div>
                     </form>
                 </div>
                 <div class="row mt-3">
@@ -104,6 +124,12 @@
                             <label for="exposure" class="col col-form-label">Exposure Time</label>
                             <div class="col-sm-5">
                                 <input type="number" class="form-control" id="exposure" value="{{exposure}}" required>
+                            </div>
+                        </div>
+                        <div class="form-group row">
+                            <label for="videoOutputPrefix" class="col col-form-label">Folder Prefix</label>
+                            <div class="col-sm-7">
+                                <input type="text" class="form-control" id="videoOutputPrefix">
                             </div>
                         </div>
                         <h7 class="label">Acquire Stop</h7>
@@ -137,6 +163,21 @@
                 <div class="row mb-2">
                     <button id="hide_bugs" class="btn btn-lg btn-primary mx-auto">Hide Bugs</button>
                 </div>
+                <div class="row mb-2">
+                    <button id="calibrate" class="btn btn-lg btn-primary mx-auto">Calibrate</button>
+                </div>
+                <div class="row mb-2">
+                    <button id="reward" class="btn btn-lg btn-primary mx-auto">Reward</button>
+                </div>
+                <div class="row">
+                    <div class="col mr-0">
+                        <button id="led_light_on" class="btn btn-lg btn-primary mx-auto">LED ON</button>
+                    </div>
+                    <div class="col">
+                        <button id="led_light_off" class="btn btn-lg btn-primary mx-auto">LED OFF</button>
+                    </div>
+                </div>
+
             </div>
         </div>
         <pre class="row" id="record-output"></pre>
@@ -206,9 +247,12 @@
           trial_duration: Number($("#experimentTrialDuration").val()),
           num_trials: Number($("#experimentNumTrials").val()),
           iti: Number($("#experimentITI").val()),
+          reward_type: $("#rewardTypeSelect").val(),
+          is_use_predictions: $("#use_predictions").is(":checked"),
           bug_type: $("#bugTypeSelect").val(),
           bug_speed: Number($("#bugSpeed").val()),
-          movement_type: $("#movementTypeSelect").val()
+          movement_type: $("#movementTypeSelect").val(),
+          time_between_bugs: Number($("#timeBetweenBugs").val())
         }),
         contentType: "application/json",
         beforeSend: function () {
@@ -229,8 +273,10 @@
         type: "POST",
         data: JSON.stringify(Object.assign({
           exposure: Number($("#exposure").val()),
+          folder_prefix: $("#videoOutputPrefix").val(),
           cameras: getCheckedCameras(),
-          is_auto_start: true
+          is_auto_start: true,
+          is_use_predictions: $("#use_predictions").is(":checked")
         }, getAcquireStop())),
         contentType: "application/json",
         beforeSend: function () {
@@ -267,6 +313,26 @@
     })
     $("#hide_bugs").click(function (e) {
       $.get('/hide_bugs')
+    })
+    $("#calibrate").click(function (e) {
+      $("#record-output").text('Calibrating...')
+      $.get('/calibrate', function (data) {
+        $("#record-output").text(data)
+      })
+    })
+
+    $("#reward").click(function (e) {
+      $.get('/reward', function (data) {
+        $("#record-output").text(data)
+      })
+    })
+
+    $("#led_light_on").click(function (e) {
+      $.get('/led_light/on')
+    })
+
+    $("#led_light_off").click(function (e) {
+      $.get('/led_light/off')
     })
 
     function getCheckedCameras() {
