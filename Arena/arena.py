@@ -53,11 +53,11 @@ if not os.environ.get('DISABLE_PREDICTOR'):
             def __init__(self, weigths, traj_model):
                 self.weights = weigths
                 self.traj_model = traj_model
-                self.history_len = 20
+                self.input_len = 20
                 self.forecast_horizon = 20
                 self.seq2seq_predictor = seq2seq_predict.Seq2SeqPredictor(model=self.traj_model,
                                                                           weights_path=self.weights,
-                                                                          history_len=self.history_len,
+                                                                          input_len=self.input_len,
                                                                           forecast_horizon=self.forecast_horizon)
                 self.hit_pred = predictor.HitPredictor(trajectory_predictor=self.seq2seq_predictor, detector=_detector)
 
