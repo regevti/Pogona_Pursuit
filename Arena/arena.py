@@ -107,6 +107,8 @@ class SpinCamera:
             self.logger.error(f'(run); {exc}')
 
     def __del__(self):
+        if self.is_realtime_mode:
+            self.predictor.reset()
         self.cam.DeInit()
 
     def configure_camera(self, exposure):
