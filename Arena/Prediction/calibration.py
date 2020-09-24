@@ -28,7 +28,7 @@ DIST = np.array(
     ]
 )
 
-# Homography constants
+# Homography and arena constants
 ARENA_H_CM = 53
 ARENA_W_CM = 34.5
 
@@ -43,6 +43,7 @@ ARUCO_DICT = cv.aruco.Dictionary_get(cv.aruco.DICT_4X4_50)
 
 HOMOGRAPHIES_FOLDER = 'calibration'
 
+
 class CalibrationException(Exception):
     pass
 
@@ -53,11 +54,10 @@ def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
     """
     Finds the undistortion matrix of the lense based on multiple images
     with checkerboard.
-    Returns 2 matrices: mtx, dist
-
     chkr_im_path - path to folder with images with checkerboards
-    rows - number of rows in checkerboard
-    cols - number of cols in checkerboard
+    :param: rows - number of rows in checkerboard
+    :param: cols - number of cols in checkerboard
+    :return: camera matrix, distortion coefficients
     """
 
     # termination criteria
@@ -107,8 +107,8 @@ def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
 
 def get_undistort_mapping(width, height, mtx=MTX, dist=DIST, alpha=0):
     """
-    Undistort mapping for the given mtx and dist matrices.
-    Returns (mapx, mapy), roi, newcameramtx
+    Computes the undistortion mapping for the given mtx and dist matrices.
+    Returns: (mapx, mapy), roi, newcameramtx
     mapx, mapy - x,y coordinates for each image coordinate for undistorting an image.
     roi - (x, y, w, h) region of interest tuple
     newcameramtx - new camera matrix for undistorting points.
@@ -224,6 +224,7 @@ def get_points(polygons, max_y=True):
 
     return right[min_xs][p_right_ind], left[max_xs][p_left_ind]
 
+
 # TODO: old black squares function
 def thresh_dist(poly, min_thresh, max_thresh):
     """
@@ -258,6 +259,7 @@ def polygons_min_distance(polygons, min_dist=300):
             if dist < min_dist:
                 return True
     return False
+
 
 # TODO: Old function, operates on black squares
 def find_arena_homography_black_squares(
@@ -369,11 +371,10 @@ def find_arena_homography(
     Calculate the homography matrix to map from camera coordinates to
     a coordinate system relative to the touch screen.
 
-    Assumes cal_img contains 4 visually clear Aruco patterns, which are the first 4 indices in the pattern list
-    from the predefined Aruco_dict_4X4_50. Each pattern has it's original top left corner in a specified place
-    in the arena to create a rectangular shape.
+    Assumes cal_img contains 4 visually clear Aruco patterns, which are the first 4 indices in the pattern list.
+    Each pattern has it's original top left corner in a specified place in the arena to create a rectangular shape.
     :param cal_img: Image to extract the homography from. Numpy image, assumed to be lense corrected
-    :param screen_x_res:
+    :param screen_x_res: horizontal resolution of the screen
     :param aruco_dict: Aruco dictionary which contains the patterns. Default: aruco_dict_4x4_50, using ascending order
     :return: homography H, labelled image, screen length in image pixels
     """
@@ -385,7 +386,6 @@ def find_arena_homography(
                                                                parameters=parameters)
     frame_markers = cv.aruco.drawDetectedMarkers(cal_img.copy(), corners, ids)
 
-    # TODO what if 4 found but one is false positive?
     if len(corners) != 4:
         return None, frame_markers, "Could not find 4 Aruco patterns in the image."
 
@@ -396,12 +396,13 @@ def find_arena_homography(
 
     # Draw the rectangle formed by the corners
     thickness = 5
-    color = (0, 255, 0) # green
+    color = (0, 255, 0)  # green
     cv.line(frame_markers, pt1=tuple(p_bottom_r), pt2=tuple(p_bottom_l), color=color, thickness=thickness)
     cv.line(frame_markers, pt1=tuple(p_bottom_r), pt2=tuple(p_top_r), color=color, thickness=thickness)
     cv.line(frame_markers, pt1=tuple(p_bottom_l), pt2=tuple(p_top_l), color=color, thickness=thickness)
     cv.line(frame_markers, pt1=tuple(p_top_r), pt2=tuple(p_top_l), color=color, thickness=thickness)
 
+    # create source and destination point arrays for homography function
     arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
     dst_p = np.array([[0, 0],
                       [screen_x_res, 0],
@@ -456,6 +457,7 @@ def transform_data(data, h, cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2
     return ret_df
 
 
+# TODO what is this function used for?
 def get_last_homography(homographies_folder=HOMOGRAPHIES_FOLDER):
     """
     Get the latest homography from the homographies folder according to date

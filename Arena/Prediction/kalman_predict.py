@@ -6,15 +6,18 @@ from Prediction.predictor import TrajectoryPredictor
 
 
 def create_kalman_filter(
-    init_x=None, input_dim=2, num_terms=2, dt=1, r_var=5.0, q_var=0.1
+        init_x=None, input_dim=2, num_terms=2, dt=1, r_var=5.0, q_var=0.1
 ):
     """
-    Return a constant velocity kalman filter
-    input_dim - dimensions of input
-    num_derivatives - number of terms in the dynamic system (i.e. 2 for constant velocity, 3 for constant accel, etc.).
-    dt - time step
-    r_var - variance of state uncertainty matrix R
-    q_var - variance of white noise matrix Q
+    Create a Kalman filter object with the specified number of dimensions and derivatives
+    :param init_x:
+    :param input_dim: dimensions of input (defualt: 2)
+    :param num_terms: number of terms in the dynamic system (i.e. 2 for constant velocity, 3 for constant accel, etc.).
+    (defualt: 2, i.e, constant velocity)
+    :param dt: time step (defualt: 1)
+    :param r_var: variance of state uncertainty matrix R (default: 5)
+    :param q_var: variance of white noise matrix Q (default: 0.1)
+    :return: Kalman filter object
     """
 
     kf = KalmanFilter(dim_x=input_dim * num_terms, dim_z=input_dim)
@@ -48,49 +51,64 @@ def create_kalman_filter(
 
 class KalmanPredictor(TrajectoryPredictor):
     def __init__(self, forecast_horizon, num_derivatives, q_var=0.01, r_var=5.0):
-        super().__init__(forecast_horizon)
+        """
+        A TrajectoryPredictor that use a Kalman filter to predict future coordinates
+        :param forecast_horizon: number of iterations to project the current state vector ahead with the transition matrix
+        :param num_derivatives: degree of the system (constant velocity - 2, acceleration - 3, ..etc).
+        :param q_var: variance of white noise matrix Q (default: 0.1)
+        :param r_var: variance of state uncertainty matrix R (default: 5)
+        """
+        super().__init__(1, forecast_horizon)
         self.num_terms = num_derivatives + 1
         self.q_var = q_var
         self.r_var = r_var
 
+        self.discontinuity = False
+
     def init_trajectory(self, detection):
+        self.discontinuity = False
+
         init_x1 = np.zeros(2 * self.num_terms, np.float)
-        init_x1[0 :: self.num_terms] = detection[:2]
+        init_x1[0:: self.num_terms] = detection[:2]  # x1y1
 
         init_x2 = np.zeros(2 * self.num_terms, np.float)
-        init_x2[0 :: self.num_terms] = detection[2:4]
+        init_x2[0:: self.num_terms] = detection[2:4]  # x2y2
 
-        self.kf1 = create_kalman_filter(
-            init_x=init_x1,
-            input_dim=2,
-            num_terms=self.num_terms,
-            q_var=self.q_var,
-            r_var=self.r_var,
-        )
-        self.kf2 = create_kalman_filter(
-            init_x=init_x2,
-            input_dim=2,
-            num_terms=self.num_terms,
-            q_var=self.q_var,
-            r_var=self.r_var,
-        )
+        self.kf1 = create_kalman_filter(init_x=init_x1,
+                                        input_dim=2,
+                                        num_terms=self.num_terms,
+                                        q_var=self.q_var,
+                                        r_var=self.r_var,
+                                        )
 
-    def update_and_predict(self, history):
-        self.kf1.predict()
-        self.kf2.predict()
+        self.kf2 = create_kalman_filter(init_x=init_x2,
+                                        input_dim=2,
+                                        num_terms=self.num_terms,
+                                        q_var=self.q_var,
+                                        r_var=self.r_var,
+                                        )
 
-        if not np.isnan(history[-1, 0]):
-            self.kf1.update(history[-1, :2])
-            self.kf2.update(history[-1, 2:])
+    def _update_and_predict(self, past_input):
+        if not np.isnan(past_input[-1, 0]):
+            if self.discontinuity:
+                # Reinitialize trajectory after a discontinuity
+                # Perhaps this is too extreme?
+                self.init_trajectory(past_input[-1])
+            else:
+                self.kf1.predict()
+                self.kf2.predict()
+
+                self.kf1.update(past_input[-1, :2])
+                self.kf2.update(past_input[-1, 2:])
+        else:
+            self.discontinuity = True
 
         forecast = np.empty((self.forecast_horizon, 4), np.float)
         pred1 = self.kf1.x
         pred2 = self.kf2.x
 
         for i in range(self.forecast_horizon):
-            forecast[i] = np.concatenate(
-                (pred1[0 :: self.num_terms], pred2[0 :: self.num_terms])
-            )
+            forecast[i] = np.concatenate((pred1[0:: self.num_terms], pred2[0:: self.num_terms]))
             pred1 = np.dot(self.kf1.F, pred1)
             pred2 = np.dot(self.kf2.F, pred2)
 

@@ -2,7 +2,8 @@ import os
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
-from tqdm.auto import tqdm
+#from tqdm.auto import tqdm # py3.7 issues
+from tqdm import tqdm
 import matplotlib.patches as patches
 
 from Prediction.detector import xyxy_to_centroid, nearest_detection
@@ -164,10 +165,15 @@ def draw_arrow(
     )
 
 
-def draw_bounding_boxes(frame, detections, color=(0, 0, 255)):
+def draw_bounding_boxes(frame,
+                        detections,
+                        color=(0, 0, 255),
+                        is_xyxy=True,
+                        ):
     """
     frame - a numpy array representing the image.
-    detections - [(x, y, w, h, conf)...] bounding boxes array.
+    detections - [(x, y, x, y, conf)...] bounding boxes array.
+    if is_xyxy==False, then assumes detections is xywh
     
     draws bounding boxes on frame (in place).
     """
@@ -178,11 +184,17 @@ def draw_bounding_boxes(frame, detections, color=(0, 0, 255)):
     margin = 4
 
     if detections is not None:
-        for x1, y1, box_w, box_h, conf in detections:
+        for x1, y1, c, d, conf in detections:
             x1 = int(x1)
             y1 = int(y1)
-            box_w = int(box_w)
-            box_h = int(box_h)
+
+            x2, y2, box_w, box_h = None, None, None, None
+            if is_xyxy:
+                x2 = int(c)
+                y2 = int(d)
+            else:
+                box_w = int(c)
+                box_h = int(d)
 
             text = str(round(conf, 2))
             txt_size = cv.getTextSize(text, font, scale, thickness)
@@ -190,7 +202,11 @@ def draw_bounding_boxes(frame, detections, color=(0, 0, 255)):
             end_y = int(y1 + txt_size[0][1] + margin)
 
             cv.rectangle(frame, (x1, y1), (end_x, end_y), color, thickness)
-            cv.rectangle(frame, (x1, y1), (x1 + box_w, y1 + box_h), color, 2)
+
+            if is_xyxy:
+                cv.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            else:
+                cv.rectangle(frame, (x1, y1), (x1 + box_w, y1 + box_h), color, 2)
             cv.putText(
                 frame,
                 text,
@@ -340,6 +356,19 @@ def video_sampler(output_path, freq, f_name):
 def offline_centroid_visualizer(centroids, color, window_size):
     def fn(orig_frame, write_frame, frame_counter):
         draw_k_centroids(write_frame, frame_counter, centroids, window_size, color)
+
+    return fn
+
+
+def offline_bbox_visualizer(bboxes, color=(0, 0, 255), window_size=20):
+    def fn(orig_frame, write_frame, frame_counter):
+        for i in range(window_size):
+            idx = max(frame_counter - i, 0)
+            bbox = bboxes[idx]
+            if not np.isnan(bbox[0]):
+                bbox = bbox * (bbox > 0)  # zero out negative coords.
+                bbox = bbox.astype(int)
+                cv.rectangle(write_frame, tuple(bbox[:2]), tuple(bbox[2:]), color, 1)
 
     return fn
 
