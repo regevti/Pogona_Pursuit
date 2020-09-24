@@ -65,6 +65,14 @@ def compose_masks(mask_fns):
     return f
 
 
+def keep_mask(mask_fn, keep_prob=.2):
+    def f(X, Y):
+        rand_values = np.random.random(X.shape[0])
+        mask = (rand_values < keep_prob) | mask_fn(X, Y)
+        return mask
+    return f
+
+
 def trial_to_samples(
     trial_df,
     input_labels,
@@ -72,7 +80,8 @@ def trial_to_samples(
     input_seq_size,
     output_seq_size,
     input_images=None,
-    keep_nans=False
+    keep_nans=False,
+    mask_fn=None
 ):
     """
     Extract samples from a single trial dataframe to torch 3D tensors, X with dimension
@@ -110,7 +119,7 @@ def trial_to_samples(
 
         if input_images is not None:
             input_3d_images.append(img_seq)
-    if len(input_2d_tensors) == 0:
+    if len(input_2d_arrays) == 0:
         return None, None
     X = np.stack(input_2d_arrays)
     Y = np.stack(output_2d_arrays)
@@ -161,8 +170,7 @@ def create_train_val_test_dataloaders(
     output_seq_size,
     batch_size=256,
     shuffle=True,
-    std_threshold=None,
-    keep_lowvar_prob=0.2,
+    mask_fn=None,
     num_workers=0,
 ):
     """
@@ -185,8 +193,7 @@ def create_train_val_test_dataloaders(
                 output_labels=output_labels,
                 input_seq_size=input_seq_size,
                 output_seq_size=output_seq_size,
-                std_threshold=std_threshold,
-                keep_lowvar_prob=keep_lowvar_prob,
+                mask_fn=mask_fn
             )
             if X is None:
                 continue
