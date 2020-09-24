@@ -273,6 +273,7 @@ class SpinCamera:
             return
 
         pd.Series(self.predictor.forecasts).to_csv(self.predictions_path)
+        pd.DataFrame(self.predictor.history).to_csv(self.predictor_history_path)
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
@@ -328,6 +329,10 @@ class SpinCamera:
     @property
     def predictions_path(self):
         return f'{self.dir_path}/forecasts.csv'
+
+    @property
+    def predictor_history_path(self):
+        return f'{self.dir_path}/predictor_history.csv'
 
     @property
     def device_id(self):
