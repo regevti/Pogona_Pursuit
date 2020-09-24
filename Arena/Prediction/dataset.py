@@ -18,6 +18,7 @@ REALTIME_ID = "19506468"
 # depending on from where the program is run, add ../..
 EXPERIMENTS_ROOT = "../../Pogona_Pursuit/Arena/experiments/"
 OUTPUT_ROOT = "../../Pogona_Pursuit/Arena/output/"
+CALIBRATIONS_ROOT = "../../Pogona_Pursuit/Arena/"
 
 RT_DATA_FOLDER = "rt_data"
 HEAD_CROPS_FN = "head_crops.p"
@@ -43,9 +44,9 @@ EXCLUDE_TERMS = [
     "cockroach_20200907T152020",  # carpet fucks up calibration
     "cockroach_20200907T145302",  # same
     "circle_20200907T145105",  # same
-    'feeding3_20200902-142400',  # alpha 0.3 probably caused a corner black hole
+    "feeding3_20200902-142400",  # alpha 0.3 probably caused a corner black hole
     "202007",
-    "20200902"
+    "20200902",
 ]
 
 OUTPUT_TERMS = ["feeding"]
@@ -109,8 +110,8 @@ def get_cropped_head(img, detection, orig_dim):
     return cropped_head
 
 
-# TODO: write an online version for this function to be called from the experiment UI
-def get_homography_from_video(
+# Old function, works with black squares and not Aruco markers.
+def get_homography_from_video_black_squares(
     video_path, undist_alpha=0, max_test_frames=50, **homography_args
 ):
     """
@@ -144,7 +145,11 @@ def get_homography_from_video(
         # Try a few contrast and brightness values until one works.
         for contrast in np.arange(0, 3.1, 0.1):
             for brightness in np.arange(-40, 20, 5):
-                homography, homography_im, error = calib.find_arena_homography(
+                (
+                    homography,
+                    homography_im,
+                    error,
+                ) = calib.find_arena_homography_black_squares(
                     undistorted_img,
                     contrast=contrast,
                     brightness=brightness,
@@ -173,26 +178,47 @@ def get_homography_from_video(
     return homography, homography_im
 
 
+# Maybe delete, not necessary. If not, create similiar Aruco function
+def save_homography_data(path, undist_alpha=0, homography_args={}):
+    vid_path = os.path.join(path, REALTIME_ID + ".avi")
+    rt_data_path = os.path.join(path, RT_DATA_FOLDER)
+    json_fn = os.path.join(rt_data_path, VID_STATS_FN)
+    homography_im_fn = os.path.join(rt_data_path, HOMOGRAPHY_IM_FN)
+
+    homography, homography_im = get_homography_from_video_black_squares(
+        vid_path, undist_alpha=undist_alpha, **homography_args
+    )
+
+    if not os.path.exists(rt_data_path):
+        os.mkdir(rt_data_path)
+
+    if homography is not None:
+        homography = homography.tolist()
+
+    if homography_im is not None:
+        cv.imwrite(homography_im_fn, homography_im)
+
+    vcap = cv.VideoCapture(vid_path)
+    vid_width = int(vcap.get(3))
+    vid_height = int(vcap.get(4))
+    vcap.release()
+
+    with open(json_fn, "w") as fp:
+        vid_stats = {"width": vid_width, "height": vid_height, "homography": homography}
+        if undist_alpha != 0:
+            vid_stats["undist_alpha"] = undist_alpha
+
+        json.dump(vid_stats, fp)
+
+
 def analyze_single_video(
-    video_path,
-    detector,
-    start_frame=0,
-    num_frames=None,
-    undist_alpha=0,
-    homography_args={},
+    video_path, detector, start_frame=0, num_frames=None,
 ):
     """
     Analyze a single video by running each frame through the detector, and returning a 2d array of detections.
     also saving the flattened resized cropped head images in 2d array
-    return: A 2D array with detections and a list with cropped heads images which are numpy 2d arrays
+    :return: 2D array with detections and a list with cropped heads images which are numpy 2d arrays
     """
-
-    # Find homography matrix from the video. Assumes that 4 black squares are visible in the arena.
-    homography, homography_im = get_homography_from_video(
-        video_path, undist_alpha=undist_alpha, **homography_args
-    )
-    if homography is None:
-        print(f"Could not calibrate video at {video_path}")
 
     vcap = cv.VideoCapture(video_path)
 
@@ -250,47 +276,40 @@ def analyze_single_video(
 
     vcap.release()
 
-    return frames_data, head_crops, width, height, homography, homography_im
+    return frames_data, head_crops, width, height
 
 
-def save_homography_data(path, undist_alpha=0, homography_args={}):
-    vid_path = os.path.join(path, REALTIME_ID + ".avi")
-    rt_data_path = os.path.join(path, RT_DATA_FOLDER)
-    json_fn = os.path.join(rt_data_path, VID_STATS_FN)
-    homography_im_fn = os.path.join(rt_data_path, HOMOGRAPHY_IM_FN)
+def get_date_from_path(path):
+    date_rgx = r"\d{8}-\d{6}"
+    to_search = os.path.split(path)[-1]
+    date_str = re.findall(date_rgx, to_search)[-1]
+    return pd.to_datetime(date_str)
 
-    homography, homography_im = get_homography_from_video(
-        vid_path, undist_alpha=undist_alpha, **homography_args
+
+def find_last_homography(path):
+    """
+    Find the last homography relative to date of video by finding the calibration date with smallest
+    positive timedelta relative to video date
+    :param path: path to folder containing a realtime video
+    :return: homography numpy array, json file path
+    """
+    video_date = get_date_from_path(path)
+    calibration_paths = glob.glob(CALIBRATIONS_ROOT + "*")
+    calibration_dates = pd.Series(
+        [get_date_from_path(calib_path) for calib_path in calibration_paths]
     )
+    tiled_video_date = pd.Series([video_date] * calibration_dates.shape[0])
+    date_diffs = tiled_video_date - calibration_dates
+    last_date = (date_diffs[date_diffs >= pd.Timedelta(0)]).argmin()
+    last_calib_path = calibration_paths[last_date]
 
-    if not os.path.exists(rt_data_path):
-        os.mkdir(rt_data_path)
+    with open(last_calib_path, "r") as fp:
+        homog_dict = json.load(fp)
 
-    if homography is not None:
-        homography = homography.tolist()
+    return np.array(homog_dict["homography"]), last_calib_path
 
-    if homography_im is not None:
-        cv.imwrite(homography_im_fn, homography_im)
 
-    vcap = cv.VideoCapture(vid_path)
-    vid_width = int(vcap.get(3))
-    vid_height = int(vcap.get(4))
-    vcap.release()
-
-    with open(json_fn, "w") as fp:
-        vid_stats = {"width": vid_width, "height": vid_height, "homography": homography}
-        if undist_alpha != 0:
-            vid_stats["undist_alpha"] = undist_alpha
-
-        json.dump(vid_stats, fp)
-
-"""
-    TODO - Get last homography for offline data analysis:
-         for a trial from a certain date, go to the homographies folder,
-         and find the last homography to that date. Save the homography to vid_stats json
-         as before. No change to the data selection functions.
-"""
-def analyze_rt_data(path, detector, undist_alpha=0, homography_args={}):
+def analyze_rt_data(path, detector):
     """
     Analyze a single video and save data to the realtime directory:
     parse detections and other metadata into a single trial dict
@@ -306,22 +325,12 @@ def analyze_rt_data(path, detector, undist_alpha=0, homography_args={}):
     head_crops_fn = os.path.join(rt_data_path, HEAD_CROPS_FN)
     detections_df_fn = os.path.join(rt_data_path, DETECTIONS_DF_FN)
     json_fn = os.path.join(rt_data_path, VID_STATS_FN)
-    homography_im_fn = os.path.join(rt_data_path, HOMOGRAPHY_IM_FN)
+    # homography_im_fn = os.path.join(rt_data_path, HOMOGRAPHY_IM_FN)
 
     try:
         # analyze video with detector
-        (
-            detections,
-            head_crops,
-            vid_width,
-            vid_height,
-            homography,
-            homography_im,
-        ) = analyze_single_video(
-            video_path=vid_path,
-            detector=detector,
-            undist_alpha=undist_alpha,
-            homography_args=homography_args,
+        (detections, head_crops, vid_width, vid_height) = analyze_single_video(
+            video_path=vid_path, detector=detector
         )
     except DatasetException:
         print(f"Error reading video file: {vid_path}")
@@ -337,17 +346,16 @@ def analyze_rt_data(path, detector, undist_alpha=0, homography_args={}):
     with open(head_crops_fn, "wb") as fp:
         pickle.dump(head_crops, fp)
 
-    # save homography transformation as a 2D list if not None, convert back to numpy upon loading
-    if homography is not None:
-        homography = homography.tolist()
-
-    if homography_im is not None:
-        cv.imwrite(homography_im_fn, homography_im)
+    # find last homography relative to video date
+    homography, calib_path = find_last_homography(path)
 
     with open(json_fn, "w") as fp:
-        vid_stats = {"width": vid_width, "height": vid_height, "homography": homography}
-        if undist_alpha != 0:
-            vid_stats["undist_alpha"] = undist_alpha
+        vid_stats = {
+            "width": vid_width,
+            "height": vid_height,
+            "homography": homography,
+            "homography_src_file": calib_path,
+        }
 
         json.dump(vid_stats, fp)
 
@@ -616,15 +624,16 @@ def collect_data(
 
         df.index = [str(trial[0]) + "_" + str(trial[1])] * df.shape[0]
 
-        dataframes_list.append(df)
+        if not (df.num_bbox == 0).all():
+            dataframes_list.append(df)
 
     if len(dataframes_list) == 0:
         print("No data found with specified data sources")
         return
 
     unified_df = pd.concat(dataframes_list)
-    if "hit" in unified_df.columns:
-        unified_df.hit = unified_df.hit.fillna(False)
+    if "is_touch" in unified_df.columns:
+        unified_df.is_touch = unified_df.is_touch.fillna(False)
 
     # place NaN's instead of 0's where there are no detections
     # TODO: where they become zeros anyway?
@@ -671,18 +680,20 @@ def align_touches(df, temp_touches):
     :param temp_touches: screen touches dataframe
     """
     temp_touches.drop(columns=[temp_touches.columns[0]], inplace=True)
-    if 'is_hit' in temp_touches.columns:
-        temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y","is_hit", "timestamp"]
-    else:
-        temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y", "timestamp"]
-        ### TODO add  new experiments (07/09/2020) onward have a another column, add column
-    #temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y", "timestamp"]
+    if "is_hit" not in temp_touches.columns:
+        temp_touches.insert(
+            loc=len(temp_touches.columns) - 1,
+            column="is_hit",
+            value=[True] * temp_touches.shape[0],
+        )
+
+    temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y", "is_hit", "timestamp"]
     temp_touches["timestamp"] = pd.to_datetime(temp_touches["timestamp"])
 
     # initalize columns for screen touching data
-    for col in ["hit_x", "hit_y", "bug_x", "bug_y", "touch_ts"]:
+    for col in ["hit_x", "hit_y", "bug_x", "bug_y", "is_hit", "touch_ts"]:
         df[col] = np.nan
-    df["hit"] = False
+    df["is_touch"] = False
 
     # for timestamp of each touch, get frame with closest timestamp
     for i, ts in enumerate(temp_touches.timestamp):
@@ -690,16 +701,16 @@ def align_touches(df, temp_touches):
 
         col_inds = [
             df.columns.get_loc(col)
-            for col in ["hit_x", "hit_y", "bug_x", "bug_y", "touch_ts"]
+            for col in ["hit_x", "hit_y", "bug_x", "bug_y", "is_hit", "touch_ts"]
         ]
         to_set = [
             temp_touches.columns.get_loc(col)
-            for col in ["hit_x", "hit_y", "bug_x", "bug_y", "timestamp"]
+            for col in ["hit_x", "hit_y", "bug_x", "bug_y", "is_hit", "timestamp"]
         ]
 
         # setting values for part of row
         df.iloc[frame_argmin, col_inds] = temp_touches.iloc[i, to_set].values
-        df.iloc[frame_argmin, df.columns.get_loc("hit")] = True
+        df.iloc[frame_argmin, df.columns.get_loc("is_touch")] = True
     df["touch_ts"] = pd.to_datetime(df["touch_ts"])
 
 
@@ -787,3 +798,45 @@ def get_unified_heads_mat(vid_dims, first_date, resize=32, all_path=EXPERIMENTS_
         for trial in heads_dict[key].keys():
             mat_list.append(heads_list2mat(heads_dict[key][trial], resize))
     return np.concatenate(mat_list).astype("uint8")
+
+
+# Utility functions
+
+
+def trial_name_to_tuple(trial_name):
+    spl = trial_name.split("_")
+    experiment = "_".join(spl[:-1])
+    trial = spl[-1] if spl[-1] != "None" else None
+
+    return experiment, trial
+
+
+def trial_tuple_to_name(trial_tuple):
+    return "_".join(trial_tuple)
+
+
+def get_trial_video_path(trial):
+    return os.path.join(get_trial_path(trial), REALTIME_ID + ".avi")
+
+
+def get_trial_path(trial):
+    if type(trial) is str:
+        trial = trial_name_to_tuple(trial)
+
+    if trial[1] is not None:
+        return glob.glob(
+            os.path.join(EXPERIMENTS_ROOT, trial[0], trial[1], "videos/*")
+        )[0]
+    else:
+        return os.path.join(OUTPUT_ROOT, trial[0])
+
+
+def homography_for_trial(trial):
+
+    trial_path = get_trial_path(trial)
+    json_path = os.path.join(trial_path, RT_DATA_FOLDER, VID_STATS_FN)
+
+    with open(json_path, "r") as f:
+        vid_stats = json.load(f)
+
+    return np.array(vid_stats["homography"])
