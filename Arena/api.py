@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response, request, make_response, send_file
+from flask import Flask, render_template, Response, request, make_response, send_file, stream_with_context
 from dotenv import load_dotenv
 import PySpin
 import cv2
@@ -6,11 +6,11 @@ import json
 import os
 load_dotenv()
 
-from utils import titlize
+from utils import titlize, get_predictor_model
 from cache import RedisCache, CacheColumns
-from mqtt import MQTTClient
-from experiment import Experiment
-from arena import SpinCamera, record, filter_cameras, display_info, \
+from mqtt import MQTTClient, SUBSCRIPTION_TOPICS
+from experiment import Experiment, REWARD_TYPES
+from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
     CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
 
 app = Flask(__name__)
@@ -25,7 +25,7 @@ def index():
     with open('../pogona_hunter/src/config.json', 'r') as f:
         config = json.load(f)
     return render_template('index.html', cameras=CAMERA_NAMES.keys(), exposure=EXPOSURE_TIME, config=config,
-                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()})
+                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES)
 
 
 @app.route('/record', methods=['POST'])
@@ -44,7 +44,7 @@ def start_experiment():
         data = request.json
         data['cache'] = cache
         e = Experiment(**data)
-        return Response(str(e))
+        return Response(stream_with_context(e.start()))
 
 
 @app.route('/get_experiment')
@@ -59,6 +59,34 @@ def stop_experiment():
         cache.delete(CacheColumns.EXPERIMENT_NAME)
         return Response(f'Experiment: {experiment_name} was stopped')
     return Response('No available experiment')
+
+
+@app.route('/calibrate')
+def calibrate():
+    """Calibrate camera"""
+    try:
+        from arena import _models
+    except ImportError:
+        return Response('Unable to locate HitPredictor')
+    pred = _models[get_predictor_model()].hit_pred
+    img = capture_image('realtime')
+    h, h_im, error = pred.calibrate(img)
+    if error:
+        return Response(error)
+    return Response('Calibration completed')
+
+
+@app.route('/reward')
+def reward():
+    """Activate Feeder"""
+    mqtt_client.publish_event(SUBSCRIPTION_TOPICS['reward'], '')
+    return Response('ok')
+
+
+@app.route('/led_light/<state>')
+def led_light(state):
+    mqtt_client.publish_event(SUBSCRIPTION_TOPICS['led_light'], state)
+    return Response('ok')
 
 
 @app.route('/cameras_info')
@@ -101,7 +129,7 @@ def hide_bugs():
 
 
 class VideoStream:
-    def __init__(self):
+    def __init__(self, exposure_time=EXPOSURE_TIME):
         self.system = PySpin.System.GetInstance()
         self.cam_list = self.system.GetCameras()
         filter_cameras(self.cam_list, cache.get(CacheColumns.STREAM_CAMERA))
@@ -110,7 +138,7 @@ class VideoStream:
             raise Exception('No cameras were found')
 
         self.sc = SpinCamera(self.cam_list[0])
-        self.sc.begin_acquisition(EXPOSURE_TIME)
+        self.sc.begin_acquisition(exposure_time)
         # self.serializer = Serializer()
         # self.serializer.start_acquisition()
 

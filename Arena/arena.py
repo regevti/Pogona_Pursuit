@@ -2,19 +2,24 @@
 
 import time
 import re
+import os
 import cv2
+import json
 import argparse
 
 from datetime import datetime
 import pandas as pd
+import numpy as np
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
-from utils import get_logger, calculate_fps, mkdir, get_log_stream
+from mqtt import MQTTClient
+from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode, is_predictor_experiment, get_predictor_model
+
 
 DEFAULT_NUM_FRAMES = 1000
 DEFAULT_MAX_THROUGHPUT = 94578303
-EXPOSURE_TIME = 8000
+EXPOSURE_TIME = int(os.environ.get('EXPOSURE_TIME', 8000))
 OUTPUT_DIR = 'output'
 UNSORTED_DIR = mkdir('output/unsorted')
 FPS = 60
@@ -32,24 +37,64 @@ ACQUIRE_STOP_OPTIONS = {
     'num_frames': int,
     'record_time': int,
     'manual_stop': 'cache',
-    'experiment_alive': 'cache'
+    'trial_alive': 'cache'
 }
+IS_PREDICTOR_READY = False
+IS_PREDICTOR_EXPERIMENT = is_predictor_experiment()
+DETECTOR_THRESH = float(os.environ.get('DETECTOR_THRESH', 0.9))
+REALTIME_CAMERA = os.environ.get('REALTIME_CAMERA', 'realtime')
+if not os.environ.get('DISABLE_PREDICTOR'):
+    try:
+        from Prediction import predictor, detector, seq2seq_predict
+
+        _detector = detector.Detector_v4(conf_thres=DETECTOR_THRESH)
+
+        class PredictModel:
+            def __init__(self, weigths, traj_model):
+                self.weights = weigths
+                self.traj_model = traj_model
+                self.history_len = 20
+                self.forecast_horizon = 20
+                self.seq2seq_predictor = seq2seq_predict.Seq2SeqPredictor(model=self.traj_model,
+                                                                          weights_path=self.weights,
+                                                                          history_len=self.history_len,
+                                                                          forecast_horizon=self.forecast_horizon)
+                self.hit_pred = predictor.HitPredictor(trajectory_predictor=self.seq2seq_predictor, detector=_detector)
+
+        _models = {
+            'gru': PredictModel('Prediction/traj_models/model_20_20_h64_b64_l1_EncDec_6_best.pth', seq2seq_predict.GRUEncDec()),
+            'lstm': PredictModel('Prediction/traj_models/model_20_20_h64_b128_l1_lstmDense_feeding_51_best.pth',
+                                 seq2seq_predict.LSTMdense(output_seq_size=20, hidden_size=64, LSTM_layers=1,
+                                                           embedding_size=16))
+        }
+        IS_PREDICTOR_READY = True
+    except Exception as exc:
+        print(f'Error loading detector: {exc}')
 
 
 class SpinCamera:
-    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None):
+    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None,
+                 is_use_predictions=False):
         self.cam = cam
         self.acquire_stop = acquire_stop or {'num_frames': DEFAULT_NUM_FRAMES}
         self.dir_path = dir_path
         self.cache = cache
+        self.is_use_predictions = is_use_predictions
         self.validate_acquire_stop()
 
         self.is_ready = False  # ready for acquisition
         self.video_out = None
         self.start_acquire_time = None
+        self.mqtt_client = None
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
+        self.name = self.get_camera_name()
+        if self.is_realtime_mode:
+            self.logger.info('Working in realtime mode')
+            self.predictor_experiment_ids = []
+            self.predictor = _models[get_predictor_model()].hit_pred
+            self.mqtt_client = MQTTClient()
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
@@ -68,7 +113,7 @@ class SpinCamera:
         """Configure camera for trigger mode before acquisition"""
         try:
             self.cam.AcquisitionFrameRateEnable.SetValue(False)
-            # self.cam.AcquisitionFrameRate.SetValue(60)
+            # self.cam.AcquisitionFrameRate.SetValue(FPS)
             self.cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
             self.cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
             self.cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
@@ -83,10 +128,25 @@ class SpinCamera:
         except PySpin.SpinnakerException as exc:
             self.logger.error(f'(configure_images); {exc}')
 
+    def capture_image(self, exposure):
+        """Capture single image"""
+        self.begin_acquisition(exposure)
+        try:
+            image_result = self.cam.GetNextImage()
+            img = image_result.GetNDArray()
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            image_result.Release()
+            return img
+        except PySpin.SpinnakerException as exc:
+            self.logger.error(f'(image_capture); {exc}')
+        finally:
+            self.cam.EndAcquisition()
+
     def acquire(self):
         """Acquire images and measure FPS"""
         if self.is_ready:
             frame_times = list()
+            image_handler_times = list()
             i = 0
             while self.is_acquire_allowed(i):
                 try:
@@ -104,7 +164,9 @@ class SpinCamera:
                             break
                     else:
                         frame_times.append(image_result.GetTimeStamp())
-                        self.image_handler(image_result)
+                        t0 = time.time()
+                        self.image_handler(image_result, i)
+                        image_handler_times.append(time.time() - t0)
 
                     image_result.Release()  # Release image
 
@@ -118,6 +180,8 @@ class SpinCamera:
             self.logger.info(f'Number of frames taken: {i}')
             mean_fps, std_fps = self.analyze_timestamps(frame_times)
             self.logger.info(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
+            self.logger.info(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
+            self.save_predictions()
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
@@ -125,16 +189,20 @@ class SpinCamera:
             self.video_out.release()
         self.is_ready = False
 
-    def image_handler(self, image_result: PySpin.ImagePtr):
+    def image_handler(self, image_result: PySpin.ImagePtr, i: int):
         img = image_result.GetNDArray()
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        if self.dir_path and self.video_out is None:
-            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-            h, w = img.shape[:2]
-            self.video_out = cv2.VideoWriter(self.video_path, fourcc, FPS, (w, h), True)
+        if self.is_realtime_mode:
+            self.handle_prediction(img, i)
+        else:
+            if self.dir_path and self.video_out is None:
+                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+                h, w = img.shape[:2]
+                self.video_out = cv2.VideoWriter(self.video_path, fourcc, FPS, (w, h), True)
 
-        self.video_out.write(img)
+            self.video_out.write(img)
+
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
 
     def validate_acquire_stop(self):
@@ -163,8 +231,21 @@ class SpinCamera:
     def check_manual_stop(self, iteration):
         return not self.cache.get(CacheColumns.MANUAL_RECORD_STOP)
 
-    def check_experiment_alive(self, iteration):
-        return self.cache.get(CacheColumns.EXPERIMENT_NAME)
+    def check_trial_alive(self, iteration):
+        return self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON)
+
+    def handle_prediction(self, img, i):
+        if IS_PREDICTOR_EXPERIMENT:
+            if not i % 60:
+                self.predictor_experiment_ids.append(i)
+            else:
+                return
+        forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
+        if hit_point is None or not hit_steps:
+            return
+
+        time2hit = (1 / FPS) * hit_steps  # seconds
+        self.mqtt_client.publish_event('event/log/prediction', json.dumps({'hit_point': hit_point.tolist(), 'time2hit': time2hit}))
 
     def log_info(self):
         """Print into logger the info of the camera"""
@@ -183,8 +264,18 @@ class SpinCamera:
 
         frame_times = pd.to_datetime(frame_times, unit='s')
         frame_times.to_csv(self.timestamp_path)
+        if IS_PREDICTOR_EXPERIMENT and self.is_realtime_mode:
+            predictor_times = frame_times[self.predictor_experiment_ids]
+            predictor_times.to_csv(f'{self.dir_path}/predictor_times.csv')
 
         return mean_fps, std_fps
+
+    def save_predictions(self):
+        if not self.is_realtime_mode:
+            return
+
+        pd.Series(self.predictor.forecasts).to_csv(self.predictions_path)
+        pd.DataFrame(self.predictor.history).to_csv(self.predictor_history_path)
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
@@ -223,6 +314,11 @@ class SpinCamera:
         if 'firefly' in device_name.lower():
             return True
 
+    def get_camera_name(self):
+        for name, device_id in CAMERA_NAMES.items():
+            if self.device_id == device_id:
+                return name
+
     @property
     def video_path(self):
         return f'{self.dir_path}/{self.device_id}.avi'
@@ -233,8 +329,22 @@ class SpinCamera:
         return f'{self.dir_path}/timestamps/{self.device_id}.csv'
 
     @property
+    def predictions_path(self):
+        return f'{self.dir_path}/forecasts.csv'
+
+    @property
+    def predictor_history_path(self):
+        return f'{self.dir_path}/predictor_history.csv'
+
+    @property
     def device_id(self):
         return get_device_id(self.cam)
+
+    @property
+    def is_realtime_mode(self):
+        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == REALTIME_CAMERA
+
+
 
 ############################################################################################################
 
@@ -287,9 +397,9 @@ def display_info():
     return output
 
 
-def start_camera(cam, dir_path, num_frames, exposure, cache, log_stream):
+def start_camera(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_use_predictions):
     """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam, dir_path, num_frames, cache=cache, log_stream=log_stream)
+    sc = SpinCamera(cam, acquire_stop, dir_path, cache=cache, log_stream=log_stream, is_use_predictions=is_use_predictions)
     sc.begin_acquisition(exposure)
     return sc
 
@@ -321,15 +431,40 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_start=False, cache=None, **acquire_stop) -> str:
+def capture_image(camera: str, exposure=EXPOSURE_TIME) -> (np.ndarray, None):
+    """
+    Capture single image from a camera
+    :param camera: The camera name (don't use more than one camera)
+    :param exposure: The exposure of the camera
+    :return: Image numpy array
+    """
+    system = PySpin.System.GetInstance()
+    cam_list = system.GetCameras()
+    filter_cameras(cam_list, camera)
+    if len(cam_list) < 1:
+        print(f'No camera matches name: {camera}')
+        return
+    cam = SpinCamera(cam_list[0])
+    img = cam.capture_image(exposure)
+    del cam
+    cam_list.Clear()
+    return img
+
+
+def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, folder_prefix=None, is_auto_start=False, cache=None,
+           is_use_predictions=False, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
     :param exposure: The exposure time to be set to the cameras
     :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
-    :param output: The output folder for saving the records and log
+    :param output: Output dir for videos
+    :param folder_prefix: Prefix to be added to folder name
     :param is_auto_start: Start record automatically or wait for user input
     :param cache: memory cache to be used by the cameras
+    :param is_use_predictions: relevant for realtime camera only - using strike prediction
     """
+    if is_debug_mode():
+        return 'DEBUG MODE'
     assert all(k in ACQUIRE_STOP_OPTIONS for k in acquire_stop.keys())
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
@@ -338,10 +473,12 @@ def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, is_auto_star
     if cameras:
         filter_cameras(cam_list, cameras)
 
-    label = datetime.now().strftime('%Y%m%d-%H%M%S')
-    dir_path = mkdir(f"{output}/{label}")
+    folder_name = datetime.now().strftime('%Y%m%d-%H%M%S')
+    if folder_prefix:
+        folder_name = f'{folder_prefix}_{folder_name}'
+    dir_path = mkdir(f"{output}/{folder_name}")
 
-    filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream) for cam in cam_list]
+    filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]
     print(f'\nCameras detected: {len(filtered)}')
     print(f'Acquire Stop: {acquire_stop}')
     if filtered:
