@@ -7,8 +7,9 @@ import torch
 import time
 import cv2 as cv
 from torch.utils.data import Dataset, DataLoader
-#from tqdm.auto import tqdm # python 3.7 issues
-from tqdm import tqdm
+from tqdm.auto import tqdm  # python 3.7 issues
+
+# from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -49,7 +50,7 @@ class TrajectoriesDataWithHeads(Dataset):
 def im2tensor(im, resize=32):
     if im is None:
         ret_tensor = torch.empty(resize, resize)
-        ret_tensor[:] = float('nan')
+        ret_tensor[:] = float("nan")
     else:
         ret_tensor = torch.tensor(cv.resize(im, (resize, resize)))
     return ret_tensor
@@ -57,19 +58,21 @@ def im2tensor(im, resize=32):
 
 def compose_masks(mask_fns):
     def f(X, Y):
-        mask = np.array([True]*X.shape[0])
+        mask = np.array([True] * X.shape[0])
         for fn in mask_fns:
             temp_mask = fn(X, Y)
             mask = mask & temp_mask
         return mask
+
     return f
 
 
-def keep_mask(mask_fn, keep_prob=.2):
+def keep_mask(mask_fn, keep_prob=0.2):
     def f(X, Y):
         rand_values = np.random.random(X.shape[0])
         mask = (rand_values < keep_prob) | mask_fn(X, Y)
         return mask
+
     return f
 
 
@@ -81,7 +84,7 @@ def trial_to_samples(
     output_seq_size,
     input_images=None,
     keep_nans=False,
-    mask_fn=None
+    mask_fn=None,
 ):
     """
     Extract samples from a single trial dataframe to torch 3D tensors, X with dimension
@@ -135,8 +138,8 @@ def trial_to_samples(
         if input_images is not None:
             X_images = X_images[mask]
 
-    X = torch.from_numpy(X)
-    Y = torch.from_numpy(Y)
+    X = torch.from_numpy(X).float()
+    Y = torch.from_numpy(Y).float()
 
     if input_images is not None:
         return (X, X_images), Y
@@ -193,7 +196,7 @@ def create_train_val_test_dataloaders(
                 output_labels=output_labels,
                 input_seq_size=input_seq_size,
                 output_seq_size=output_seq_size,
-                mask_fn=mask_fn
+                mask_fn=mask_fn,
             )
             if X is None:
                 continue
@@ -257,7 +260,9 @@ def weighted_ADE(y_hat, y, weights):
         y_hat = y_hat.unsqueeze(0)
         y = y.unsqueeze(0)
 
-    return torch.sum(weights.repeat((y.size(0), 1)) * torch.norm(y_hat - y, dim=2), dim=1).mean()
+    return torch.sum(
+        weights.repeat((y.size(0), 1)) * torch.norm(y_hat - y, dim=2), dim=1
+    ).mean()
 
 
 def randomized_ADE(y_hat, y):
@@ -311,8 +316,10 @@ def angle_norm_displacement(target, pred):
     pred_norms = torch.norm(pred_diffs, dim=2)
     total_norm_displacement = (target_norms - pred_norms).sum(1)
 
-    return (torch.abs(total_norm_displacement).mean(),
-            torch.abs(total_angle_displacement).mean())
+    return (
+        torch.abs(total_norm_displacement).mean(),
+        torch.abs(total_angle_displacement).mean(),
+    )
 
 
 def angle_norm_displacement_loss_fn(weights):
@@ -399,7 +406,7 @@ def train_trajectory_model(
             # loss = criterion(rel_out, rel_y)
             # loss = criterion(rel_out, rel_y)
             # loss = weighted_ADE(output, y, b)
-            #loss = randomized_ADE(output, y)
+            # loss = randomized_ADE(output, y)
 
             loss = loss_fn(output, y)  # + calc_FDE(output, y)
 
@@ -559,3 +566,141 @@ def eval_trajectory_predictor(trajectory_predictor, bboxes, show_progress=True):
     results["avg FDE"] = sum_FDE / len(forecasts)
     results["avg time (ms)"] = sum_time / len(forecasts) * 1000
     return results, forecasts
+
+
+# Sequence Data Masking Functions
+
+# mask functions
+
+# distance
+def compute_dists(seq_data):
+    return np.linalg.norm(seq_data[:, -1] - seq_data[:, 0], axis=1)
+
+
+def mask_fl_dist(min_dist, max_dist, by_X=True, by_Y=True):
+    def f(X, Y):
+        dists_X = compute_dists(X[:, :, :2])
+        dists_Y = compute_dists(Y[:, :, :2])
+
+        ret_mask = np.array([True] * X.shape[0])
+
+        if by_X:
+            ret_mask = ret_mask & ((dists_X > min_dist) & (dists_X < max_dist))
+        if by_Y:
+            ret_mask = ret_mask & ((dists_Y > min_dist) & (dists_Y < max_dist))
+        return ret_mask
+
+    return f
+
+
+# speed
+def compute_speeds(seq_data):
+    return np.linalg.norm(np.diff(seq_data, axis=1), axis=2).mean(axis=1)
+
+
+def mask_speed(min_speed, max_speed, by_X=True, by_Y=True):
+    def f(X, Y):
+        speeds_X = compute_speeds(X[:, :, :2])
+        speeds_Y = compute_speeds(Y[:, :, :2])
+
+        ret_mask = np.array([True] * X.shape[0])
+
+        if by_X:
+            ret_mask = ret_mask & ((speeds_X > min_speed) & (speeds_X < max_speed))
+        if by_Y:
+            ret_mask = ret_mask & ((speeds_Y > min_speed) & (speeds_Y < max_speed))
+        return ret_mask
+
+    return f
+
+
+# zigzagity
+def compute_zigzagity(seq_data):
+    vecs = seq_data[:, 1:] - seq_data[:, :-1]
+    u = vecs[:, 1:]
+    v = vecs[:, :-1]
+    u_norm = np.linalg.norm(u, axis=2)
+    v_norm = np.linalg.norm(v, axis=2)
+    dotprods = np.einsum(
+        "ij,ij->i", u.reshape(-1, u.shape[2]), v.reshape(-1, v.shape[2])
+    ).reshape(u.shape[0], u.shape[1])
+    angles = np.arccos(dotprods / (u_norm * v_norm))
+    return angles.mean(axis=1)
+
+
+def mask_zgzg(min_zgzg, max_zgzg, by_X=True, by_Y=True):
+    def f(X, Y):
+        zgzgs_X = compute_zigzagity(X[:, :, :2])
+        zgzgs_Y = compute_zigzagity(Y[:, :, :2])
+
+        ret_mask = np.array([True] * X.shape[0])
+
+        if by_X:
+            ret_mask = ret_mask & ((zgzgs_X > min_zgzg) & (zgzgs_X < max_zgzg))
+        if by_Y:
+            ret_mask = ret_mask & ((zgzgs_Y > min_zgzg) & (zgzgs_Y < max_zgzg))
+        return ret_mask
+
+    return f
+
+
+# variance
+def compute_var(X, Y):
+    XY = np.concatenate((X, Y), axis=1)
+    XYmeans = XY.mean(axis=1).reshape(XY.shape[0], 1, XY.shape[2])
+    XYmeans = np.repeat(XYmeans, XY.shape[1], axis=1)
+    XYnorms = np.linalg.norm(XY - XYmeans, axis=2)
+    XYvar = (XYnorms ** 2).mean(axis=1)
+    return XYvar
+
+
+def mask_std(min_std, max_std, cols=[0, 1]):
+    def f(X, Y):
+        variances = compute_var(X[:, :, cols], Y[:, :, cols])
+        ret_mask = (variances > min_std ** 2) & (variances < max_std ** 2)
+        return ret_mask
+
+    return f
+
+
+# Pearson r
+def tile_means(x, seq_len):
+    return np.tile(x.reshape(x.shape[0], 1), seq_len)
+
+
+def comp_sqr_residuals(x):
+    return np.sqrt((x ** 2).sum(axis=1))
+
+
+def batch_r(seq_data):
+    """
+    Computes Pearson's r correlation between x and y. Assumes X is a 3d tensor, which is stacked pairs of vectors of 2d x-y data.
+    Significantly faster than np.corrcoeff or scipy.stats.pearsonr applied to each sample in a for loop, the same numerical result
+    """
+    seqs_means_x, seqs_means_y = np.mean(seq_data, axis=1).transpose()
+    seq_len = seq_data.shape[1]
+    tiled_means_x, tiled_means_y = (
+        tile_means(seqs_means_x, seq_len),
+        tile_means(seqs_means_y, seq_len),
+    )
+    x_minus_xbar = seq_data[:, :, 0] - tiled_means_x
+    y_minus_ybar = seq_data[:, :, 1] - tiled_means_y
+    numers = (x_minus_xbar * y_minus_ybar).sum(1)
+    denoms = comp_sqr_residuals(x_minus_xbar) * comp_sqr_residuals(y_minus_ybar)
+    return np.abs(numers / denoms)
+
+
+def mask_corr(min_corr, max_corr, by_X=True, by_Y=True):
+    def f(X, Y):
+        corr_X = batch_r(X[:, :, :2])
+        corr_Y = batch_r(Y[:, :, :2])
+
+        ret_mask = np.array([True] * X.shape[0])
+
+        if by_X:
+            ret_mask = ret_mask & ((corr_X > min_corr) & (corr_X < max_corr))
+        if by_Y:
+            ret_mask = ret_mask & ((corr_Y > min_corr) & (corr_Y < max_corr))
+        return ret_mask
+
+    return f
