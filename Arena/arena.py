@@ -239,7 +239,7 @@ class SpinCamera:
     def handle_prediction(self, img, i):
         if IS_PREDICTOR_EXPERIMENT and not i % 60:
             self.predictor_experiment_ids.append(i)
-            self.mqtt_client.publish_command('show_pogona')
+            self.mqtt_client.publish_command('show_pogona', 3)
         forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
         if hit_point is None or not hit_steps:
             return
