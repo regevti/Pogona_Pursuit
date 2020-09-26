@@ -12,6 +12,7 @@ apt-get -qq install -y \
   build-essential \
   cmake \
   git \
+  x11-xserver-utils \
   pkg-config \
   libjpeg8-dev \
   libtiff5-dev \

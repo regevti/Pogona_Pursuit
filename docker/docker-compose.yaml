@@ -14,6 +14,7 @@ services:
     volumes:
     - ../Arena:/arena
     - ../pogona_hunter:/pogona_hunter
+    - /tmp/.X11-unix:/tmp/.X11-unix:ro
     restart: always
     runtime: nvidia
     command: "flask run --host=0.0.0.0"
@@ -34,8 +35,9 @@ services:
     depends_on:
       - mqtt
     restart: always
-    volumes:
-    - ../pogona_hunter:/app
+    command: "http-server dist"
+#    volumes:
+#    - ../pogona_hunter:/app
     ports:
      - 8080:8080
 

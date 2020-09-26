@@ -6,7 +6,7 @@ import json
 import os
 load_dotenv()
 
-from utils import titlize, get_predictor_model
+from utils import titlize, get_predictor_model, run_command, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTClient, SUBSCRIPTION_TOPICS
 from experiment import Experiment, REWARD_TYPES
@@ -89,6 +89,15 @@ def led_light(state):
     return Response('ok')
 
 
+@app.route('/display/<state>')
+def display(state):
+    if state == 'off':
+        stdout = turn_display_off()
+    else:
+        stdout = turn_display_on()
+    return Response(stdout)
+
+
 @app.route('/cameras_info')
 def cameras_info():
     """Get cameras info"""
@@ -116,9 +125,10 @@ def set_stream_camera():
         return Response(request.form['camera'])
 
 
-@app.route('/init_bugs')
+@app.route('/init_bugs', methods=['POST'])
 def init_bugs():
-    mqtt_client.publish_event('event/command/init_bugs', 1)
+    if request.method == 'POST':
+        mqtt_client.publish_event('event/command/init_bugs', request.data.decode())
     return Response('ok')
 
 

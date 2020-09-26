@@ -1,4 +1,4 @@
-from utils import get_datetime_string, mkdir, is_debug_mode
+from utils import get_datetime_string, mkdir, is_debug_mode, turn_display_on
 from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTClient, LOG_TOPICS, SUBSCRIPTION_TOPICS
@@ -42,6 +42,7 @@ class Experiment:
         mkdir(self.experiment_path)
         self.save_experiment_log()
         self.init_experiment_cache()
+        turn_display_on()
         mqtt_client.publish_command('led_light', 'on')
         mqtt_client.publish_command('hide_bugs')
         for i in range(self.num_trials):

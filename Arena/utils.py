@@ -4,6 +4,27 @@ from pathlib import Path
 import numpy as np
 from io import StringIO
 from datetime import datetime
+from subprocess import Popen, PIPE
+
+
+def run_command(cmd):
+    """Execute shell command"""
+    process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    if stderr:
+        print(f'Error running cmd: "{cmd}"; {stderr}')
+    return stdout
+
+
+DISPLAY_CMD = 'DISPLAY=":0" xrandr --output HDMI-0 --{}'
+
+
+def turn_display_on():
+    return run_command(DISPLAY_CMD.format('auto'))
+
+
+def turn_display_off():
+    return run_command(DISPLAY_CMD.format('off'))
 
 
 def get_log_stream():

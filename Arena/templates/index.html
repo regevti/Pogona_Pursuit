@@ -169,12 +169,22 @@
                 <div class="row mb-2">
                     <button id="reward" class="btn btn-lg btn-primary mx-auto">Reward</button>
                 </div>
-                <div class="row">
-                    <div class="col mr-0">
-                        <button id="led_light_on" class="btn btn-lg btn-primary mx-auto">LED ON</button>
+                <div class="row mb-1" id="leds-div">
+                    <h4 class="col-sm-3 m-auto">LED:</h4>
+                    <div class="col-sm-3">
+                        <button id="led_light_on" class="btn btn-lg btn-primary">ON</button>
                     </div>
-                    <div class="col">
-                        <button id="led_light_off" class="btn btn-lg btn-primary mx-auto">LED OFF</button>
+                    <div class="col-sm-3">
+                        <button id="led_light_off" class="btn btn-lg btn-outline-danger">OFF</button>
+                    </div>
+                </div>
+                <div class="row mb-1" id="display-div">
+                    <h4 class="col-sm-3 m-auto">Display:</h4>
+                    <div class="col-sm-3">
+                        <button id="display_on" class="btn btn-lg btn-primary">ON</button>
+                    </div>
+                    <div class="col-sm-3">
+                        <button id="display_off" class="btn btn-lg btn-outline-danger">OFF</button>
                     </div>
                 </div>
 
@@ -309,7 +319,21 @@
       })
     })
     $("#init_bugs").click(function (e) {
-      $.get('/init_bugs')
+      $.ajax({
+        url: "/init_bugs",
+        type: "POST",
+        data: JSON.stringify({
+            numOfBugs: 1,
+            speed: Number($("#bugSpeed").val()),
+            bugType: $("#bugTypeSelect").val(),
+            movementType: $("#movementTypeSelect").val(),
+            timeBetweenBugs: Number($("#timeBetweenBugs").val())
+        }),
+        contentType: "application/json",
+        complete: function (res) {
+          $("#record-output").text('bugs initiated')
+        }
+      })
     })
     $("#hide_bugs").click(function (e) {
       $.get('/hide_bugs')
@@ -330,9 +354,14 @@
     $("#led_light_on").click(function (e) {
       $.get('/led_light/on')
     })
-
     $("#led_light_off").click(function (e) {
       $.get('/led_light/off')
+    })
+    $("#display_on").click(function (e) {
+      $.get('/display/on')
+    })
+    $("#display_off").click(function (e) {
+      $.get('/display/off')
     })
 
     function getCheckedCameras() {
