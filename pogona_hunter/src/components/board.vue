@@ -134,6 +134,23 @@
         this.$store.commit('reset_score')
         this.initBoard()
       },
+      'event/command/show_pogona'(options) {
+        // options = JSON.parse(options)
+        const image = new Image(60, 45)
+        image.onload = drawImageActualSize
+        image.src = '/static/pogona0.jpg'
+        let that = this
+        function drawImageActualSize() {
+          let canvasOriginalHeight = that.canvas.height
+          that.canvas.height = this.naturalHeight
+          that.ctx.drawImage(this, 0, 0)
+          let t = setTimeout(() => {
+            that.ctx.clearRect(0, 0, that.canvas.width, that.canvas.height)
+            that.canvas.height = canvasOriginalHeight
+            clearTimeout(t)
+          }, 1000 * 2 / 60) // for 2 frames
+        }
+      },
       'event/log/prediction'(options) {
         options = JSON.parse(options)
         console.log(`Prediction detected coords: ${options.hit_point}, time2hit:${options.time2hit}`)

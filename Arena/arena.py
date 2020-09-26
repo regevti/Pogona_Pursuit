@@ -237,11 +237,9 @@ class SpinCamera:
         return self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON)
 
     def handle_prediction(self, img, i):
-        if IS_PREDICTOR_EXPERIMENT:
-            if not i % 60:
-                self.predictor_experiment_ids.append(i)
-            else:
-                return
+        if IS_PREDICTOR_EXPERIMENT and not i % 60:
+            self.predictor_experiment_ids.append(i)
+            self.mqtt_client.publish_command('show_pogona')
         forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
         if hit_point is None or not hit_steps:
             return
