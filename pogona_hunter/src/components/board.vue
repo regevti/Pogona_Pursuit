@@ -143,7 +143,7 @@
         function drawImageActualSize() {
           let canvasOriginalHeight = that.canvas.height
           that.canvas.height = this.naturalHeight
-          that.ctx.drawImage(this, 0, 0)
+          that.ctx.drawImage(this, that.canvas.width / 4, 0)
           if (numFrames > 0) {
             let t = setTimeout(() => {
                 that.ctx.clearRect(0, 0, that.canvas.width, that.canvas.height)
