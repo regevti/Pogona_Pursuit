@@ -197,7 +197,8 @@ class SpinCamera:
 
         if self.is_realtime_mode:
             self.handle_prediction(img, i)
-        else:
+
+        if not self.is_realtime_mode or is_predictor_experiment():
             if self.dir_path and self.video_out is None:
                 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
                 h, w = img.shape[:2]
