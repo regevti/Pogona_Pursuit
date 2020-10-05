@@ -170,7 +170,7 @@ class Detector_v4:
         """
         Receive an image as numpy array. Resize image to model size using open-cv.
         Run the image through the network and collect detections.
-        Return a numpy array of detections. Each row is x, y, w, h (top-left corner).
+        Return a numpy array of detections. Each row is x1, y1, x2, y1 (top-left and bottom-right corners).
         """
         image = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         image = cv.resize(image, (self.model_width, self.model_height), interpolation=cv.INTER_LINEAR)
@@ -270,13 +270,30 @@ def xyxy_to_centroid(xyxy):
     return np.stack([(x1 + x2) / 2, (y1 + y2) / 2], axis=1)
 
 
+def centwh_to_xyxy(centwh):
+    """
+    :param centwh: bboxes in xywh format where x, y are the centroid coordinates
+    :return: bboxes in xyxy format
+    """
+    if type(centwh) == list or len(centwh.shape) == 1:
+        cx, cy, w, h = centwh[:4]
+        return np.array([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
+
+    cx = centwh[:, 0]
+    cy = centwh[:, 1]
+    w = centwh[:, 2]
+    h = centwh[:, 3]
+
+    return np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
+
+
 def nearest_detection(detections, prev_centroid):
     """
     Return the nearest detection to the previous centroid or the detection
     if there's only one.
     """
     if detections.shape[0] > 1:
-        detected_centroids = xywh_to_centroid(detections)
+        detected_centroids = xyxy_to_centroid(detections)
         deltas = prev_centroid - detected_centroids
         dists = np.linalg.norm(deltas, axis=1)
         arg_best = np.argmin(dists)

@@ -56,35 +56,15 @@ def im2tensor(im, resize=32):
     return ret_tensor
 
 
-def compose_masks(mask_fns):
-    def f(X, Y):
-        mask = np.array([True] * X.shape[0])
-        for fn in mask_fns:
-            temp_mask = fn(X, Y)
-            mask = mask & temp_mask
-        return mask
-
-    return f
-
-
-def keep_mask(mask_fn, keep_prob=0.2):
-    def f(X, Y):
-        rand_values = np.random.random(X.shape[0])
-        mask = (rand_values < keep_prob) | mask_fn(X, Y)
-        return mask
-
-    return f
-
-
 def trial_to_samples(
-    trial_df,
-    input_labels,
-    output_labels,
-    input_seq_size,
-    output_seq_size,
-    input_images=None,
-    keep_nans=False,
-    mask_fn=None,
+        trial_df,
+        input_labels,
+        output_labels,
+        input_seq_size,
+        output_seq_size,
+        input_images=None,
+        keep_nans=False,
+        mask_fn=None,
 ):
     """
     Extract samples from a single trial dataframe to torch 3D tensors, X with dimension
@@ -108,11 +88,11 @@ def trial_to_samples(
         image_tensors = torch.stack([im2tensor(im, resize=32) for im in input_images])
 
     for i in range(inds_range):
-        inp_seq = input_data[i : i + input_seq_size]
+        inp_seq = input_data[i: i + input_seq_size]
         if input_images is not None:
-            img_seq = image_tensors[i : i + input_seq_size]
+            img_seq = image_tensors[i: i + input_seq_size]
 
-        out_seq = output_data[i + input_seq_size : i + input_seq_size + output_seq_size]
+        out_seq = output_data[i + input_seq_size: i + input_seq_size + output_seq_size]
 
         if not keep_nans and (np.any(np.isnan(inp_seq)) or np.any(np.isnan(out_seq))):
             continue
@@ -138,8 +118,8 @@ def trial_to_samples(
         if input_images is not None:
             X_images = X_images[mask]
 
-    X = torch.from_numpy(X).float()
-    Y = torch.from_numpy(Y).float()
+    #X = torch.from_numpy(X).float()
+    #Y = torch.from_numpy(Y).float()
 
     if input_images is not None:
         return (X, X_images), Y
@@ -162,51 +142,123 @@ def create_train_val_test_splits(trials_list, ratios):
     return l[:test_i], l[test_i:val_i], l[val_i:]
 
 
+def create_samples(df, mask_fn, keep_prob, input_labels,
+                   output_labels,
+                   input_seq_size,
+                   output_seq_size,
+                   keep_nans=False):
+    """
+    Create dictionary of sequence tensors and masks.
+    """
+    trials_dict = dict()
+    mask_fn_keep = keep_mask(mask_fn, keep_prob=keep_prob)
+    for trial in df.index.unique():
+        trial_dict = dict()
+
+        X, Y = trial_to_samples(
+            df.loc[trial],
+            input_labels=input_labels,
+            output_labels=output_labels,
+            input_seq_size=input_seq_size,
+            output_seq_size=output_seq_size,
+            mask_fn=None,
+            keep_nans=keep_nans
+        )
+
+        if X is None:
+            continue
+        trial_mask = mask_fn(X, Y)
+
+        # count_no_nan = (~df.loc[trial, 'x2'].isna()).sum()
+        # mask_ratio = trial_mask.sum() / count_no_nan
+
+        mask_ratio = trial_mask.sum() / X.shape[0]
+
+        trial_dict['X'] = X
+        trial_dict['Y'] = Y
+        trial_dict['mask_ratio'] = mask_ratio
+        trial_dict['mask'] = mask_fn_keep(X, Y)
+
+        trials_dict[trial] = trial_dict
+    return trials_dict
+
+
+# functions for updating the trials dict without recreating the sequences again
+def update_trial_dict(trial_dict, mask_fn, keep_prob):
+    mask_fn_keep = keep_mask(mask_fn, keep_prob=keep_prob)
+    trial_dict['mask'] = mask_fn_keep(trial_dict['X'], trial_dict['Y'])
+    trial_dict['mask_ratio'] = trial_dict['mask'].sum() / trial_dict['X'].shape[0]
+
+
+def update_trials_dict(trials_dict, mask_fn, keep_prob):
+    for trial_dict in trials_dict.values():
+        update_trial_dict(trial_dict, mask_fn, keep_prob)
+
+
+def split_train_val_test(trials_dict, split=(0.8, 0.2, 0)):
+
+    train_trials, val_trials, test_trials = [], [], []
+
+    sorted_trials = [item[0] for item in sorted(trials_dict.items(),
+                                                key=lambda x: x[1]['mask_ratio'],
+                                                reverse=True)]
+
+    splits = np.array(split)
+    chunk_size = np.round(1 / min(splits[splits > 0])).astype(int)
+
+    for i in range(0, len(sorted_trials), chunk_size):
+        train, val, test = create_train_val_test_splits(sorted_trials[i: min(i + chunk_size, len(sorted_trials))], split)
+        train_trials += train
+        val_trials += val
+        test_trials += test
+
+    return train_trials, val_trials, test_trials
+
+
 def create_train_val_test_dataloaders(
-    df,
-    train,
-    val,
-    test,
-    input_labels,
-    output_labels,
-    input_seq_size,
-    output_seq_size,
-    batch_size=256,
-    shuffle=True,
-    mask_fn=None,
-    num_workers=0,
+        trials_dict,
+        train_trials,
+        val_trials,
+        test_trials,
+        train_mask=True,
+        val_mask=False,
+        test_mask=False,
+        batch_size=256,
+        shuffle=True,
+        num_workers=0,
 ):
     """
     create 3 dataloaders - train, validation and test, based on the trials list
     :return: list with 3 dataloaders: [train, val, test]
     """
     ret = []
-
-    for trials in [train, val, test]:
-        if len(trials) == 0:
-            ret.append(None)
-            continue
+    for trial_list, to_mask in zip([train_trials, val_trials, test_trials], [train_mask, val_mask, test_mask]):
 
         tensor_list_X = []
         tensor_list_Y = []
-        for trial in trials:
-            X, Y = trial_to_samples(
-                df.loc[trial],
-                input_labels=input_labels,
-                output_labels=output_labels,
-                input_seq_size=input_seq_size,
-                output_seq_size=output_seq_size,
-                mask_fn=mask_fn,
-            )
-            if X is None:
-                continue
-            tensor_list_X.append(X)
-            tensor_list_Y.append(Y)
+
+        if len(trial_list) == 0:
+            ret.append(None)
+            continue
+
+        for trial in trial_list:
+            X = trials_dict[trial]['X']
+            Y = trials_dict[trial]['Y']
+
+            if to_mask:
+                X = X[trials_dict[trial]['mask']]
+                Y = Y[trials_dict[trial]['mask']]
+            tensor_list_X.append(torch.from_numpy(X).float())
+            tensor_list_Y.append(torch.from_numpy(Y).float())
 
         all_X = torch.cat(tensor_list_X)
         all_Y = torch.cat(tensor_list_Y)
 
         dataset = TrajectoriesData(all_X, all_Y)
+
+        if len(dataset) == 0:
+            print()
+            raise Exception(f'Index in ret: {len(ret)}, Dataset is empty')
         ret.append(
             DataLoader(
                 dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
@@ -218,7 +270,7 @@ def create_train_val_test_dataloaders(
 
 # TODO is this function necessary?
 def create_dataloader(
-    X, Y, train_test_ratio=0.8, shuffle=True, batch_size=256, num_workers=0
+        X, Y, train_test_ratio=0.8, shuffle=True, batch_size=256, num_workers=0
 ):
     dataset = TrajectoriesData(X, Y)
     train_size = round(train_test_ratio * len(dataset)) - 1
@@ -255,7 +307,7 @@ def calc_ADE(y_hat, y):
     return torch.mean(torch.norm(y_hat - y, dim=2), dim=1).mean()
 
 
-def weighted_ADE(y_hat, y, weights):
+def weighted_ADE(weights, y_hat, y):
     if len(y_hat.shape) == 2:
         y_hat = y_hat.unsqueeze(0)
         y = y.unsqueeze(0)
@@ -331,19 +383,20 @@ def angle_norm_displacement_loss_fn(weights):
 
 
 def train_trajectory_model(
-    model,
-    train_dataloader,
-    test_dataloader,
-    epochs,
-    path,
-    lr=0.005,
-    optimizer=None,
-    loss_fn=calc_ADE,
-    clip_grad_norm=None,
-    eval_freq=100,
-    epoch_print_freq=50,
-    model_name="model",
-    save_each_eval_model=True,
+        model,
+        train_dataloader,
+        test_dataloader,
+        epochs,
+        path,
+        lr=0.005,
+        optimizer=None,
+        loss_fn=calc_ADE,
+        clip_grad_norm=None,
+        eval_freq=100,
+        epoch_print_freq=50,
+        model_name="model",
+        save_each_eval_model=True,
+        sched_exp=None
 ):
     if optimizer is None:
         optimizer = torch.optim.Adam(
@@ -367,7 +420,7 @@ def train_trajectory_model(
             if best_ADE is None or ADE < best_ADE:
                 best_ADE = ADE.item()
                 best_epoch = epoch
-                torch.save(model.state_dict(), path + f"/{model_name}_{epoch}_best.pth")
+                torch.save(model.state_dict(), path + f"/{model_name}_best.pth")
 
             print(
                 f"### Eval epoch: {epoch}, Test set mean ADE: {ADE:.3f}, mean FDE: {FDE:.3f}"
@@ -383,6 +436,10 @@ def train_trajectory_model(
 
         epoch_loss = 0.0
         epoch_start = time.time()
+
+        if sched_exp:
+            sched_epsi = sched_exp**epoch
+
         for i, (x, y) in enumerate(train_dataloader):
             optimizer.zero_grad()
             if type(x) is list:  # x = (bbox, head image)
@@ -393,7 +450,13 @@ def train_trajectory_model(
                 output = model(x_bbox, x_head)
             else:
                 x, y = x.to(device), y.to(device)
-                output = model(x)
+                if sched_exp:
+                    model.epsi = sched_epsi
+                    model.target = y
+                    output = model(x)
+                    model.epsi = 0
+                else:
+                    output = model(x)
 
             # rel_out = output - offset
             # rel_y = y - offset
@@ -426,8 +489,10 @@ def train_trajectory_model(
 
         if epoch % epoch_print_freq == 0:
             print(
-                f"Epoch: {epoch}, avg loss: {avg_loss:.3f}, epoch time: {epoch_time:.3f}"
+                f"Epoch: {epoch}, avg loss: {avg_loss:.3f}, epoch time: {epoch_time:.3f}", end=""
             )
+
+            print(f" epsi: {sched_epsi}") if sched_exp else print("")
 
     torch.save(model.state_dict(), path + f"/{model_name}_final.pth")
     print("Finished training")
@@ -461,14 +526,14 @@ def eval_trajectory_model(model, test_dataloader):
 
 
 def grid_input_output(
-    model_name,
-    df,
-    input_seqs,
-    output_seqs,
-    input_labels,
-    output_labels,
-    path,
-    num_epochs=5000,
+        model_name,
+        df,
+        input_seqs,
+        output_seqs,
+        input_labels,
+        output_labels,
+        path,
+        num_epochs=5000,
 ):
     """
     Perform 2D grid search over cartesian product of input and output sequence lengths with labels
@@ -511,6 +576,17 @@ def grid_input_output(
 
 
 def eval_trajectory_predictor(trajectory_predictor, bboxes, show_progress=True):
+    """
+    Run trajectory_predictor on the bboxes array.
+
+    trajectory_predictor - An instance of TrajectoryPredictor
+    bboxes - A consecutive list of bbox detections (numpy array Nx4+)
+
+    Return (results, forecasts)
+
+    results - a dictionary of evaluation results
+    forecasts - a list of forecasts for each corresponding bbox.
+    """
     saw_non_nan = False
     forecasts = []
 
@@ -553,7 +629,7 @@ def eval_trajectory_predictor(trajectory_predictor, bboxes, show_progress=True):
         if forecast is None:
             continue
 
-        target = bboxes[i + 1 : i + len(forecast) + 1]
+        target = bboxes[i + 1: i + len(forecast) + 1]
         ADE = calc_ADE(torch.from_numpy(forecast), torch.from_numpy(target)).item()
         FDE = calc_FDE(torch.from_numpy(forecast), torch.from_numpy(target)).item()
         if not np.isnan(ADE):
@@ -568,9 +644,10 @@ def eval_trajectory_predictor(trajectory_predictor, bboxes, show_progress=True):
     return results, forecasts
 
 
-# Sequence Data Masking Functions
+"""
+-------------------- Masking functions -----------------------------
+"""
 
-# mask functions
 
 # distance
 def compute_dists(seq_data):
@@ -672,7 +749,7 @@ def comp_sqr_residuals(x):
     return np.sqrt((x ** 2).sum(axis=1))
 
 
-def batch_r(seq_data):
+def compute_batch_r(seq_data):
     """
     Computes Pearson's r correlation between x and y. Assumes X is a 3d tensor, which is stacked pairs of vectors of 2d x-y data.
     Significantly faster than np.corrcoeff or scipy.stats.pearsonr applied to each sample in a for loop, the same numerical result
@@ -692,8 +769,8 @@ def batch_r(seq_data):
 
 def mask_corr(min_corr, max_corr, by_X=True, by_Y=True):
     def f(X, Y):
-        corr_X = batch_r(X[:, :, :2])
-        corr_Y = batch_r(Y[:, :, :2])
+        corr_X = compute_batch_r(X[:, :, :2])
+        corr_Y = compute_batch_r(Y[:, :, :2])
 
         ret_mask = np.array([True] * X.shape[0])
 
@@ -702,5 +779,27 @@ def mask_corr(min_corr, max_corr, by_X=True, by_Y=True):
         if by_Y:
             ret_mask = ret_mask & ((corr_Y > min_corr) & (corr_Y < max_corr))
         return ret_mask
+
+    return f
+
+
+def compose_masks(mask_fns, invert=False):
+    def f(X, Y):
+        mask = np.array([True] * X.shape[0])
+        for fn in mask_fns:
+            temp_mask = fn(X, Y)
+            mask = mask & temp_mask
+        if invert:
+            return ~ mask
+        return mask
+
+    return f
+
+
+def keep_mask(mask_fn, keep_prob=0.2):
+    def f(X, Y):
+        rand_values = np.random.random(X.shape[0])
+        mask = (rand_values < keep_prob) | mask_fn(X, Y)
+        return mask
 
     return f

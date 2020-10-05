@@ -62,6 +62,8 @@ class LSTMdense(nn.Module):
         """
         super(LSTMdense, self).__init__()
 
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.hidden_size = hidden_size
         self.LSTM_layers = LSTM_layers
         self.output_seq_size = output_seq_size
@@ -102,27 +104,6 @@ class LSTMdense(nn.Module):
 
         # add the offset to the deltas output
         return offset + output_mat
-
-
-# TODO: needed?
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
-        super(PositionalEncoding, self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x):
-        x = x + self.pe[: x.size(0), :]
-        return self.dropout(x)
 
 
 class GRUEncDec(nn.Module):
@@ -179,36 +160,221 @@ class GRUEncDec(nn.Module):
 
     def forward(self, input_seq):
         offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-        diffs = input_seq[:, 1:] - input_seq[:, :-1]
+        input_vels = input_seq[:, 1:] - input_seq[:, :-1]
 
-        diffs = self.dropout_layer(diffs)
+        input_vels = self.dropout_layer(input_vels)
 
-        _, hn = self.encoderGRU(diffs)
+        _, hn = self.encoderGRU(input_vels)
         out_list = []
 
         # prev_x = input_seq[:, -1]
-        prev_x = diffs[:, -1]
+        vel = input_vels[:, -1]
         # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
 
         if self.use_gru_cell:
             hn = hn[0]
 
         for i in range(self.output_seq_size):
+            vel = self.dropout_layer(vel)
             if self.use_gru_cell:
-                hn = self.decoderGRU(prev_x, hn)
-                lin = self.linear(hn)
+                hn = self.decoderGRU(vel, hn)
+                vel = self.linear(hn)
             else:
-                _, hn = self.decoderGRU(prev_x.unsqueeze(1), hn)
-                lin = self.linear(hn[-1])
+                _, hn = self.decoderGRU(vel.unsqueeze(1), hn)
+                vel = self.linear(hn[-1])
 
-            x = lin + prev_x
-            out_list.append(x.unsqueeze(1))
-            prev_x = x
+            # x = vel + prev_x
+            out_list.append(vel.unsqueeze(1))
 
         out = torch.cat(out_list, dim=1)
         # add the deltas to the last location
         # cumsum marginally improves generalization
         return out.cumsum(dim=1) + offset
+
+
+class GRUEncDecSched(nn.Module):
+    def __init__(
+            self,
+            output_seq_size=20,
+            hidden_size=64,
+            GRU_layers=1,
+            dropout=0.0,
+            tie_enc_dec=False,
+            use_gru_cell=False
+    ):
+        """
+        Encoder-decoder architechture with GRU cells as encoder and decoder
+        :param output_seq_size: forecast length (defualt: 20)
+        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
+        :param GRU_layers: number of GRU layers (defualt: 1)
+        :param dropout: probablity of dropout of input (default: 0)
+        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
+        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        """
+        super().__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.output_seq_size = output_seq_size
+        self.hidden_size = hidden_size
+        self.tie_enc_dec = tie_enc_dec
+        self.use_gru_cell = use_gru_cell
+
+        self.epsi=0
+        self.target=None
+
+        self.dropout_layer = torch.nn.Dropout(dropout)
+
+        self.encoderGRU = nn.GRU(input_size=4,
+                                 hidden_size=hidden_size,
+                                 num_layers=GRU_layers,
+                                 batch_first=True,
+                                 )
+
+        if not tie_enc_dec:
+            if use_gru_cell:
+                self.decoderGRU = nn.GRUCell(input_size=4,
+                                             hidden_size=hidden_size,
+                                             )
+            else:
+                self.decoderGRU = nn.GRU(input_size=4,
+                                         hidden_size=hidden_size,
+                                         num_layers=GRU_layers,
+                                         batch_first=True,
+                                         )
+        else:
+            self.decoderGRU = self.encoderGRU
+
+        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+
+    def forward(self, input_seq):
+        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
+        input_vels = input_seq[:, 1:] - input_seq[:, :-1]
+
+        input_vels = self.dropout_layer(input_vels)
+        if self.epsi:
+            vel_target = self.target[:, 1:] - self.target[:, :-1]
+
+        _, hn = self.encoderGRU(input_vels)
+        out_list = []
+
+        # prev_x = input_seq[:, -1]
+        vel = input_vels[:, -1]
+        # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
+
+        if self.use_gru_cell:
+            hn = hn[0]
+
+        for i in range(self.output_seq_size):
+
+            vel = self.dropout_layer(vel)
+
+            if self.epsi and i > 0:
+                coins = torch.rand(input_seq.shape[0])
+                take_true = (coins < self.epsi).unsqueeze(1).to(self.device)
+                truths = take_true*vel_target[:, i - 1]
+                farts = (~take_true)*vel
+                vel = truths + farts
+
+            if self.use_gru_cell:
+                hn = self.decoderGRU(vel, hn)
+                vel = self.linear(hn)
+            else:
+                _, hn = self.decoderGRU(vel.unsqueeze(1), hn)
+                vel = self.linear(hn[-1])
+
+            # x = vel + prev_x
+            out_list.append(vel.unsqueeze(1))
+
+        out = torch.cat(out_list, dim=1)
+        # add the deltas to the last location
+        # cumsum marginally improves generalization
+        return out.cumsum(dim=1) + offset
+
+class GRUEncDecPosVel(nn.Module):
+    def __init__(
+            self,
+            output_seq_size=20,
+            hidden_size=64,
+            GRU_layers=1,
+            dropout=0.0,
+            tie_enc_dec=False,
+            use_gru_cell=False
+    ):
+        """
+        Encoder-decoder architechture with GRU cells as encoder and decoder
+        :param output_seq_size: forecast length (defualt: 20)
+        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
+        :param GRU_layers: number of GRU layers (defualt: 1)
+        :param dropout: probablity of dropout of input (default: 0)
+        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
+        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        """
+        super().__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.output_seq_size = output_seq_size
+        self.hidden_size = hidden_size
+        self.tie_enc_dec = tie_enc_dec
+        self.use_gru_cell = use_gru_cell
+
+        self.dropout_layer = torch.nn.Dropout(dropout)
+
+        self.encoderGRU = nn.GRU(input_size=8,
+                                 hidden_size=hidden_size,
+                                 num_layers=GRU_layers,
+                                 batch_first=True,
+                                 )
+
+        if not tie_enc_dec:
+            if use_gru_cell:
+                self.decoderGRU = nn.GRUCell(input_size=8,
+                                             hidden_size=hidden_size,
+                                             )
+            else:
+                self.decoderGRU = nn.GRU(input_size=8,
+                                         hidden_size=hidden_size,
+                                         num_layers=GRU_layers,
+                                         batch_first=True,
+                                         )
+        else:
+            self.decoderGRU = self.encoderGRU
+
+        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+
+    def forward(self, input_seq):
+        input_vel = input_seq[:, 1:] - input_seq[:, :-1]
+        input_en = torch.cat((input_seq[:, :-1], input_vel), dim=-1)
+
+        input_en = self.dropout_layer(input_en)
+
+        _, hn = self.encoderGRU(input_en)
+        out_list = []
+
+        if self.use_gru_cell:
+            hn = hn[0]
+
+        x = input_seq[:, -1]
+        vel = input_vel[:, -1]
+
+        for i in range(self.output_seq_size):
+            vel = self.dropout_layer(vel)
+            input_dec = torch.cat((x, vel), dim=-1)
+
+            if self.use_gru_cell:
+                hn = self.decoderGRU(input_dec, hn)
+                vel = self.linear(hn)
+            else:
+                _, hn = self.decoderGRU(input_dec.unsqueeze(1), hn)
+                vel = self.linear(hn[-1])
+
+            #x = x + vel
+            out_list.append(vel.unsqueeze(1))
+
+        out = torch.cat(out_list, dim=1)
+
+        return out.cumsum(dim=1) + input_seq[:, -1][:, None, :]
 
 
 class ConvEncoder(nn.Module):

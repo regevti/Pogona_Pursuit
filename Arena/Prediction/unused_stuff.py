@@ -479,3 +479,110 @@ for i,k in enumerate(phases):
     axs[i][1].scatter(np.arange(times[k].shape[0]),times[k]*1000)
     axs[i][1].set_ylim(0,YLIM)
 #plt.savefig('timings.jpg')
+
+
+
+
+"""
+All path trajectory from predictor eval notebook
+"""
+##################################
+#trial_data = val[1]
+trial_data = lots_o_touches2
+bboxes = all_df.loc[trial_data][['x1','y1','x2','y2']].values
+
+FIRST_FRAME = 0
+
+bboxes = bboxes[FIRST_FRAME:]
+# TODO - slicing bbox array creates a discrepency between the forecasts and the dataframe?
+# might
+#bboxes[60:70] = np.nan
+eval_results, forecasts = train_eval.eval_trajectory_predictor(traj_predictor, bboxes)
+
+##################################
+
+################################## Plot entire trial trajectory
+def gen_forecasts_path(forecasts, n=0):
+    # first_forecast - the first forecast which doesn't contain any np.nan
+    first_forecast = next(i for i, fc in enumerate(forecasts) if fc is not None and not np.any(np.isnan(fc)))
+    path = np.empty((len(forecasts) - first_forecast - 1, 4))
+    # create the entire path from the forecasts
+    for i in range(path.shape[0]):
+        path[i] = forecasts[first_forecast + i][n]
+    return path, first_forecast
+##################################
+X1, Y1, X2, Y2 = 0, 1, 2, 3
+
+# TODO - maybe function
+n = 10
+fpath, first_f = gen_forecasts_path(forecasts, n=n)
+fpath = np.roll(fpath, n+1, axis=0)
+fpath[:n+1] = np.nan
+rpath = bboxes #[first_f+1:]
+
+fig, ax = plt.subplots(figsize=(10,10))
+ax.axis('equal')
+
+# change these parameters to inspect only a single path and make the others less visible
+# can also use zorder paramater to control the oreder of plots
+real_alpha = 0.5
+fore_alpha = 0.0
+diff_alpha = 0.0
+
+# plot top left, bottom right coordinates of recorded path
+ax.plot(rpath[:, X2], rpath[:, Y2], color="r" ,label = 'real_x2y2', alpha=real_alpha)
+ax.plot(rpath[:, X1], rpath[:, Y1], color="m", label = 'real_x1y1', alpha=real_alpha)
+
+# plot top left, bottom right coordinates of predicted path
+ax.plot(fpath[:, X2], fpath[:, Y2], color="c",label = 'forecast_x2y2', alpha=fore_alpha)
+ax.plot(fpath[:, X1], fpath[:, Y1], color="b",label = 'forecast_x1y1', alpha=fore_alpha)
+
+print(len(fpath), len(rpath), first_f, len(forecasts), len(bboxes))
+lines = np.stack([fpath[:, 0:2], rpath[first_f+1:, 0:2]], axis=1)
+ax.add_collection(LineCollection(lines, colors=['r'],alpha=diff_alpha, label = "diff_x1y1"))
+
+lines2 = np.stack([fpath[:, 2:4], rpath[first_f+1:, 2:4]], axis=1)
+ax.add_collection(LineCollection(lines2, colors=['orange'], alpha=diff_alpha, label = "diff_x2y2"))
+#ax.set_xlim([0,1920])
+#ax.set_ylim([-200,3500])
+ax.plot(np.linspace(0,1920,num=5),np.zeros(5),linestyle='--', color='r')
+
+ax.legend()
+print(trial_data)
+##################################Plot all preictions per timestep
+def predictions_per_step(forecasts):
+    first_forecast = next(i for i, fc in enumerate(forecasts) if fc is not None)
+    forecast_len = forecasts[first_forecast].shape[0]
+    preds = np.empty((len(forecasts) - first_forecast, forecast_len, 4))
+    preds[:] = np.nan
+
+    for i in range(preds.shape[0]):
+        for j in range(max(0, i - forecast_len + 1), i + 1):
+            f = forecasts[j]
+            if f is not None:
+                preds[i, i - j] = f[i - j]
+
+    return preds
+##################################
+real_alpha = 0.5
+fore_alpha = 0.5
+
+preds = predictions_per_step(forecasts)
+avgs = np.mean(preds, axis=1)
+rpath = bboxes[first_f+1:]
+npath = preds[:, 0]
+plt.figure(figsize=(10,10))
+plt.plot(rpath[:, X2], rpath[:, Y2], color='b', alpha=real_alpha, label='real')
+plt.plot(avgs[:, X2], avgs[:, Y2], color='g',alpha=fore_alpha, label='forecast')
+#plt.plot(npath[:, 0], npath[:, 1], color='r')
+plt.axis('equal')
+plt.legend()
+plt.plot(np.linspace(0,1920,num=5),np.zeros(5),linestyle='--', color='r')
+##################################
+
+##################################
+
+##################################
+
+##################################
+

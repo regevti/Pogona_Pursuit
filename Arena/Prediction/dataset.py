@@ -18,7 +18,7 @@ REALTIME_ID = "19506468"
 # depending on from where the program is run, add ../..
 EXPERIMENTS_ROOT = "../../Pogona_Pursuit/Arena/experiments/"
 OUTPUT_ROOT = "../../Pogona_Pursuit/Arena/output/"
-CALIBRATIONS_ROOT = "../../Pogona_Pursuit/Arena/"
+CALIBRATIONS_ROOT = "../../Pogona_Pursuit/Arena/calibration"
 
 RT_DATA_FOLDER = "rt_data"
 HEAD_CROPS_FN = "head_crops.p"
@@ -30,7 +30,7 @@ TOUCHES_FN = "screen_touches.csv"
 HOMOGRAPHY_IM_FN = "homography.jpg"
 
 EXCLUDE_TERMS = [
-    "initial",
+    "initial_20200916",
     "delete",
     "fps",
     "vegetables",
@@ -294,14 +294,15 @@ def find_last_homography(path):
     :return: homography numpy array, json file path
     """
     video_date = get_date_from_path(path)
-    calibration_paths = glob.glob(CALIBRATIONS_ROOT + "*")
+    calibration_paths = np.array(glob.glob(os.path.join(CALIBRATIONS_ROOT, "*")))
     calibration_dates = pd.Series(
         [get_date_from_path(calib_path) for calib_path in calibration_paths]
     )
     tiled_video_date = pd.Series([video_date] * calibration_dates.shape[0])
     date_diffs = tiled_video_date - calibration_dates
-    last_date = (date_diffs[date_diffs >= pd.Timedelta(0)]).argmin()
-    last_calib_path = calibration_paths[last_date]
+    dates_before = date_diffs >= pd.Timedelta(0)
+    last_date_idx = (date_diffs[dates_before]).argmin()
+    last_calib_path = calibration_paths[dates_before.to_numpy()][last_date_idx]
 
     with open(last_calib_path, "r") as fp:
         homog_dict = json.load(fp)
@@ -353,7 +354,7 @@ def analyze_rt_data(path, detector):
         vid_stats = {
             "width": vid_width,
             "height": vid_height,
-            "homography": homography,
+            "homography": homography.tolist(),
             "homography_src_file": calib_path,
         }
 
