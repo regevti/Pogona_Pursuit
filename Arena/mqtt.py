@@ -1,4 +1,4 @@
-import re
+import time
 import os
 import json
 import pandas as pd
@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from cache import CacheColumns, RedisCache
 from parallel_port import ParallelPort
+from utils import turn_display_off
 import paho.mqtt.client as mqtt
 
 HOST = os.environ.get('MQTT_HOST', 'mqtt')
@@ -14,13 +15,17 @@ LOG_TOPIC_PREFIX = 'event/log/'
 LOG_TOPICS = {
     'touch': 'screen_touches.csv',
     'hit': 'hits.csv',
-    'prediction': 'predictions.csv'
+    'prediction': 'predictions.csv',
+    'trajectory': 'bug_trajectory.csv'
 }
 SUBSCRIPTION_TOPICS = {
     'reward': 'event/command/reward',
-    'led_light': 'event/command/led_light'
+    'led_light': 'event/command/led_light',
+    'end_trial': 'event/command/end_trial',
+    'end_experiment': 'event/command/end_experiment'
 }
 SUBSCRIPTION_TOPICS.update({k: LOG_TOPIC_PREFIX + k for k in LOG_TOPICS.keys()})
+EXPERIMENT_LOG = 'event/log/experiment'
 
 
 class MQTTClient:
@@ -28,7 +33,7 @@ class MQTTClient:
         self.client = mqtt.Client()
         self.cache = RedisCache()
         self.parport = parport
-        self.live_manager = LiveExperimentManager(self.cache, parport)
+        self.live_manager = LiveExperimentManager(self, parport)
 
     def loop(self):
         self.client.on_connect = self.on_connect
@@ -49,12 +54,18 @@ class MQTTClient:
         elif msg.topic == SUBSCRIPTION_TOPICS['led_light']:
             self.parport.led_lighting(payload)
 
+        elif msg.topic == SUBSCRIPTION_TOPICS['end_experiment']:
+            self.live_manager.end_experiment()
+
+        elif msg.topic == SUBSCRIPTION_TOPICS['end_trial']:
+            self.live_manager.end_trial()
+
         elif msg.topic.startswith(LOG_TOPIC_PREFIX):
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
             try:
                 payload = json.loads(payload)
-                if topic == 'touch' and payload.get('is_hit'):
-                    self.live_manager.handle_hit()
+                if topic == 'touch':
+                    self.live_manager.handle_hit(payload)
                 self.save_to_csv(topic, payload)
             except Exception as exc:
                 print(f'Unable to parse log payload of {topic}: {exc}')
@@ -68,8 +79,11 @@ class MQTTClient:
 
     def save_to_csv(self, topic, payload):
         try:
-            df = pd.DataFrame([payload])
-            df['timestamp'] = datetime.now()
+            if topic == 'trajectory':
+                df = pd.DataFrame(payload)
+            else:
+                df = pd.DataFrame([payload])
+                df['timestamp'] = datetime.now()
             filename = self.get_csv_filename(topic)
             if filename.exists():
                 df.to_csv(filename, mode='a', header=False)
@@ -90,18 +104,42 @@ class MQTTClient:
 
 
 class LiveExperimentManager:
-    def __init__(self, cache, parport):
-        self.cache = cache
+    def __init__(self, mqtt_client, parport):
+        self.mqtt_client = mqtt_client
+        self.cache = mqtt_client.cache
         self.parport = parport
 
-    def handle_hit(self):
-        if self.is_always_reward():
-            self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, False)
-            self.reward()
+    def log(self, msg):
+        print(msg)
+        self.mqtt_client.publish_event(EXPERIMENT_LOG, msg)
+
+    def handle_hit(self, payload):
+        if self.is_always_reward() and payload.get('is_hit') and payload.get('is_reward_bug'):
+            self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, False)  # stop trial
+            return self.reward()
+
+    def end_experiment(self):
+        if self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON):
+            self.end_trial()
+        time.sleep(2)
+        self.cache.delete(CacheColumns.EXPERIMENT_NAME)
+        self.cache.delete(CacheColumns.EXPERIMENT_PATH)
+        self.log('>> experiment finished\n')
+        if self.is_always_reward:
+            self.cache.delete(CacheColumns.ALWAYS_REWARD)
+
+        self.mqtt_client.publish_command('led_light', 'off')
+
+    def end_trial(self):
+        self.mqtt_client.publish_command('hide_bugs')
+        self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
+        turn_display_off()
+        self.mqtt_client.publish_command('led_light', 'off')
 
     def reward(self, is_force=False):
         if self.parport and (is_force or self.is_always_reward()):
             self.parport.feed()
+            self.mqtt_client.publish_event(EXPERIMENT_LOG, '>> Reward was given')
             return True
 
     def is_always_reward(self):

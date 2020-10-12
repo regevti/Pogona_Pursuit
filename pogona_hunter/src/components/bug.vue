@@ -9,7 +9,9 @@
     name: 'bug',
     data() {
       return {
+        bugTypeOptions: require('@/config.json')['bugTypes'],
         bugImages: [],
+        currentBugType: '',
         imgSrc: '',
         mass: 1,
         counter: 0,
@@ -20,23 +22,28 @@
       x0: Number,
       y0: Number,
       radius: Number,
-      bugType: String,
+      bugTypes: Array[String],
       timeInEdge: Number,
       speed: Number,
-      numImagesPerBug: Number,
-      isStatic: Boolean,
-      movementType: String,
-      stepsPerImage: Number
+      movementType: String
     },
     computed: {
       isMoveInCircles: function () {
         return this.movementType === 'circle'
+      },
+      numImagesPerBug: function () {
+        return this.bugTypeOptions[this.currentBugType].numImagesPerBug
+      },
+      isStatic: function () {
+        return this.bugTypeOptions[this.currentBugType].isStatic
+      },
+      stepsPerImage: function () {
+        return this.bugTypeOptions[this.currentBugType].stepsPerImage
       }
     },
     mounted() {
       this.canvas = this.$parent.canvas
       this.ctx = this.canvas.getContext('2d')
-      this.deadImage = this.getDeadImage()
       this.isOutEdged = false
       this.isDead = false
       this.dx = plusOrMinus() * this.speed
@@ -49,8 +56,17 @@
       },
       getDeadImage() {
         let img = new Image()
-        img.src = this.getImageSrc(`/${this.bugType}_dead.png`)
+        img.src = this.getImageSrc(`/${this.currentBugType}_dead.png`)
         return img
+      },
+      getNextBugType() {
+        if (!Array.isArray(this.bugTypes)) {
+          this.currentBugType = this.bugTypes
+          return
+        }
+        let currentIndex = this.currentBugType ? this.bugTypes.indexOf(this.currentBugType) : -1
+        let nextIndex = currentIndex < this.bugTypes.length - 1 ? currentIndex + 1 : 0
+        this.currentBugType = this.bugTypes[nextIndex]
       },
       initBug(x, y, dx, dy) {
         if (this.isMoveInCircles) {
@@ -63,6 +79,7 @@
         this.dy = dy
         this.step = 0
         this.theta = 0
+        this.getNextBugType()
       },
       move(particles) {
         if (this.isDead || this.isStatic) {
@@ -99,7 +116,7 @@
       draw() {
         this.ctx.beginPath()
         let imgIndex = Math.floor(this.step / this.stepsPerImage)
-        this.imgSrc = this.getImageSrc(`/${this.bugType}${imgIndex}.png`)
+        this.imgSrc = this.getImageSrc(`/${this.currentBugType}${imgIndex}.png`)
         this.drawImage()
         this.step++
         if (this.step > (this.numImagesPerBug - 1) * this.stepsPerImage) {
@@ -110,7 +127,7 @@
       },
       drawImage() {
         try {
-          let bugImage = this.isDead ? this.deadImage : this.$refs.bugImg
+          let bugImage = this.isDead ? this.getDeadImage() : this.$refs.bugImg
           this.ctx.setTransform(1, 0, 0, 1, this.x, this.y)
           this.ctx.rotate(this.getAngleRadians())
           this.ctx.drawImage(bugImage, -this.radius / 2, -this.radius / 2, this.radius, this.radius)

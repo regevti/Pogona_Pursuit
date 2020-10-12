@@ -2,6 +2,7 @@ import os
 import logging
 from pathlib import Path
 import numpy as np
+import asyncio
 from io import StringIO
 from datetime import datetime
 from subprocess import Popen, PIPE
@@ -13,7 +14,7 @@ def run_command(cmd):
     stdout, stderr = process.communicate()
     if stderr:
         print(f'Error running cmd: "{cmd}"; {stderr}')
-    return stdout
+    yield stdout
 
 
 DISPLAY_CMD = 'DISPLAY=":0" xrandr --output HDMI-0 --{}'
@@ -25,6 +26,16 @@ def turn_display_on():
 
 def turn_display_off():
     return run_command(DISPLAY_CMD.format('off'))
+
+
+def async_call_later(seconds, callback):
+    async def schedule():
+        await asyncio.sleep(seconds)
+        if asyncio.iscoroutinefunction(callback):
+            await callback()
+        else:
+            callback()
+    asyncio.ensure_future(schedule())
 
 
 def get_log_stream():

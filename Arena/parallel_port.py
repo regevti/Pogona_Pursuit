@@ -24,7 +24,7 @@ class ParallelPort:
         self.turn_off(output)
 
     def feed(self):
-        self.turn_on_for(feeder, 2)
+        self.turn_on_for(feeder, 3)
 
     def led_lighting(self, state='off'):
         if state == 'on':

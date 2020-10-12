@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import PySpin
 import cv2
 import json
+import time
 import os
 load_dotenv()
 
@@ -28,6 +29,11 @@ def index():
                            acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES)
 
 
+@app.route('/explore')
+def explore():
+    return render_template('explore.html')
+
+
 @app.route('/record', methods=['POST'])
 def record_video():
     """Record video"""
@@ -40,11 +46,9 @@ def record_video():
 @app.route('/start_experiment', methods=['POST'])
 def start_experiment():
     """Set Experiment Name"""
-    if request.method == 'POST':
-        data = request.json
-        data['cache'] = cache
-        e = Experiment(**data)
-        return Response(stream_with_context(e.start()))
+    data = request.json
+    e = Experiment(**data)
+    return Response(e.start())
 
 
 @app.route('/get_experiment')
@@ -55,6 +59,7 @@ def get_experiment():
 @app.route('/stop_experiment')
 def stop_experiment():
     experiment_name = cache.get(CacheColumns.EXPERIMENT_NAME)
+    mqtt_client.publish_command('end_experiment')
     if experiment_name:
         cache.delete(CacheColumns.EXPERIMENT_NAME)
         return Response(f'Experiment: {experiment_name} was stopped')

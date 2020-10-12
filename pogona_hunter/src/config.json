@@ -53,7 +53,7 @@
     }
   },
   "movementTypes": [
-    "circle",
-    "line"
+    "line",
+    "circle"
   ]
 }
