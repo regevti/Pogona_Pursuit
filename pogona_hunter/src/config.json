@@ -50,6 +50,16 @@
         "max": 180
       },
       "stepsPerImage": 4
+    },
+    "green_beetle": {
+      "text": "Green Beetle",
+      "numImagesPerBug": 12,
+      "speed": 3,
+      "radiusRange": {
+        "min": 150,
+        "max": 180
+      },
+      "stepsPerImage": 3
     }
   },
   "movementTypes": [
