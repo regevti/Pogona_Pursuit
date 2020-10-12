@@ -9,7 +9,7 @@ load_dotenv()
 
 from utils import titlize, get_predictor_model, run_command, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
-from mqtt import MQTTClient, SUBSCRIPTION_TOPICS
+from mqtt import MQTTClient, SUBSCRIPTION_TOPICS, HOST as mqtt_host
 from experiment import Experiment, REWARD_TYPES
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
     CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
@@ -26,7 +26,8 @@ def index():
     with open('../pogona_hunter/src/config.json', 'r') as f:
         config = json.load(f)
     return render_template('index.html', cameras=CAMERA_NAMES.keys(), exposure=EXPOSURE_TIME, config=config,
-                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES)
+                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES,
+                           mqtt_host=mqtt_host)
 
 
 @app.route('/explore')
