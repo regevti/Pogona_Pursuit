@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 import PySpin
 import cv2
 import json
-import time
 import os
 load_dotenv()
 
@@ -26,8 +25,7 @@ def index():
     with open('../pogona_hunter/src/config.json', 'r') as f:
         config = json.load(f)
     return render_template('index.html', cameras=CAMERA_NAMES.keys(), exposure=EXPOSURE_TIME, config=config,
-                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES,
-                           mqtt_host=mqtt_host)
+                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES)
 
 
 @app.route('/explore')
