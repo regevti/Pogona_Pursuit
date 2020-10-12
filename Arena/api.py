@@ -8,14 +8,14 @@ load_dotenv()
 
 from utils import titlize, get_predictor_model, run_command, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
-from mqtt import MQTTClient, SUBSCRIPTION_TOPICS, HOST as mqtt_host
+from mqtt import MQTTPublisher, SUBSCRIPTION_TOPICS, HOST as mqtt_host
 from experiment import Experiment, REWARD_TYPES
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
     CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
 
 app = Flask(__name__)
 cache = RedisCache()
-mqtt_client = MQTTClient()
+mqtt_client = MQTTPublisher()
 
 
 @app.route('/')

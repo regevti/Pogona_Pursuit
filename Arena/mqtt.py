@@ -103,6 +103,11 @@ class MQTTClient:
         return Path(f'{parent}/{LOG_TOPICS[topic]}')
 
 
+class MQTTPublisher(MQTTClient):
+    def on_connect(client, userdata, flags, rc):
+        pass
+
+
 class LiveExperimentManager:
     def __init__(self, mqtt_client, parport):
         self.mqtt_client = mqtt_client
@@ -128,13 +133,11 @@ class LiveExperimentManager:
         if self.is_always_reward:
             self.cache.delete(CacheColumns.ALWAYS_REWARD)
 
-        self.mqtt_client.publish_command('led_light', 'off')
-
     def end_trial(self):
         self.mqtt_client.publish_command('hide_bugs')
         self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
         turn_display_off()
-        self.mqtt_client.publish_command('led_light', 'off')
+        self.parport.led_lighting('off')
 
     def reward(self, is_force=False):
         if self.parport and (is_force or self.is_always_reward()):

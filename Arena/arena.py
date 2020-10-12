@@ -13,7 +13,7 @@ import numpy as np
 from multiprocessing.dummy import Pool
 import PySpin
 from cache import CacheColumns
-from mqtt import MQTTClient
+from mqtt import MQTTPublisher
 from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode, is_predictor_experiment, get_predictor_model
 
 
@@ -94,7 +94,7 @@ class SpinCamera:
             self.logger.info('Working in realtime mode')
             self.predictor_experiment_ids = []
             self.predictor = _models[get_predictor_model()].hit_pred
-            self.mqtt_client = MQTTClient()
+            self.mqtt_client = MQTTPublisher()
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""

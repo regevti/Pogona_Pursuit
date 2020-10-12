@@ -3,7 +3,7 @@ load_dotenv()
 from utils import get_datetime_string, mkdir, is_debug_mode, turn_display_on, turn_display_off, async_call_later
 from arena import record
 from cache import CacheColumns, RedisCache
-from mqtt import MQTTClient, LOG_TOPICS, SUBSCRIPTION_TOPICS, EXPERIMENT_LOG
+from mqtt import MQTTPublisher, LOG_TOPICS, SUBSCRIPTION_TOPICS, EXPERIMENT_LOG
 from pathlib import Path
 import pandas as pd
 import asyncio
@@ -12,7 +12,7 @@ import inspect
 import time
 import json
 
-mqtt_client = MQTTClient()
+mqtt_client = MQTTPublisher()
 EXPERIMENTS_DIR = 'experiments'
 REWARD_TYPES = ['always', 'end_trial']
 loop = asyncio.new_event_loop()
