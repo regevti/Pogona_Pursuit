@@ -299,7 +299,6 @@ export default {
     },
     endLogTrajectory() {
       clearInterval(this.trajectoryLogInterval)
-      console.log(JSON.stringify(this.trajectoryLog))
       this.$mqtt.publish('event/log/trajectory', JSON.stringify(this.trajectoryLog))
       this.trajectoryLog = []
     }
