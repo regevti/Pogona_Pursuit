@@ -135,7 +135,6 @@ class LiveExperimentManager:
             self.cache.delete(CacheColumns.ALWAYS_REWARD)
 
     def end_trial(self):
-        self.mqtt_client.publish_command('hide_bugs')
         self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
         turn_display_off()
         self.parport.led_lighting('off')

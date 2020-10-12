@@ -91,6 +91,7 @@ class Experiment:
                    is_use_predictions=self.is_use_predictions, **acquire_stop)
         else:
             time.sleep(self.trial_duration)
+        mqtt_client.publish_command('hide_bugs')
         mqtt_client.publish_command('end_trial')
 
     def save_experiment_log(self):

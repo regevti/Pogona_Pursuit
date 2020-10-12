@@ -245,7 +245,7 @@ export default {
         if (this.$refs.bugChild.length === 0) {
           if (this.isStopOnReward && isRewardBug) {
             this.numOfBugs = 0
-            this.$mqtt.publish('end_trial', '')
+            this.$mqtt.publish('event/command/end_trial', '')
           }
           const startNewGameTimeout = setTimeout(() => {
             cancelAnimationFrame(this.animationHandler)
