@@ -104,6 +104,7 @@ class MQTTClient:
 
 
 class MQTTPublisher(MQTTClient):
+    @staticmethod
     def on_connect(client, userdata, flags, rc):
         pass
 
