@@ -72,6 +72,7 @@ class Experiment:
 
             self.log(self.trial_summary)
 
+        time.sleep(3)
         mqtt_client.publish_command('end_experiment')
         return str(self)
 

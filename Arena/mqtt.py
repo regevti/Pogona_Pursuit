@@ -47,6 +47,7 @@ class MQTTClient:
 
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
+        print(f'received message with topic {msg.topic}')
         if msg.topic == SUBSCRIPTION_TOPICS['reward']:
             self.live_manager.reward(is_force=True)
 
@@ -63,7 +64,6 @@ class MQTTClient:
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
             try:
                 payload = json.loads(payload)
-                print(f'received topic {topic}, payload: {payload}')
                 if topic == 'touch':
                     self.live_manager.handle_hit(payload)
                 self.save_to_csv(topic, payload)
@@ -127,7 +127,6 @@ class LiveExperimentManager:
     def end_experiment(self):
         if self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON):
             self.end_trial()
-        time.sleep(2)
         self.cache.delete(CacheColumns.EXPERIMENT_NAME)
         self.cache.delete(CacheColumns.EXPERIMENT_PATH)
         self.log('>> experiment finished\n')
