@@ -6,7 +6,6 @@ from pathlib import Path
 from datetime import datetime
 from cache import CacheColumns, RedisCache
 from parallel_port import ParallelPort
-from utils import turn_display_off
 import paho.mqtt.client as mqtt
 
 HOST = os.environ.get('MQTT_HOST', 'mqtt')
@@ -64,6 +63,7 @@ class MQTTClient:
             topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
             try:
                 payload = json.loads(payload)
+                print(f'received topic {topic}, payload: {payload}')
                 if topic == 'touch':
                     self.live_manager.handle_hit(payload)
                 self.save_to_csv(topic, payload)
@@ -136,7 +136,6 @@ class LiveExperimentManager:
 
     def end_trial(self):
         self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
-        turn_display_off()
         self.parport.led_lighting('off')
 
     def reward(self, is_force=False):

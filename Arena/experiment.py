@@ -93,6 +93,7 @@ class Experiment:
             time.sleep(self.trial_duration)
         mqtt_client.publish_command('hide_bugs')
         mqtt_client.publish_command('end_trial')
+        turn_display_off()
 
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:

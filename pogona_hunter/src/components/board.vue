@@ -179,7 +179,7 @@ export default {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
       }
-      if (this.trajectoryLog.length) {
+      if (this.trajectoryLogInterval) {
         this.endLogTrajectory()
       }
       if (isLogTrajectory) {
@@ -215,20 +215,20 @@ export default {
       console.log(x, y)
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let isHit = false
-        let currentBugType = this.$refs.bugChild[i].currentBugType
-        let isRewardBug = this.rewardBugs.includes(currentBugType)
-        if (distance(x, y, this.$refs.bugChild[i].x, this.$refs.bugChild[i].y) <= this.$refs.bugChild[i].radius / 1.5) {
+        let bug = this.$refs.bugChild[i]
+        let isRewardBug = this.rewardBugs.includes(bug.currentBugType)
+        if (distance(x, y, bug.x, bug.y) <= bug.radius / 1.5) {
           this.destruct(i, x, y, isRewardBug)
           isHit = true
         }
         this.$mqtt.publish('event/log/touch', JSON.stringify({
           x: x,
           y: y,
-          bug_x: this.$refs.bugChild[i].x,
-          bug_y: this.$refs.bugChild[i].y,
+          bug_x: bug.x,
+          bug_y: bug.y,
           is_hit: isHit,
           is_reward_bug: isRewardBug,
-          bug_type: currentBugType
+          bug_type: bug.currentBugType
         }))
       }
     },
@@ -287,19 +287,22 @@ export default {
     },
     startLogTrajectory() {
       this.trajectoryLogInterval = setInterval(() => {
-        if (this.$refs.bugChild[0]) {
+        let bug = this.$refs.bugChild[0]
+        if (bug && bug.isInsideBoard) {
           this.trajectoryLog.push({
             time: Date.now(),
-            x: this.$refs.bugChild[0].x,
-            y: this.$refs.bugChild[0].y,
-            bug_type: this.$refs.bugChild[0].currentBugType
+            x: bug.x,
+            y: bug.y,
+            bug_type: bug.currentBugType
           })
         }
       }, 1000 / 60)
     },
     endLogTrajectory() {
       clearInterval(this.trajectoryLogInterval)
+      this.trajectoryLogInterval = null
       this.$mqtt.publish('event/log/trajectory', JSON.stringify(this.trajectoryLog))
+      console.log('sent trajectory through mqtt...')
       this.trajectoryLog = []
     }
   }
