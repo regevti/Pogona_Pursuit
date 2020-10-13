@@ -17,10 +17,12 @@ stats/
 *.p
 *.jpg
 *.jpeg
+*.png
 
 Archive/
 Arena/calibration/*
 yolo_eval_frames
 yolo_fn_frames
 yolo_eval_labels
+experiment_plots
 

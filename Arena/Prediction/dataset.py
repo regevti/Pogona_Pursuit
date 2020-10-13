@@ -635,6 +635,8 @@ def collect_data(
     unified_df = pd.concat(dataframes_list)
     if "is_touch" in unified_df.columns:
         unified_df.is_touch = unified_df.is_touch.fillna(False)
+    if "is_hit" in unified_df.columns:
+        unified_df.is_hit = unified_df.is_hit.fillna(False)
 
     # place NaN's instead of 0's where there are no detections
     # TODO: where they become zeros anyway?
@@ -676,7 +678,15 @@ def transform_df(df, cols, vid_stats):
 def align_touches(df, temp_touches):
     """
     Align the the screen touching data to the detections data, by aligning the data accoring to closest timestamps
-    changes dataframe inplace
+    changes dataframe inplace.
+    
+    Added a partial fix for the timezones issue, that operates directly on the numerical diffrences and shifts the 
+    screen touch timestamps by a round number of hours back. This assumes that the trials are a few minutes long
+    at most, that they discrepency between the camera and screen is caused by timezones issues, so the shift is by round hours.
+    This is probably prone to errors and further bugs.
+    
+    A more permanent and robust fix is to make sure any timestamp written by the system is written in the same timezone,
+    or that the timezone itself ("Asis/Tel_Aviv", "UTC" or other) are saved with the timestamp.
     :param df: detections dataframe
     :param temp_touches: screen touches dataframe
     """
@@ -687,7 +697,7 @@ def align_touches(df, temp_touches):
             column="is_hit",
             value=[True] * temp_touches.shape[0],
         )
-
+    
     temp_touches.columns = ["hit_x", "hit_y", "bug_x", "bug_y", "is_hit", "timestamp"]
     temp_touches["timestamp"] = pd.to_datetime(temp_touches["timestamp"])
 
@@ -695,9 +705,23 @@ def align_touches(df, temp_touches):
     for col in ["hit_x", "hit_y", "bug_x", "bug_y", "is_hit", "touch_ts"]:
         df[col] = np.nan
     df["is_touch"] = False
-
+    
+    # timezones workaround
+    max_touch_ts = temp_touches.timestamp.max()
+    max_diff_hr = np.min((max_touch_ts - df.frame_ts.min()).total_seconds()/60/60)
+    hr_diff = np.round(max_diff_hr)
+    
+    if np.abs(hr_diff) >= 1:
+        hr_delta = pd.Timedelta(hr_diff, unit='h')            
+        if hr_diff < 0:
+            temp_touches.timestamp = temp_touches.timestamp + hr_delta
+        else:
+            temp_touches.timestamp = temp_touches.timestamp - hr_delta
+    
+    
     # for timestamp of each touch, get frame with closest timestamp
     for i, ts in enumerate(temp_touches.timestamp):
+
         frame_argmin = np.argmin((df["frame_ts"] - ts).dt.total_seconds().abs())
 
         col_inds = [
@@ -713,9 +737,6 @@ def align_touches(df, temp_touches):
         df.iloc[frame_argmin, col_inds] = temp_touches.iloc[i, to_set].values
         df.iloc[frame_argmin, df.columns.get_loc("is_touch")] = True
     df["touch_ts"] = pd.to_datetime(df["touch_ts"])
-
-
-# TODO:
 
 
 def ret_date(st):

@@ -1,143 +1,41 @@
 import numpy as np
 import cv2 as cv
 from ctypes import c_int, pointer
-import torch
-from torchvision import transforms
-from PIL import Image
-from Prediction.Yolo3.utils.utils import load_classes, non_max_suppression
 
 import Prediction.Yolo4.darknet as darknet4
-from Prediction.models import Darknet
+import torch
 
 
 class Detector:
     """
-    Abstract class with a detect_image() method that return a (number of detections) X 5 Numpy array.
-    The (row - single detection) array format is left_x, left_y, width, height, confidence.
+    Abstract class that detects bounding boxes in image data.
+    Subclasses should override the detect_image(self, img) method.
+    Abstract class with a detect_image() method that takes an image numpy array and
+    returns a (number of detections) X 5 numpy array.
+    Each row represents one detection as [left_x, top_y, right_x, bottom_y, confidence] of
+    the bounding box, where (0,0) is the top left corner of the image.
     """
 
     def detect_image(self, img):
         """
-        Return detection array for the supplied image.
+        Detect objects in the supplied image and return an Nx5 numpy array of bounding boxes + confidence.
+        Each row represents one detection as [left_x, top_y, right_x, bottom_y, confidence] of
+        the bounding box, where (0,0) is the top left corner of the image.
+
         img - The image as a numpy array (cv2 frame etc.)
+
+        Return the detection array for the supplied image.
         """
         pass
 
 
-class Detector_v3(Detector):
-    """
-    Yolo-V3 detector implemented in Pytorch. Training and model code taken from https://github.com/eriklindernoren/PyTorch-YOLOv3.
-    based on original paper "YOLOv3: An Incremental Improvement".
-    This model training was done without non-examples, i.e, images that do not contain any ground truth detection
-    """
-
-    def __init__(self,
-                 model_def="Prediction/Yolo3/config/yolov3-custom.cfg",
-                 weights_path="Prediction/Yolo3/weights/yolov3-pogonahead.pth",
-                 class_path="Prediction/Yolo3/classes.names",
-                 img_size=416,
-                 conf_thres=0.9,
-                 nms_thres=0.6):
-
-        self.model_def = model_def
-        self.weights_path = weights_path
-        self.class_path = class_path
-        self.img_size = img_size
-        self.conf_thres = conf_thres
-        self.nms_thres = nms_thres
-
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-        else:
-            device = torch.device("cpu")
-            print("WARNING: GPU is not available")
-
-        # Initiate model
-        self.model = Darknet(self.model_def, img_size=self.img_size)
-        self.model.load_state_dict(torch.load(weights_path, map_location=device))
-        if torch.cuda.is_available():
-            self.model.cuda()
-        self.model.eval()
-        self.classes = load_classes(class_path)
-
-    def set_input_size(self, width, height):
-        self.input_width = width
-        self.input_height = height
-
-        # update transforms: scale and pad image
-        ratio = min(self.img_size / width, self.img_size / height)
-        imw = round(width * ratio)
-        imh = round(height * ratio)
-        # resize + pad can be done with open cv and numpy!!
-        self.resize_transform = transforms.Compose([transforms.Resize((imh, imw)),
-                                                    transforms.Pad((max(int((imh - imw) / 2), 0),
-                                                                    max(int((imw - imh) / 2), 0),
-                                                                    max(int((imh - imw) / 2), 0),
-                                                                    max(int((imw - imh) / 2), 0)), (128, 128, 128)),
-                                                    transforms.ToTensor()])
-
-    def xyxy_to_xywh(self, xyxy, output_shape):
-        """
-        xyxy - an array of xyxy detections in input_size x input_size coordinates.
-        output_shape - shape of output array (height, width)
-        """
-        pad_x = max(output_shape[0] - output_shape[1], 0) * (self.img_size / max(output_shape))
-        pad_y = max(output_shape[1] - output_shape[0], 0) * (self.img_size / max(output_shape))
-        unpad_h = self.img_size - pad_y
-        unpad_w = self.img_size - pad_x
-
-        x1 = xyxy[:, 0]
-        y1 = xyxy[:, 1]
-        x2 = xyxy[:, 2]
-        y2 = xyxy[:, 3]
-
-        box_h = ((y2 - y1) / unpad_h) * output_shape[0]
-        box_w = ((x2 - x1) / unpad_w) * output_shape[1]
-        y1 = ((y1 - pad_y // 2) / unpad_h) * output_shape[0]
-        x1 = ((x1 - pad_x // 2) / unpad_w) * output_shape[1]
-
-        # return detections as (num_detections)X5 tensor, with
-        # format xywh-conf
-        return torch.stack([x1, y1, box_w, box_h, xyxy[:, 4]], dim=1)
-
-    def detect_image(self, img):
-        """
-        Return yolo detection array for the supplied image.
-        img - The image as numpy array.
-        conf_thres - confidence threshold for detection
-        nms_thres - threshold for non-max suppression
-        """
-
-        # TODO - could be updated to be done without conversion to PIL image
-        # might be faster
-        img_rgb = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-        PIL_img = Image.fromarray(img_rgb)
-        image_tensor = self.resize_transform(PIL_img).unsqueeze(0)
-
-        if torch.cuda.is_available():
-            input_img = image_tensor.type(torch.Tensor).cuda()
-        else:
-            input_img = image_tensor.type(torch.Tensor)
-
-        # run inference on the model and get detections
-        with torch.no_grad():
-            detections = self.model(input_img)
-            detections = non_max_suppression(detections,
-                                             self.conf_thres,
-                                             self.nms_thres)
-        detections = detections[0]
-
-        if detections is not None:
-            return self.xyxy_to_xywh(detections, (self.input_height, self.input_width)).numpy()
-
-        return None
-
-
 class Detector_v4:
     """
-    Version 4 of the YOLO algorithm, based on the paper "YOLOv4: Optimal Speed and Accuracy of Object Detection"
-    Code from: https://github.com/AlexeyAB/darknet, including a python wrapper for the C modules
-    Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images
+    Detector using version 4 of the YOLO algorithm, based on the paper "YOLOv4: Optimal Speed and Accuracy of Object Detection"
+    Code from: https://github.com/AlexeyAB/darknet, including a python wrapper for the C modules.
+    Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images.
+
+    The resized image used for the last detection is stored in self.curr_img
     """
 
     def __init__(self,
@@ -146,7 +44,14 @@ class Detector_v4:
                  meta_path="Prediction/Yolo4/obj.data",
                  conf_thres=0.9,
                  nms_thres=0.6):
-
+        """
+        Instantiate detector.
+        cfg_path - Path to yolo network configuration file
+        weights_path - Path to trained network weights
+        meta_path - Path to yolo metadata file (pretty useless for inference but necessary)
+        conf_thres - Confidence threshold for bounding box detections
+        nms_thres - Non-max suppression threshold. Suppresses multiple detections for the same object.
+        """
         self.net = darknet4.load_net_custom(cfg_path.encode("ascii"),
                                             weights_path.encode("ascii"),
                                             0, 1)
@@ -158,11 +63,10 @@ class Detector_v4:
         self.curr_img = None
         print("Detector initiated successfully")
 
-    def set_input_size(self, width, height):
-        self.input_width = width
-        self.input_height = height
-
     def set_conf_and_nms(self, new_conf_thres=0.9, new_nms_thres=0.6):
+        """
+        Set new confidence threshold and nms threshold values.
+        """
         self.conf_thres = new_conf_thres
         self.nms_thres = new_nms_thres
 
@@ -170,8 +74,11 @@ class Detector_v4:
         """
         Receive an image as numpy array. Resize image to model size using open-cv.
         Run the image through the network and collect detections.
-        Return a numpy array of detections. Each row is x1, y1, x2, y1 (top-left and bottom-right corners).
+        Return a numpy array of detections. Each row is x1, y1, x2, y1, confidence 
+        (top-left and bottom-right corners).
         """
+        input_height, input_width, _ = img.shape
+
         image = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         image = cv.resize(image, (self.model_width, self.model_height), interpolation=cv.INTER_LINEAR)
         self.curr_img = image
@@ -180,7 +87,7 @@ class Detector_v4:
         pnum = pointer(num)
         darknet4.predict_image(self.net, image)
 
-        dets = darknet4.get_network_boxes(self.net, self.input_width, self.input_height,
+        dets = darknet4.get_network_boxes(self.net, input_width, input_height,
                                           self.conf_thres, self.conf_thres, None, 0, pnum, 0)
 
         num = pnum[0]
@@ -204,7 +111,7 @@ class Detector_v4:
 
 def xywh_to_centroid(xywh):
     """
-    Return the centroids of a bbox array (1 or 2 dimensional).
+    Return the centroids of a bbox array in xywh values (1 or 2 dimensional).
     xywh - bbox array in x, y, width, height.
     """
     if len(xywh.shape) == 1:
@@ -221,8 +128,11 @@ def xywh_to_centroid(xywh):
 
 def xywh_to_xyxy(xywh):
     """
-    :param xywh: bboxes in xywh format
-    :return: bboxes in xyxy format
+    Convert a numpy array of bbox coordinates from xywh to xyxy
+
+    xywh - bbox array in x, y, width, height
+
+    Return the bbox in xyxy coordinates - [x1, y1, x2, y2] (top-left, bottom-right corners)
     """
     if len(xywh.shape) == 1:
         x, y, w, h = xywh[:4]
@@ -238,8 +148,10 @@ def xywh_to_xyxy(xywh):
 
 def xyxy_to_xywh(xyxy):
     """
-    :param xywh: bboxes in xyxy format
-    :return: bboxes in xywh format
+    Convert a numpy array of bbox coordinates from xyxy to xywh
+
+    :param xywh: bboxes in x, y, width, height format
+    :return: bboxes in x,y, width, height format
     """
     if len(xyxy.shape) == 1:
         x1, y1, x2, y2 = xyxy[:4]
@@ -255,7 +167,9 @@ def xyxy_to_xywh(xyxy):
 
 def xyxy_to_centroid(xyxy):
     """
-    Return the centroids of a bbox array (1 or 2 dimensional).
+    Convert a numpy array of bbox coordinates (xyxy) to an array of bbox centroids.
+    Return an array of centroids, each row consisting of x, y centroid coordinates.
+
     xyxy - bbox array in x1, y1, x2, y2
     """
     if len(xyxy.shape) == 1:
@@ -272,8 +186,10 @@ def xyxy_to_centroid(xyxy):
 
 def centwh_to_xyxy(centwh):
     """
+    Convert a numpy array of bbox coordinates in center x, y, width, height format to xyxy format
+
     :param centwh: bboxes in xywh format where x, y are the centroid coordinates
-    :return: bboxes in xyxy format
+    :return: bboxes in xyxy format (top-left, bottom-right corners)
     """
     if type(centwh) == list or len(centwh.shape) == 1:
         cx, cy, w, h = centwh[:4]
@@ -289,8 +205,13 @@ def centwh_to_xyxy(centwh):
 
 def nearest_detection(detections, prev_centroid):
     """
-    Return the nearest detection to the previous centroid or the detection
-    if there's only one.
+    Return the detection from the detections array whose centroid is closest to the previous centroid.
+    When only one detection is supplied this detection is returned.
+
+    detections - A numpy detections array.
+    prev_centroid - The centroid of a previous detection (x, y) to compare to.
+
+    The returned detection is a single row from the detections array.
     """
     if detections.shape[0] > 1:
         detected_centroids = xyxy_to_centroid(detections)
@@ -300,3 +221,36 @@ def nearest_detection(detections, prev_centroid):
         return detections[arg_best]
     else:
         return detections[0]
+
+
+def bbox_iou(box1, box2, x1y1x2y2=True):
+    """
+    Returns the IoU of two bounding boxes
+    """
+    if not x1y1x2y2:
+        # Transform from center and width to exact coordinates
+        b1_x1, b1_x2 = box1[:, 0] - box1[:, 2] / 2, box1[:, 0] + box1[:, 2] / 2
+        b1_y1, b1_y2 = box1[:, 1] - box1[:, 3] / 2, box1[:, 1] + box1[:, 3] / 2
+        b2_x1, b2_x2 = box2[:, 0] - box2[:, 2] / 2, box2[:, 0] + box2[:, 2] / 2
+        b2_y1, b2_y2 = box2[:, 1] - box2[:, 3] / 2, box2[:, 1] + box2[:, 3] / 2
+    else:
+        # Get the coordinates of bounding boxes
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
+
+    # get the corrdinates of the intersection rectangle
+    inter_rect_x1 = torch.max(b1_x1, b2_x1)
+    inter_rect_y1 = torch.max(b1_y1, b2_y1)
+    inter_rect_x2 = torch.min(b1_x2, b2_x2)
+    inter_rect_y2 = torch.min(b1_y2, b2_y2)
+    # Intersection area
+    inter_area = torch.clamp(inter_rect_x2 - inter_rect_x1 + 1, min=0) * torch.clamp(
+        inter_rect_y2 - inter_rect_y1 + 1, min=0
+    )
+    # Union Area
+    b1_area = (b1_x2 - b1_x1 + 1) * (b1_y2 - b1_y1 + 1)
+    b2_area = (b2_x2 - b2_x1 + 1) * (b2_y2 - b2_y1 + 1)
+
+    iou = inter_area / (b1_area + b2_area - inter_area + 1e-16)
+
+    return iou

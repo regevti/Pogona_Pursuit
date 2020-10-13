@@ -423,8 +423,13 @@ def train_trajectory_model(
                 torch.save(model.state_dict(), path + f"/{model_name}_best.pth")
 
             print(
-                f"### Eval epoch: {epoch}, Test set mean ADE: {ADE:.3f}, mean FDE: {FDE:.3f}"
+                f"### Eval epoch: {epoch}, Test set mean ADE: {ADE:.3f}, mean FDE: {FDE:.3f}", end=""
             )
+            if best_epoch == epoch:
+                print(" BEST")
+            else:
+                print("")
+
             if save_each_eval_model:
                 torch.save(model.state_dict(), path + f"/{model_name}_{epoch}.pth")
 
@@ -589,8 +594,7 @@ def eval_trajectory_predictor(trajectory_predictor, bboxes, show_progress=True):
     """
     saw_non_nan = False
     forecasts = []
-
-    sum_time = 0
+    times = []
 
     # collect forecasts
     if show_progress:
@@ -611,7 +615,7 @@ def eval_trajectory_predictor(trajectory_predictor, bboxes, show_progress=True):
 
             start_time = time.time()
             forecast = trajectory_predictor.update_and_predict(history)
-            sum_time += time.time() - start_time
+            times.append(time.time() - start_time)
 
             forecasts.append(forecast)
 
@@ -640,7 +644,8 @@ def eval_trajectory_predictor(trajectory_predictor, bboxes, show_progress=True):
     results = {}
     results["avg ADE"] = sum_ADE / len(forecasts)
     results["avg FDE"] = sum_FDE / len(forecasts)
-    results["avg time (ms)"] = sum_time / len(forecasts) * 1000
+    results["avg time (ms)"] = sum(times) / len(forecasts) * 1000
+    results["times"] = times
     return results, forecasts
 
 

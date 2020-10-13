@@ -220,8 +220,8 @@ class GRUEncDecSched(nn.Module):
         self.tie_enc_dec = tie_enc_dec
         self.use_gru_cell = use_gru_cell
 
-        self.epsi=0
-        self.target=None
+        self.epsi = 0
+        self.target = None
 
         self.dropout_layer = torch.nn.Dropout(dropout)
 
@@ -272,8 +272,8 @@ class GRUEncDecSched(nn.Module):
             if self.epsi and i > 0:
                 coins = torch.rand(input_seq.shape[0])
                 take_true = (coins < self.epsi).unsqueeze(1).to(self.device)
-                truths = take_true*vel_target[:, i - 1]
-                farts = (~take_true)*vel
+                truths = take_true * vel_target[:, i - 1]
+                farts = (~take_true) * vel
                 vel = truths + farts
 
             if self.use_gru_cell:
@@ -291,7 +291,12 @@ class GRUEncDecSched(nn.Module):
         # cumsum marginally improves generalization
         return out.cumsum(dim=1) + offset
 
+
 class GRUEncDecPosVel(nn.Module):
+    """
+    Encoder-decoder architechture with GRU cells as encoder and decoder
+    """
+
     def __init__(
             self,
             output_seq_size=20,
@@ -302,7 +307,6 @@ class GRUEncDecPosVel(nn.Module):
             use_gru_cell=False
     ):
         """
-        Encoder-decoder architechture with GRU cells as encoder and decoder
         :param output_seq_size: forecast length (defualt: 20)
         :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
         :param GRU_layers: number of GRU layers (defualt: 1)
@@ -378,10 +382,12 @@ class GRUEncDecPosVel(nn.Module):
 
 
 class ConvEncoder(nn.Module):
+    """
+    Convolutional encoder to map cropped head image to a low dimensional vector. Trained jointly with
+    the the rest of the network. Constant architechture with 2 conv layers.
+    """
     def __init__(self, in_width, in_height, out_size, conv1_out_chan, conv2_out_chan):
         """
-        Convolutional encoder to map cropped head image to a low dimensional vector. Trained jointly with
-        the the rest of the network. Constant architechture with 2 conv layers.
         :param in_width: image width
         :param in_height: image height
         :param out_size: 1d dimension of the embedding vector
@@ -495,82 +501,14 @@ class GRUEncDecWithHead(nn.Module):
         return out.cumsum(dim=1) + offset
  
 
-class GRUPositionEncDec(nn.Module):
-    def __init__(
-            self,
-            output_size=2,
-            output_seq_size=20,
-            hidden_size=64,
-            embedding_size=8,
-            GRU_layers=1,
-            dropout=0.0,
-            tie_enc_dec=False,
-    ):
-        super(GRUPositionEncDec, self).__init__()
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.output_size = output_size
-        self.output_seq_size = output_seq_size
-        self.hidden_size = hidden_size
-        self.tie_enc_dec = tie_enc_dec
-
-        self.vel_embed = torch.nn.Linear(in_features=2, out_features=embedding_size)
-        # self.pos_embed = torch.nn.Linear(in_features=2, out_features=embedding_size)
-        self.pos_embed = PositionalEncoding(embedding_size)
-
-        # self.dropout_layer = torch.nn.Dropout(dropout)
-
-        self.encoderGRU = nn.GRU(
-            input_size=embedding_size,
-            hidden_size=hidden_size,
-            num_layers=GRU_layers,
-            batch_first=True,
-        )
-
-        if not tie_enc_dec:
-            self.decoderGRU = nn.GRU(
-                input_size=embedding_size,
-                hidden_size=hidden_size,
-                num_layers=GRU_layers,
-                batch_first=True,
-            )
-        else:
-            self.decoderGRU = self.encoderGRU
-
-        self.linear = nn.Linear(in_features=hidden_size, out_features=output_size)
-
-    def forward(self, input_seq):
-        offset = input_seq[:, -1, :2].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-        diffs = input_seq[:, 1:, :2] - input_seq[:, :-1, :2]
-
-        vel_embedding = self.vel_embed(diffs)
-        # pos_embedding = self.pos_embed(input_seq[:, :-1])
-        embedding = self.pos_embed(vel_embedding)
-
-        _, hn = self.encoderGRU(embedding)
-        out_list = []
-
-        prev_x = diffs[:, -1]
-
-        for i in range(self.output_seq_size):
-            prev_x_embedding = self.vel_embed(prev_x)
-            _, hn = self.decoderGRU(prev_x_embedding.unsqueeze(1), hn)
-            lin = self.linear(hn[-1])
-            x = lin + prev_x
-            out_list.append(x.unsqueeze(1))
-            prev_x = x
-
-        out = torch.cat(out_list, dim=1)
-        # return out
-        return out + offset
-
-
 class VelLinear(nn.Module):
+    """
+    A baseline linear fully-connected model with one hidden layer and RELU activation.
+    """
     def __init__(
             self,
-            input_size=2,
-            output_size=2,
+            input_size=4,
+            output_size=4,
             input_seq_size=20,
             output_seq_size=20,
             hidden_size=64,
@@ -591,7 +529,6 @@ class VelLinear(nn.Module):
         )
 
     def forward(self, input_seq):
-        offset = input_seq[:, -1, :2].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
         diffs = input_seq[:, 1:] - input_seq[:, :-1]
 
         x = self.dropout_layer(diffs)
@@ -601,4 +538,4 @@ class VelLinear(nn.Module):
 
         out = x.view(x.shape[0], self.input_seq_size, self.output_size)
 
-        return out + offset
+        return out + input_seq[:, -1][:, None, :]
