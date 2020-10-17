@@ -140,7 +140,7 @@ RUN cd ~ && \
 RUN mkdir /arena
 WORKDIR /arena
 
-COPY ./requirements/arena.txt .
+COPY ./requirements .
 COPY ./Arena .
 
 RUN apt-get -qq update && apt-get -qq install -y lsb-release \
