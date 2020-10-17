@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arena - Explore</title>
+    <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-4.5.0/css/bootstrap.css')}}">
+    <script type="text/javascript" src="{{ url_for('static', filename='gijgo.min.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='gijgo.min.css')}}">
+    <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet"
+          integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+</head>
+
+<body>
+<div class="row m-4">
+    <form class="col-2" id="options-form">
+        <label for="startDate">Start Date</label>
+        <input id="startDate" width="276"/>
+
+        <label for="endDate">End Date</label>
+        <input id="endDate" width="276"/>
+
+        <div class="mt-3">
+            <label for="bugType">Bug Type</label>
+            <input id="bugType" type="text" class="form-control"/>
+        </div>
+
+        <div class="mt-3">
+            <label for="animalId">Animal ID</label>
+            <input id="animalId" type="number" class="form-control"/>
+        </div>
+
+        <div class="mt-3">
+            <button type="submit" class="btn btn-primary mr-2">Search</button>
+        </div>
+
+    </form>
+
+    <div class="col">
+        <div id="results-div"></div>
+    </div>
+</div>
+
+<script>
+  var today = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  $('#startDate').datepicker({
+    uiLibrary: 'bootstrap4',
+    iconsLibrary: 'fontawesome',
+    value: `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`,
+    format: 'yyyy-mm-dd',
+    maxDate: function () {
+      return $('#endDate').val();
+    }
+  });
+  $('#endDate').datepicker({
+    uiLibrary: 'bootstrap4',
+    iconsLibrary: 'fontawesome',
+    format: 'yyyy-mm-dd',
+    value: `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`,
+    minDate: function () {
+      return $('#startDate').val();
+    }
+  });
+  $('#options-form').submit(function (event) {
+    event.preventDefault()
+    $.ajax({
+        url: "/experiment_results",
+        type: "POST",
+        data: JSON.stringify({
+          start_date: $("#startDate").val(),
+          end_date: $("#endDate").val(),
+          bug_types: $("#bugType").val(),
+          animal_id: $("#animalId").val()
+        }),
+        contentType: "application/json",
+        beforeSend: function () {
+          $("#results-div").text('loading...')
+        },
+        success: function (data) {
+          $("#results-div").html(data)
+        }
+      })
+  })
+</script>
+
+<style>
+    table {
+        width: 100%
+    }
+
+    table.dataframe, .dataframe th, .dataframe td {
+        border: none;
+        border-bottom: 1px solid #C8C8C8;
+        border-collapse: collapse;
+        text-align: left;
+        padding: 10px;
+        margin-bottom: 40px;
+        font-size: 0.9em;
+    }
+
+</style>
+</body>

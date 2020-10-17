@@ -1,0 +1,15 @@
+FROM python:3.6
+
+RUN apt-get update && apt-get install -y supervisor mosquitto
+
+COPY mosquitto/mosquitto.conf /etc/mosquitto/mosquitto.conf
+COPY mosquitto/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY Arena /arena
+
+COPY ./requirements/base.txt .
+RUN pip install -r base.txt
+
+RUN mkdir -p /var/log/supervisor
+
+CMD ["/usr/bin/supervisord"]
+

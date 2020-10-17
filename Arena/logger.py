@@ -1,0 +1,115 @@
+import os
+import sys
+import logging
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
+from celery import Celery, Task
+from celery.utils.log import get_task_logger
+
+from parallel_port import ParallelPort
+from cache import CacheColumns, RedisCache, REDIS_HOST
+import paho.mqtt.client as mqtt
+
+
+MQTT_HOST = os.environ.get('MQTT_HOST', 'mqtt')
+EXPERIMENT_LOG = 'event/log/experiment'
+LOG_TOPICS = {
+    'touch': 'screen_touches.csv',
+    'hit': 'hits.csv',
+    'prediction': 'predictions.csv',
+    'trajectory': 'bug_trajectory.csv'
+}
+logger = get_task_logger(__name__)
+h = logging.StreamHandler(sys.stdout)
+logger.addHandler(h)
+
+mqtt = mqtt.Client()
+cache = RedisCache()
+parport = None
+if os.environ.get('IS_USE_PARPORT'):
+    try:
+        parport = ParallelPort()
+    except Exception as exc:
+        logger.warning(f'Error loading feeder: {exc}')
+
+
+def is_always_reward():
+    return cache.get(CacheColumns.ALWAYS_REWARD)
+
+
+def log(msg):
+    logger.info(msg)
+    if mqtt is not None:
+        mqtt.connect(MQTT_HOST)
+        mqtt.publish(EXPERIMENT_LOG, msg)
+
+
+app = Celery('logger', broker=f'redis://{REDIS_HOST}:6379/0')
+
+
+@app.task
+def handle_hit(payload):
+    if is_always_reward() and payload.get('is_hit') and payload.get('is_reward_bug'):
+        cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, False)  # stop trial
+        return reward()
+
+
+@app.task
+def end_experiment():
+    if cache.get(CacheColumns.EXPERIMENT_TRIAL_ON):
+        end_trial()
+    cache.delete(CacheColumns.EXPERIMENT_NAME)
+    cache.delete(CacheColumns.EXPERIMENT_PATH)
+    log('>> experiment finished\n')
+    if is_always_reward:
+        cache.delete(CacheColumns.ALWAYS_REWARD)
+
+
+@app.task
+def end_trial():
+    cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
+    if parport:
+        parport.led_lighting('off')
+
+
+@app.task
+def reward(is_force=False):
+    if parport and (is_force or is_always_reward()):
+        parport.feed()
+        log('>> Reward was given')
+        return True
+
+
+@app.task
+def led_light(state):
+    if parport:
+        parport.led_lighting(state)
+
+
+@app.task
+def save_to_csv(topic, payload):
+    try:
+        if topic == 'trajectory':
+            df = pd.DataFrame(payload)
+        else:
+            df = pd.DataFrame([payload])
+            df['timestamp'] = datetime.now()
+        filename = get_csv_filename(topic)
+        if filename.exists():
+            df.to_csv(filename, mode='a', header=False)
+        else:
+            df.to_csv(filename)
+        logger.info(f'saved to {filename}')
+    except Exception as exc:
+        logger.warning(f'ERROR saving event to csv; {exc}')
+
+
+def get_csv_filename(topic) -> Path:
+    if cache.get(CacheColumns.EXPERIMENT_NAME):
+        parent = cache.get(CacheColumns.EXPERIMENT_TRIAL_PATH)
+    else:
+        parent = f'events/{datetime.today().strftime("%Y%m%d")}'
+        Path(parent).mkdir(parents=True, exist_ok=True)
+
+    return Path(f'{parent}/{LOG_TOPICS[topic]}')

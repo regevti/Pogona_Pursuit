@@ -9,7 +9,7 @@ load_dotenv()
 from utils import titlize, get_predictor_model, run_command, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTPublisher, SUBSCRIPTION_TOPICS, HOST as mqtt_host
-from experiment import Experiment, REWARD_TYPES
+from experiment import Experiment, REWARD_TYPES, ExperimentAnalyzer
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
     CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
 
@@ -31,6 +31,14 @@ def index():
 @app.route('/explore')
 def explore():
     return render_template('explore.html')
+
+
+@app.route('/experiment_results', methods=['POST'])
+def experiment_results():
+    data = request.json
+    ea = ExperimentAnalyzer(**data)
+    df = ea.get_experiments()
+    return Response(df.to_html(classes='table-responsive'))
 
 
 @app.route('/record', methods=['POST'])

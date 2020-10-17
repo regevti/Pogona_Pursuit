@@ -106,3 +106,10 @@ def get_datetime_string():
 
 def titlize(s: str):
     return s.replace('_', ' ').title()
+
+
+def to_integer(x):
+    try:
+        return int(x)
+    except Exception:
+        return x

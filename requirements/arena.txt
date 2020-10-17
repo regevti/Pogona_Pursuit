@@ -1,20 +1,11 @@
-pandas==1.0.3
-pyserial==3.4
-python-dateutil==2.8.1
+-r base.txt
+
+# Data Science
 jupyterlab
 tqdm
 matplotlib
 seaborn
 
-# queue messaging
-paho-mqtt==1.5.0
-
+# API
 Flask==1.1.2
 Flask-Caching==1.9.0
-redis==3.5.3
-python-dotenv==0.14.0
-pyparallel==0.2.2
-
-# Object Detection
-torch==1.6
-torchvision==0.7.0

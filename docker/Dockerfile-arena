@@ -150,4 +150,7 @@ RUN pip3 install -r arena.txt
 RUN pip3 install spinnaker/spinnaker_python-2.0.0.147-cp36-cp36m-linux_x86_64.whl
 RUN cd spinnaker && (echo "yes" && cat) | ./install_spinnaker.sh
 
+ENV TZ=Asia/Jerusalem
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 RUN echo 'alias python="python3"' >> ~/.bashrc
