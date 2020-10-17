@@ -176,7 +176,7 @@ class ExperimentAnalyzer:
 
     def get_experiments(self) -> pd.DataFrame:
         res_df = []
-        for exp_path in Path('/Volumes/Data/regev/Pogona_Pursuit/Arena/experiments').glob('*'):
+        for exp_path in Path(EXPERIMENTS_DIR).glob('*'):
             info_path = exp_path / 'experiment.log'
             if not info_path.exists() or not self.is_in_date_range(exp_path):
                 continue
