@@ -152,7 +152,7 @@ class SpinCamera:
             i = 0
             while self.is_acquire_allowed(i):
                 try:
-                    image_result = self.cam.GetNextImage()  # Retrieve next received image
+                    image_result = self.cam.GetNextImage(2000)  # Retrieve next received image
                     if i == 0:
                         self.start_acquire_time = time.time()
                         self.logger.info('Acquisition Started')
