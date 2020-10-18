@@ -98,6 +98,7 @@ export default {
       movementType: 'line',
       numOfBugs: 0,
       isStopOnReward: false,
+      isHandlingTouch: false,
       timeBetweenBugs: 2000,
       bloodDuration: 2000,
       timeInEdge: 2000,
@@ -120,8 +121,7 @@ export default {
   },
   mqtt: {
     'event/command/hide_bugs'(data) {
-      this.numOfBugs = 0
-      this.initBoard()
+      this.clearBoard()
     },
     'event/command/init_bugs'(options) {
       options = JSON.parse(options)
@@ -179,15 +179,26 @@ export default {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
       }
-      if (this.trajectoryLogInterval) {
-        this.endLogTrajectory()
-      }
       if (isLogTrajectory) {
         this.startLogTrajectory()
       }
       this.spawnBugs(this.numOfBugs)
       this.$nextTick(function () {
         console.log('start animation...')
+        this.animate()
+      })
+    },
+    clearBoard() {
+      this.numOfBugs = 0
+      if (this.animationHandler) {
+        this.$refs.bugChild = []
+        cancelAnimationFrame(this.animationHandler)
+      }
+      if (this.trajectoryLogInterval) {
+        this.endLogTrajectory()
+      }
+      this.$nextTick(function () {
+        console.log('Clear board')
         this.animate()
       })
     },
@@ -210,6 +221,8 @@ export default {
       this.handleTouchEvent(event.x, event.y)
     },
     handleTouchEvent(x, y) {
+      if (this.isHandlingTouch || !this.$refs.bugChild) { return }
+      this.isHandlingTouch = true
       x -= this.canvas.offsetLeft
       y -= this.canvas.offsetTop
       console.log(x, y)
@@ -231,6 +244,7 @@ export default {
           bug_type: bug.currentBugType
         }))
       }
+      this.isHandlingTouch = false
     },
     destruct(bugIndex, x, y, isRewardBug) {
       if (this.$refs.bugChild[bugIndex].isDead) {
@@ -244,14 +258,14 @@ export default {
         this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
         if (this.$refs.bugChild.length === 0) {
           if (this.isStopOnReward && isRewardBug) {
-            this.numOfBugs = 0
+            this.clearBoard()
             this.$mqtt.publish('event/command/end_trial', '')
+          } else {
+            const startNewGameTimeout = setTimeout(() => {
+              this.initBoard()
+              clearTimeout(startNewGameTimeout)
+            }, this.timeBetweenBugs)
           }
-          const startNewGameTimeout = setTimeout(() => {
-            cancelAnimationFrame(this.animationHandler)
-            this.initBoard()
-            clearTimeout(startNewGameTimeout)
-          }, this.timeBetweenBugs)
         }
         clearTimeout(bloodTimeout)
       }, this.bloodDuration)
@@ -286,9 +300,10 @@ export default {
       this.$refs.bugChild.forEach(bug => bug.escape(event.x, event.y))
     },
     startLogTrajectory() {
+      console.log('trajectory log started...')
       this.trajectoryLogInterval = setInterval(() => {
         let bug = this.$refs.bugChild[0]
-        if (bug && bug.isInsideBoard) {
+        if (bug && bug.isInsideBoard()) {
           this.trajectoryLog.push({
             time: Date.now(),
             x: bug.x,

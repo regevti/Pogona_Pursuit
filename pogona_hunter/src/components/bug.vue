@@ -69,24 +69,24 @@ export default {
     initBug(x, y, dx, dy) {
       if (this.isMoveInCircles) {
         this.r0 = [this.canvas.width / 2, this.canvas.height]
-        this.r = Math.min(this.canvas.width / 2, this.canvas.height / 2) - this.canvas.height / 10
+        this.r = Math.min(this.canvas.width / 2, this.canvas.height) * 0.75
       }
       this.x = x
       this.y = y
       this.dx = dx
       this.dy = dy
       this.step = 0
-      this.theta = Math.atan2(y, x)
+      this.theta = Math.PI
       this.getNextBugType()
     },
     move(particles) {
-      if (this.isDead || this.isStatic) {
+      if (this.isDead || this.isStatic || this.isOutEdged) {
         this.draw()
         return
       }
       this.edgeDetection()
       if (this.isMoveInCircles) {
-        this.theta += Math.abs(this.dx) / this.r
+        this.theta += Math.abs(this.dx) * Math.sqrt(2) / this.r
         this.x = this.r0[0] + this.r * Math.cos(this.theta)
         this.y = this.r0[1] + this.r * Math.sin(this.theta)
       } else {
@@ -131,10 +131,13 @@ export default {
       this.isOutEdged = true
       let x = this.xEdge()
       let y = this.yEdge()
-      this.initBug(x, y, dx, dy)
-      const outEdgeTimeout = setTimeout(() => {
-        this.isOutEdged = false
-        clearTimeout(outEdgeTimeout)
+      const initAfterEdgeTimeout = setTimeout(() => {
+        this.initBug(x, y, dx, dy)
+        const outEdgeTimeout = setTimeout(() => {
+          this.isOutEdged = false
+          clearTimeout(outEdgeTimeout)
+        }, 50)
+        clearTimeout(initAfterEdgeTimeout)
       }, this.timeInEdge)
     },
     xEdge() {
