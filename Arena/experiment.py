@@ -1,19 +1,22 @@
 import re
+import time
+import json
+import inspect
+import argparse
+import pandas as pd
 from dateutil import parser as date_parser
+from multiprocessing import Process
+from multiprocessing.pool import ThreadPool
+from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
+
 from utils import get_datetime_string, mkdir, is_debug_mode, turn_display_on, turn_display_off, to_integer
 from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTPublisher, LOG_TOPICS, SUBSCRIPTION_TOPICS
 from logger import EXPERIMENT_LOG
-from pathlib import Path
-from multiprocessing import Process, Queue
-import pandas as pd
-import argparse
-import inspect
-import time
-import json
+
 
 mqtt_client = MQTTPublisher()
 EXPERIMENTS_DIR = 'experiments'
@@ -87,7 +90,7 @@ class Experiment:
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.trial_duration)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration + self.iti)
         self.log(f'>> Trial {self.current_trial} recording started')
-        process = self.start_recording()
+        pool = self.start_recording()
         time.sleep(EXTRA_TIME_RECORDING)
         mqtt_client.publish_command('init_bugs', self.bug_options)
         self.log(f'>> Trial {self.current_trial} bugs initiated')
@@ -97,12 +100,10 @@ class Experiment:
         time.sleep(EXTRA_TIME_RECORDING)
         mqtt_client.publish_command('end_trial')
         turn_display_off()
-        process.join(2)
-        if process.is_alive():
-            process.terminate()
-            process.join(10)
+        pool.terminate()
+        pool.join()
 
-    def start_recording(self) -> Process:
+    def start_recording(self) -> ThreadPool:
         """Start cameras recording on a separate process"""
         def _start_recording():
             record_duration = self.trial_duration + 2 * EXTRA_TIME_RECORDING
@@ -115,10 +116,10 @@ class Experiment:
             else:
                 time.sleep(record_duration)
 
-        p = Process(target=_start_recording)
-        p.start()
+        pool = ThreadPool(processes=1)
+        pool.apply_async(_start_recording)
 
-        return p
+        return pool
 
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:
