@@ -91,13 +91,7 @@ class Experiment:
         time.sleep(EXTRA_TIME_RECORDING)
         mqtt_client.publish_command('init_bugs', self.bug_options)
         self.log(f'>> Trial {self.current_trial} bugs initiated')
-
-        t0 = time.time()
-        while time.time() - t0 < self.trial_duration:
-            process.join(1)
-            if not process.is_alive():
-                break
-
+        time.sleep(self.trial_duration)
         mqtt_client.publish_command('hide_bugs')
         self.log(f'>> Trial {self.current_trial} bugs stopped')
         time.sleep(EXTRA_TIME_RECORDING)
@@ -113,8 +107,8 @@ class Experiment:
             record_duration = self.trial_duration + 2 * EXTRA_TIME_RECORDING
             if not is_debug_mode():
                 acquire_stop = {'record_time': record_duration}
-                if self.is_always_reward:
-                    acquire_stop.update({'trial_alive': True})
+                # if self.is_always_reward:
+                #     acquire_stop.update({'trial_alive': True})
                 record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
                        is_use_predictions=self.is_use_predictions, **acquire_stop)
             else:
