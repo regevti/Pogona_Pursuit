@@ -248,8 +248,9 @@ class ExperimentAnalyzer:
         exp_df['reward_accuracy'] = to_percent(group(res_df.query('is_reward_bug==1'))['is_reward_bug'].count() / num_strikes)
 
         exp_df['exp_time'] = [date_parser.parse(z[0].split('_')[-1]) for z in exp_group.count().index.to_list()]
+        exp_df['exp_time'] = exp_df['exp_time'].dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem')
         trial_ids = exp_df.index.get_level_values(1)
-        first_strikes = (exp_group['time'].first() - exp_df['exp_time']).astype('timedelta64[s]')
+        first_strikes = (exp_group['time'].first().dt.tz_convert('Asia/Jerusalem') - exp_df['exp_time']).astype('timedelta64[s]')
         trial_start = exp_group['trial_duration'].first() * (trial_ids - 1) + exp_group['iti'].first() * (trial_ids - 1)
         exp_df['time_to_first_strike'] = first_strikes - trial_start
 
