@@ -58,8 +58,8 @@ export default {
       return img
     },
     getNextBugType() {
-      if (!Array.isArray(this.bugTypes)) {
-        this.currentBugType = this.bugTypes
+      if (this.bugTypes.length === 1) {
+        this.currentBugType = this.bugTypes[0]
         return
       }
       let nextBugOptions = this.bugTypes.filter(bug => bug !== this.currentBugType)
