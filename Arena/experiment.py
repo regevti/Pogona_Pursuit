@@ -97,9 +97,10 @@ class Experiment:
         time.sleep(EXTRA_TIME_RECORDING)
         mqtt_client.publish_command('end_trial')
         turn_display_off()
-        process.join(10)
+        process.join(2)
         if process.is_alive():
             process.terminate()
+            process.join(10)
 
     def start_recording(self) -> Process:
         """Start cameras recording on a separate process"""
