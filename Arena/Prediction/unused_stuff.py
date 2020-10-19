@@ -1,4 +1,223 @@
-# unused functions that we wanted to keep hanging around
+"""
+Archive containing:
+Old code - tested code that we replaced with better solutions
+Discontinued code - functions and scripts we didn't continue using. Probably won't work with new code and objects.
+But we spent some time writing it, and it might contain some useful code or ideas to be used in other code
+"""
+
+"""
+-----------------------  Utility functions ------------------------------
+"""
+
+
+def hsv_to_rgb(H, S, V):
+    """
+    transform angle to BGR color as 3-tuple
+    """
+    C = S * V
+    X = C * (1 - np.abs((H / 60) % 2 - 1))
+    m = V - C
+
+    if H >= 0 and H < 60:
+        r, g, b = C, X, 0
+    elif H >= 60 and H < 120:
+        r, g, b = X, C, 0
+    elif H >= 120 and H < 180:
+        r, g, b = 0, C, X
+    elif H >= 180 and H < 240:
+        r, g, b = 0, X, C
+    elif H >= 240 and H < 300:
+        r, g, b = X, 0, C
+    else:
+        r, g, b = C, 0, X
+
+    def roun(x):
+        return int(round(x))
+
+    # return b,g,r
+    return roun((b + m) * 255), roun((g + m) * 255), roun((r + m) * 255)
+
+
+def vec_to_bgr(vec):
+    """
+    input: 2D vector
+    return: 3-tuple, specifying BGR color selected using HSV formula.
+    """
+
+    # transform to [-pi,pi] and then to degrees
+    angle = np.arctan2(vec[1], vec[0]) * 180 / np.pi
+
+    # transform to [0,360]
+    angle = (angle + 360) % 360
+    return hsv_to_rgb(angle, 1, 1)
+
+
+def time_to_bgr(k, arrowWindow):  # DOES NOT WORK - TODO
+    # map the relative position of the frame to [0,360] angle and then to hue
+    rel = (arrowWindow - k) / arrowWindow
+    return hsv_to_rgb(0, 1, rel)
+
+
+"""
+-----------------------  Less important video functions ------------------------------
+"""
+
+
+def draw_arrow(
+        frame,
+        frameCounter,
+        centroids,
+        arrowWindow,
+        k,
+        vis_angle=True,
+        windowSize=1,
+        scale=2.5,
+):
+    """
+    draws the direction of the velocity vector from (arrowWindow) frames back
+    directions based on the first discrete derivative of the 2D coordinates of
+    windowSize consecutive centroids of the detecions, if both exist
+    """
+
+    # initial arrow
+    if frameCounter < windowSize:
+        return
+
+    # if no prediction at t - windowSize, bo drawing
+    if np.isnan(centroids[frameCounter - windowSize, 0]) or np.isnan(
+            centroids[frameCounter, 0]
+    ):
+        return
+
+    arrowBase = tuple(centroids[frameCounter - windowSize].astype(int))
+    arrowHead = tuple(centroids[frameCounter].astype(int))
+
+    # scale head for better visibility
+    extend_x = scale * (arrowHead[0] - arrowBase[0])
+    extend_y = scale * (arrowHead[1] - arrowBase[1])
+
+    new_x = arrowHead[0] + extend_x
+    new_y = arrowHead[1] + extend_y
+
+    if new_x < 0:
+        new_x = 0
+    if new_x > frame.shape[1]:
+        new_x = frame.shape[1]
+
+    if new_y < 0:
+        new_y = 0
+    if new_y > frame.shape[0]:
+        new_y = frame.shape[0]
+
+    arrowHead = (new_x, new_y)
+
+    # compute color based on angle or time
+    if vis_angle:
+        vec_color = vec_to_bgr(
+            [arrowHead[0] - arrowBase[0], arrowHead[1] - arrowBase[1]]
+        )
+    else:
+        vec_color = time_to_bgr(k, arrowWindow)
+
+    cv.arrowedLine(
+        frame,
+        arrowBase,
+        arrowHead,
+        color=vec_color,
+        thickness=2,
+        tipLength=0.2,
+        line_type=cv.LINE_AA,
+    )
+
+
+def draw_bounding_boxes(frame,
+                        detections,
+                        color=(0, 0, 255),
+                        is_xyxy=True,
+                        ):
+    """
+    frame - a numpy array representing the image.
+    detections - [(x, y, x, y, conf)...] bounding boxes array.
+    if is_xyxy==False, then assumes detections is xywh
+
+    draws bounding boxes on frame (in place).
+    """
+
+    font = cv.FONT_HERSHEY_COMPLEX
+    scale = 0.4
+    thickness = cv.FILLED
+    margin = 4
+
+    if detections is not None:
+        for x1, y1, c, d, conf in detections:
+            x1 = int(x1)
+            y1 = int(y1)
+
+            x2, y2, box_w, box_h = None, None, None, None
+            if is_xyxy:
+                x2 = int(c)
+                y2 = int(d)
+            else:
+                box_w = int(c)
+                box_h = int(d)
+
+            text = str(round(conf, 2))
+            txt_size = cv.getTextSize(text, font, scale, thickness)
+            end_x = int(x1 + txt_size[0][0] + margin)
+            end_y = int(y1 + txt_size[0][1] + margin)
+
+            cv.rectangle(frame, (x1, y1), (end_x, end_y), color, thickness)
+
+            if is_xyxy:
+                cv.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            else:
+                cv.rectangle(frame, (x1, y1), (x1 + box_w, y1 + box_h), color, 2)
+            cv.putText(
+                frame,
+                text,
+                (x1, end_y - margin),
+                font,
+                scale,
+                (255, 255, 255),
+                1,
+                cv.LINE_AA,
+            )
+
+
+def draw_k_arrows(
+        frame, frameCounter, centroids, arrowWindow, visAngle, windowSize, scale=5
+):
+    for k in range(arrowWindow):
+        draw_arrow(
+            frame,
+            frameCounter - k,
+            centroids,
+            arrowWindow,
+            k,
+            visAngle,
+            windowSize,
+            scale,
+        )
+
+
+def draw_k_centroids(frame, frameCounter, centroids, k, color=(0, 0, 255)):
+    if k > frameCounter:
+        k = frameCounter - 1
+
+    for j in range(k):
+        if np.isnan(centroids[frameCounter - j][0]):
+            continue
+        x = int(centroids[frameCounter - j][0])
+        y = int(centroids[frameCounter - j][1])
+        cv.circle(
+            frame,
+            center=(x, y),
+            radius=2,
+            color=color,
+            thickness=-1,
+            lineType=cv.LINE_AA,
+        )
+
 
 def draw_figure_beside_frame(write_frame,
                          vid_frame,
@@ -433,7 +652,6 @@ def plot_with_figure(input_name,
     
     
 # analyze timings
-
 XLIM=40
 YLIM=40
 
@@ -484,7 +702,7 @@ for i,k in enumerate(phases):
 
 
 """
-All path trajectory from predictor eval notebook
+All path trajectory from predictor eval notebook. Each ########.. signals new cell.
 """
 ##################################
 #trial_data = val[1]
@@ -586,3 +804,897 @@ plt.plot(np.linspace(0,1920,num=5),np.zeros(5),linestyle='--', color='r')
 
 ##################################
 
+# Unused stuff from seq2seq_predict.py
+
+class LSTMdense(nn.Module):
+    def __init__(
+            self,
+            output_seq_size,
+            embedding_size=None,
+            hidden_size=128,
+            LSTM_layers=2,
+            dropout=0.0,
+    ):
+        """
+        Implementation of RED predictor - LSTM for encoding and Linear layer for decoding.
+        "RED: A simple but effective Baseline Predictor for the TrajNet Benchmark"
+        From pedestrian trajectory prediction literature
+
+        :param output_seq_size: forecast length
+        :param embedding_size: output dimension of linear embedding layer of input (default: None)
+        :param hidden_size: dimension of hidden vector in each LSTM layer
+        :param LSTM_layers: number of LSTM layers
+        :param dropout: dropout normalization probability (default: 0)
+        """
+        super(LSTMdense, self).__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.hidden_size = hidden_size
+        self.LSTM_layers = LSTM_layers
+        self.output_seq_size = output_seq_size
+        self.output_dim = 4 * output_seq_size
+
+        if embedding_size is not None:
+            self.embedding_encoder = nn.Linear(in_features=4, out_features=embedding_size)
+        else:
+            embedding_size = 4
+            self.embedding_encoder = None
+
+        self.dropout = nn.Dropout(dropout)
+
+        self.LSTM = nn.LSTM(input_size=embedding_size,
+                            hidden_size=hidden_size,
+                            num_layers=LSTM_layers,
+                            dropout=dropout, )  # TODO: add batch first and remove transpose from forward?
+
+        self.out_dense = nn.Linear(in_features=hidden_size, out_features=self.output_dim)
+
+    def forward(self, input_seq):
+        # take the last coordinates from the input sequence and tile them to the output length shape, switch dims 0,1
+        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
+
+        # compute diffs
+        diffs = input_seq[:, 1:] - input_seq[:, :-1]
+
+        if self.embedding_encoder is not None:
+            diffs = self.embedding_encoder(diffs)
+
+        inp = self.dropout(diffs)
+
+        # ignores output (0) and cell (1,1)
+        _, (h_out, _) = self.LSTM(inp.transpose(0, 1))
+
+        output = self.out_dense(h_out[-1])  # take hidden state of last layer
+        output_mat = output.view(-1, self.output_seq_size, 4)
+
+        # add the offset to the deltas output
+        return offset + output_mat
+
+
+class GRUEncDec(nn.Module):
+    def __init__(
+            self,
+            output_seq_size=20,
+            hidden_size=64,
+            GRU_layers=1,
+            dropout=0.0,
+            tie_enc_dec=False,
+            use_gru_cell=False
+    ):
+        """
+        Encoder-decoder architechture with GRU cells as encoder and decoder
+        :param output_seq_size: forecast length (defualt: 20)
+        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
+        :param GRU_layers: number of GRU layers (defualt: 1)
+        :param dropout: probablity of dropout of input (default: 0)
+        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
+        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        """
+        super(GRUEncDec, self).__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.output_seq_size = output_seq_size
+        self.hidden_size = hidden_size
+        self.tie_enc_dec = tie_enc_dec
+        self.use_gru_cell = use_gru_cell
+
+        self.dropout_layer = torch.nn.Dropout(dropout)
+
+        self.encoderGRU = nn.GRU(input_size=4,
+                                 hidden_size=hidden_size,
+                                 num_layers=GRU_layers,
+                                 batch_first=True,
+                                 )
+
+        if not tie_enc_dec:
+            if use_gru_cell:
+                self.decoderGRU = nn.GRUCell(input_size=4,
+                                             hidden_size=hidden_size,
+                                             )
+            else:
+                self.decoderGRU = nn.GRU(input_size=4,
+                                         hidden_size=hidden_size,
+                                         num_layers=GRU_layers,
+                                         batch_first=True,
+                                         )
+        else:
+            self.decoderGRU = self.encoderGRU
+
+        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+
+    def forward(self, input_seq):
+        offset = input_seq[:, -1][:, None, :]
+        input_vels = input_seq[:, 1:] - input_seq[:, :-1]
+
+        input_vels = self.dropout_layer(input_vels)
+
+        _, hn = self.encoderGRU(input_vels)
+        out_list = []
+
+        # prev_x = input_seq[:, -1]
+        vel = input_vels[:, -1]
+        # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
+
+        if self.use_gru_cell:
+            hn = hn[0]
+
+        for i in range(self.output_seq_size):
+            vel = self.dropout_layer(vel)
+            if self.use_gru_cell:
+                hn = self.decoderGRU(vel, hn)
+                vel = self.linear(hn)
+            else:
+                _, hn = self.decoderGRU(vel.unsqueeze(1), hn)
+                vel = self.linear(hn[-1])
+
+            # x = vel + prev_x
+            out_list.append(vel.unsqueeze(1))
+
+        out = torch.cat(out_list, dim=1)
+        # add the deltas to the last location
+        # cumsum marginally improves generalization
+        return out.cumsum(dim=1) + offset
+
+
+class GRUEncDecSched(nn.Module):
+    def __init__(
+            self,
+            output_seq_size=20,
+            hidden_size=64,
+            GRU_layers=1,
+            dropout=0.0,
+            tie_enc_dec=False,
+            use_gru_cell=False
+    ):
+        """
+        Encoder-decoder architechture with GRU cells as encoder and decoder
+        :param output_seq_size: forecast length (defualt: 20)
+        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
+        :param GRU_layers: number of GRU layers (defualt: 1)
+        :param dropout: probablity of dropout of input (default: 0)
+        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
+        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        """
+        super().__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.output_seq_size = output_seq_size
+        self.hidden_size = hidden_size
+        self.tie_enc_dec = tie_enc_dec
+        self.use_gru_cell = use_gru_cell
+
+        self.epsi = 0
+        self.target = None
+
+        self.dropout_layer = torch.nn.Dropout(dropout)
+
+        self.encoderGRU = nn.GRU(input_size=4,
+                                 hidden_size=hidden_size,
+                                 num_layers=GRU_layers,
+                                 batch_first=True,
+                                 )
+
+        if not tie_enc_dec:
+            if use_gru_cell:
+                self.decoderGRU = nn.GRUCell(input_size=4,
+                                             hidden_size=hidden_size,
+                                             )
+            else:
+                self.decoderGRU = nn.GRU(input_size=4,
+                                         hidden_size=hidden_size,
+                                         num_layers=GRU_layers,
+                                         batch_first=True,
+                                         )
+        else:
+            self.decoderGRU = self.encoderGRU
+
+        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+
+    def forward(self, input_seq):
+        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
+        input_vels = input_seq[:, 1:] - input_seq[:, :-1]
+
+        input_vels = self.dropout_layer(input_vels)
+        if self.epsi:
+            vel_target = self.target[:, 1:] - self.target[:, :-1]
+
+        _, hn = self.encoderGRU(input_vels)
+        out_list = []
+
+        # prev_x = input_seq[:, -1]
+        vel = input_vels[:, -1]
+        # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
+
+        if self.use_gru_cell:
+            hn = hn[0]
+
+        for i in range(self.output_seq_size):
+
+            vel = self.dropout_layer(vel)
+
+            if self.epsi and i > 0:
+                coins = torch.rand(input_seq.shape[0])
+                take_true = (coins < self.epsi).unsqueeze(1).to(self.device)
+                truths = take_true * vel_target[:, i - 1]
+                model_preds = (~take_true) * vel
+                vel = truths + model_preds
+
+            if self.use_gru_cell:
+                hn = self.decoderGRU(vel, hn)
+                vel = self.linear(hn)
+            else:
+                _, hn = self.decoderGRU(vel.unsqueeze(1), hn)
+                vel = self.linear(hn[-1])
+
+            # x = vel + prev_x
+            out_list.append(vel.unsqueeze(1))
+
+        out = torch.cat(out_list, dim=1)
+        # add the deltas to the last location
+        # cumsum marginally improves generalization
+        return out.cumsum(dim=1) + offset
+
+
+class GRUEncDecPosVel(nn.Module):
+    """
+    Encoder-decoder architechture with GRU cells as encoder and decoder
+    """
+
+    def __init__(
+            self,
+            output_seq_size=20,
+            hidden_size=64,
+            GRU_layers=1,
+            dropout=0.0,
+            tie_enc_dec=False,
+            use_gru_cell=False
+    ):
+        """
+        :param output_seq_size: forecast length (defualt: 20)
+        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
+        :param GRU_layers: number of GRU layers (defualt: 1)
+        :param dropout: probablity of dropout of input (default: 0)
+        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
+        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        """
+        super().__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.output_seq_size = output_seq_size
+        self.hidden_size = hidden_size
+        self.tie_enc_dec = tie_enc_dec
+        self.use_gru_cell = use_gru_cell
+
+        self.dropout_layer = torch.nn.Dropout(dropout)
+
+        self.encoderGRU = nn.GRU(input_size=8,
+                                 hidden_size=hidden_size,
+                                 num_layers=GRU_layers,
+                                 batch_first=True,
+                                 )
+
+        if not tie_enc_dec:
+            if use_gru_cell:
+                self.decoderGRU = nn.GRUCell(input_size=8,
+                                             hidden_size=hidden_size,
+                                             )
+            else:
+                self.decoderGRU = nn.GRU(input_size=8,
+                                         hidden_size=hidden_size,
+                                         num_layers=GRU_layers,
+                                         batch_first=True,
+                                         )
+        else:
+            self.decoderGRU = self.encoderGRU
+
+        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+
+    def forward(self, input_seq):
+        input_vel = input_seq[:, 1:] - input_seq[:, :-1]
+        input_en = torch.cat((input_seq[:, :-1], input_vel), dim=-1)
+
+        input_en = self.dropout_layer(input_en)
+
+        _, hn = self.encoderGRU(input_en)
+        out_list = []
+
+        if self.use_gru_cell:
+            hn = hn[0]
+
+        x = input_seq[:, -1]
+        vel = input_vel[:, -1]
+
+        for i in range(self.output_seq_size):
+            vel = self.dropout_layer(vel)
+            input_dec = torch.cat((x, vel), dim=-1)
+
+            if self.use_gru_cell:
+                hn = self.decoderGRU(input_dec, hn)
+                vel = self.linear(hn)
+            else:
+                _, hn = self.decoderGRU(input_dec.unsqueeze(1), hn)
+                vel = self.linear(hn[-1])
+
+            # x = x + vel
+            out_list.append(vel.unsqueeze(1))
+
+        out = torch.cat(out_list, dim=1)
+
+        return out.cumsum(dim=1) + input_seq[:, -1][:, None, :]
+
+
+class ConvEncoder(nn.Module):
+    """
+    Convolutional encoder to map cropped head image to a low dimensional vector. Trained jointly with
+    the the rest of the network. Constant architechture with 2 conv layers.
+    """
+
+    def __init__(self, in_width, in_height, out_size, conv1_out_chan, conv2_out_chan):
+        """
+        :param in_width: image width
+        :param in_height: image height
+        :param out_size: 1d dimension of the embedding vector
+        :param conv1_out_chan: number of kernels in conv1
+        :param conv2_out_chan: number of kernels in conv2
+        """
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(in_channels=1, out_channels=conv1_out_chan, kernel_size=3)
+        self.conv2 = torch.nn.Conv2d(in_channels=conv1_out_chan, out_channels=conv2_out_chan, kernel_size=3)
+        self.pool = torch.nn.MaxPool2d(2)
+
+        inp = torch.rand(1, 1, in_width, in_height)
+        inp = self.conv1(inp)
+        inp = self.pool(inp)
+        inp = self.conv2(inp)
+        inp = self.pool(inp)
+
+        self.fc = torch.nn.Linear(inp.flatten().size(0), out_size)
+
+        self.out_size = out_size
+        self.in_width = in_width
+        self.in_height = in_height
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = torch.nn.functional.relu(x)
+        x = self.pool(x)
+        x = self.conv2(x)
+        x = torch.nn.functional.relu(x)
+        x = self.pool(x)
+        return self.fc(x.reshape(x.size(0), -1))
+
+
+class GRUEncDecWithHead(nn.Module):
+    def __init__(
+            self,
+            output_seq_size=20,
+            hidden_size=64,
+            GRU_layers=1,
+            dropout=0.0,
+            head_embedder=ConvEncoder(32, 32, 5, 4, 10),
+    ):
+        """
+        Encoder-decoder architechture with GRU cells as encoder and decoder
+        :param output_seq_size: forecast length (defualt: 20)
+        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
+        :param GRU_layers: number of GRU layers (defualt: 1)
+        :param dropout: probability of dropout of input (default: 0)
+        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
+        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        :param head_embedder: initialized torch.nn module to map cropped head image to a low dimensional vector
+        """
+        super().__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.output_seq_size = output_seq_size
+        self.hidden_size = hidden_size
+
+        self.dropout_layer = torch.nn.Dropout(dropout)
+
+        self.encoderGRU = nn.GRU(input_size=4 + head_embedder.out_size,
+                                 hidden_size=hidden_size,
+                                 num_layers=GRU_layers,
+                                 batch_first=True,
+                                 )
+
+        self.decoderGRU = nn.GRUCell(input_size=4,
+                                     hidden_size=hidden_size)
+
+        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+
+        self.head_embedder = head_embedder
+
+    def forward(self, bbox_seq, head_seq):
+        offset = bbox_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
+        diffs = bbox_seq[:, 1:] - bbox_seq[:, :-1]
+
+        diffs = self.dropout_layer(diffs)
+
+        # drop last head image, unnecessary for diffs
+        head_seq = head_seq[:, :-1]
+
+        # reshape tensor for batch inference of images
+        head_input = head_seq.unsqueeze(2).reshape(-1, 1, head_seq.size(-2), head_seq.size(-1))
+        head_embedding = self.head_embedder(head_input)
+
+        # reshape tensor back to (batch, sequence) dimensions.
+        head_embedding = head_embedding.reshape(diffs.size(0), diffs.size(1), -1)
+
+        _, hn = self.encoderGRU(torch.cat([diffs, head_embedding], dim=2))
+        out_list = []
+
+        # prev_x = input_seq[:, -1]
+        prev_x = diffs[:, -1]
+        # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
+
+        hn = hn[0]
+
+        for i in range(self.output_seq_size):
+            hn = self.decoderGRU(prev_x, hn)
+            lin = self.linear(hn)
+
+            x = lin + prev_x
+            out_list.append(x.unsqueeze(1))
+            prev_x = x
+
+        out = torch.cat(out_list, dim=1)
+        # add the deltas to the last location
+        # cumsum marginally improves generalization
+        return out.cumsum(dim=1) + offset
+
+
+class VelLinear(nn.Module):
+    """
+    A baseline linear fully-connected model with one hidden layer and RELU activation.
+    """
+
+    def __init__(
+            self,
+            input_size=4,
+            output_size=4,
+            input_seq_size=20,
+            output_seq_size=20,
+            hidden_size=64,
+            dropout=0.0,
+    ):
+        super(VelLinear, self).__init__()
+
+        self.output_size = output_size
+        self.output_seq_size = output_seq_size
+        self.input_seq_size = output_seq_size
+
+        self.dropout_layer = torch.nn.Dropout(dropout)
+        self.encoder = torch.nn.Linear(
+            in_features=input_size * (input_seq_size - 1), out_features=hidden_size
+        )
+        self.decoder = torch.nn.Linear(
+            in_features=hidden_size, out_features=output_size * output_seq_size
+        )
+
+    def forward(self, input_seq):
+        diffs = input_seq[:, 1:] - input_seq[:, :-1]
+
+        x = self.dropout_layer(diffs)
+        x = self.encoder(x.view(x.shape[0], -1))
+        x = torch.nn.functional.relu(x)
+        x = self.decoder(x)
+
+        out = x.view(x.shape[0], self.input_seq_size, self.output_size)
+
+        return out + input_seq[:, -1][:, None, :]
+
+
+# Old functions for finding calibration homography using black shapes. Funding the shapes was not robust and
+# consistent, with many FP and FN, so we replaced them with the Aruco markers. Only old vidoes have these markers,
+#and their homographies are already computed.
+# code taken from:
+#    https://pysource.com/2018/09/25/simple-shape-detection-opencv-with-python-3/
+
+# TODO: old black squares function
+def get_points(polygons, max_y=True):
+    """
+    Return the rightmost and leftmost upper points (closest to the screen) of two squares.
+    """
+
+    if any((polygons[0] - polygons[1])[:, 0] < 0):
+        right, left = polygons[1], polygons[0]
+    else:
+        right, left = polygons[0], polygons[1]
+
+    min_xs = np.argsort(right[:, 0])
+    if max_y:
+        p_right_ind = np.argmax(right[min_xs][:2, 1])
+    else:
+        p_right_ind = np.argmin(right[min_xs][:2, 1])
+
+    max_xs = np.argsort(left[:, 0])[::-1]
+    if max_y:
+        p_left_ind = np.argmax(left[max_xs][:2, 1])
+    else:
+        p_left_ind = np.argmin(left[max_xs][:2, 1])
+
+    return right[min_xs][p_right_ind], left[max_xs][p_left_ind]
+
+
+# TODO: old black squares function
+def thresh_dist(poly, min_thresh, max_thresh):
+    """
+    Return True if the distance between each pair of points is larger than
+    min_thresh and smaller than max_thresh.
+    """
+    for i, p1 in enumerate(poly):
+        for j, p2 in enumerate(poly[i + 1:]):
+            norm = np.linalg.norm(p1 - p2)
+            if norm < min_thresh or norm > max_thresh:
+                return False
+    return True
+
+
+# TODO: old black squares function
+def polygons_min_distance(polygons, min_dist=300):
+    """
+    Checks if the polygons centers are mutually far away from another, in case some reflections
+    are detected by mistake.
+    :param polygons: a list of polygons, numpy arrays each with 4 edges
+    :param min_dist: minimal L2 distance between polygons
+    :return: True if polygons are too close, else False
+    """
+
+    centroids = np.empty((len(polygons), 2))
+    for i, poly in enumerate(polygons):
+        centroids[i] = poly.mean(axis=0)
+
+    for i, cent in enumerate(centroids):
+        for j, cent2 in enumerate(centroids[i + 1:]):
+            dist = np.linalg.norm(cent - cent2)
+            if dist < min_dist:
+                return True
+    return False
+
+
+# TODO: Old function, operates on black squares
+def find_arena_homography_black_squares(
+        cal_img,
+        screen_x_res=1920,
+        contrast=2.4,
+        brightness=0,
+        min_near_edge_size=30,
+        min_far_edge_size=10,
+        max_near_edge_size=100,
+        max_far_edge_size=100,
+        near_far_y_split=700,
+        min_dist=300,
+):
+    """
+    Calculate the homography matrix to map from camera coordinates to
+    a coordinate system relative to the touch screen.
+
+    Assumes cal_img contains 4 visually clear black squares marking the screen edges
+    and the rear end of the arena.
+    Assumes the image is corrected for lense distortion.
+    Finds the innermost right and left points that are closest to the screen and
+    returns the transformation and an image with the features highlighted.
+    :return: homography H, labelled image, screen length in image pixels
+    """
+
+    img = cv.cvtColor(cal_img.copy(), cv.COLOR_BGR2GRAY)
+    img = cv.convertScaleAbs(img, alpha=contrast, beta=brightness)
+
+    _, threshold = cv.threshold(img, 128, 255, cv.THRESH_BINARY_INV)
+    contours, _ = cv.findContours(threshold, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+
+    img = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
+
+    near_polygons = []
+    far_polygons = []
+
+    for cnt in contours:
+        approx = cv.approxPolyDP(cnt, 0.02 * cv.arcLength(cnt, True), True)
+        if len(approx) != 4:
+            continue
+
+        approx = approx.squeeze()
+
+        if all(approx[:, 1] > near_far_y_split):
+            if thresh_dist(approx, min_near_edge_size, max_near_edge_size):
+                near_polygons.append(approx)
+                cv.drawContours(img, [approx], 0, (255, 255, 0), 5)
+            else:
+                cv.drawContours(img, [approx], 0, (255, 0, 0), 5)
+        else:
+            if thresh_dist(approx, min_far_edge_size, max_far_edge_size):
+                far_polygons.append(approx)
+                cv.drawContours(img, [approx], 0, (0, 0, 255), 5)
+            else:
+                cv.drawContours(img, [approx], 0, (255, 0, 0), 5)
+
+    if len(near_polygons) != 2 or len(far_polygons) != 2:
+        return None, img, "Could not find 2 far and 2 near square marks in the image."
+
+    if polygons_min_distance(near_polygons, min_dist):
+        return None, img, "Some of the near polygons are too close to each other."
+
+    if polygons_min_distance(far_polygons, min_dist):
+        return None, img, "Some of the far polygons are too close to each other."
+
+    p_bottom_r, p_bottom_l = get_points(near_polygons)
+    p_top_r, p_top_l = get_points(far_polygons, max_y=False)
+
+    # Draw the screen line.
+    cv.line(img, pt1=tuple(p_bottom_r), pt2=tuple(p_bottom_l), color=(0, 255, 0), thickness=10)
+    cv.line(img, pt1=tuple(p_bottom_r), pt2=tuple(p_top_r), color=(0, 255, 0), thickness=10)
+    cv.line(img, pt1=tuple(p_bottom_l), pt2=tuple(p_top_l), color=(0, 255, 0), thickness=10)
+    cv.line(img, pt1=tuple(p_top_r), pt2=tuple(p_top_l), color=(0, 255, 0), thickness=10)
+
+    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
+    dst_p = np.array([[0, 0],
+                      [screen_x_res, 0],
+                      [0, arena_h_pixels],
+                      [screen_x_res, arena_h_pixels]])
+    src_p = np.vstack([p_bottom_r, p_bottom_l, p_top_r, p_top_l]).astype(np.float64)
+
+    homography, _ = cv.findHomography(src_p, dst_p)
+
+    return homography, img, None
+
+# another function from dataset.py
+
+# Old function, works with black squares and not Aruco markers.
+def get_homography_from_video_black_squares(
+    video_path, undist_alpha=0, max_test_frames=50, **homography_args
+):
+    """
+    An offline function to get the homography transformation from a video. Grid searching values of brightness and
+    contrast until the correct number of polygons is found
+    :param video_path: path to video
+    :param undist_alpha: alpha paramater to the lense undistortion function
+    :param max_test_frames: maximal number of random frames to try
+    :param homography_args: arguments for find_arena_homography function
+    :return: homography, or None if no homography found
+    """
+    vcap = cv.VideoCapture(video_path)
+    width = int(vcap.get(3))
+    height = int(vcap.get(4))
+    num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT))
+
+    (mapx, mapy), roi, _ = calib.get_undistort_mapping(
+        width, height, calib.MTX, calib.DIST, alpha=undist_alpha
+    )
+
+    error = None
+
+    # Try random video frames until one works.
+    for _ in range(max_test_frames):
+        ret, frame = vcap.read()
+        if not ret:
+            raise DatasetException("Error reading frame.")
+
+        undistorted_img = calib.undistort_image(frame, (mapx, mapy))
+
+        # Try a few contrast and brightness values until one works.
+        for contrast in np.arange(0, 3.1, 0.1):
+            for brightness in np.arange(-40, 20, 5):
+                (
+                    homography,
+                    homography_im,
+                    error,
+                ) = calib.find_arena_homography_black_squares(
+                    undistorted_img,
+                    contrast=contrast,
+                    brightness=brightness,
+                    **homography_args,
+                )
+                if homography is not None:
+                    print(
+                        f"Found homography with brightness: {brightness}, contrast: {contrast}"
+                    )
+                    break
+
+            if homography is not None:
+                break
+
+        if homography is not None:
+            break
+        else:
+            random_frame = random.randint(0, num_frames)
+            vcap.set(cv.CAP_PROP_POS_FRAMES, random_frame)
+
+    if error is not None:
+        print("Could not find homography:", error)
+
+    vcap.release()
+
+    return homography, homography_im
+
+# Maybe delete, not necessary. If not, create similiar Aruco function
+def save_homography_data(path, undist_alpha=0, homography_args={}):
+    """
+    TODO can
+    :param path:
+    :param undist_alpha:
+    :param homography_args:
+    :return:
+    """
+    vid_path = os.path.join(path, REALTIME_ID + ".avi")
+    rt_data_path = os.path.join(path, RT_DATA_FOLDER)
+    json_fn = os.path.join(rt_data_path, VID_STATS_FN)
+    homography_im_fn = os.path.join(rt_data_path, HOMOGRAPHY_IM_FN)
+
+    homography, homography_im = get_homography_from_video_black_squares(
+        vid_path, undist_alpha=undist_alpha, **homography_args
+    )
+
+    if not os.path.exists(rt_data_path):
+        os.mkdir(rt_data_path)
+
+    if homography is not None:
+        homography = homography.tolist()
+
+    if homography_im is not None:
+        cv.imwrite(homography_im_fn, homography_im)
+
+    vcap = cv.VideoCapture(vid_path)
+    vid_width = int(vcap.get(3))
+    vid_height = int(vcap.get(4))
+    vcap.release()
+
+    with open(json_fn, "w") as fp:
+        vid_stats = {"width": vid_width, "height": vid_height, "homography": homography}
+        if undist_alpha != 0:
+            vid_stats["undist_alpha"] = undist_alpha
+
+        json.dump(vid_stats, fp)
+
+
+""" ###############  Head images data functions from the dataset module ###############  """
+
+def get_cropped_dict(vid_dims, first_date, all_path=EXPERIMENTS_ROOT):
+    heads_dict = dict()
+    for exper in glob.glob(all_path + "*"):
+
+        if not os.path.isdir(exper):
+            continue
+
+        exper_date = ret_date(exper)
+        if exper_date < first_date:
+            continue
+
+        # ignore words
+        if any([dont in exper for dont in EXP_DONT]):
+            print(f"skipped {exper}, ignored word")
+            continue
+
+        exper_log = parse_exper_log(exper)
+        exper_name = os.path.split(exper)[-1]
+        heads_dict[exper_name] = dict()
+
+        for k in range(1, exper_log["num_trials"] + 1):
+            try:
+                rt_data_path = os.path.join(exper, f"trial{k}", RT_DATA_FOLDER)
+
+                json_fn = os.path.join(rt_data_path, VID_STATS_FN)
+                with open(json_fn, "r") as fp:
+                    vid_stat = json.load(fp)
+
+                if vid_stat["width"] != vid_dims[0]:
+                    print(
+                        f'ignored {exper} trial{k}, {vid_stat["width"]} != {vid_dims[0]}'
+                    )
+                    continue
+
+                head_crops_fn = os.path.join(rt_data_path, HEAD_CROPS_FN)
+
+                with open(head_crops_fn, "rb") as fp:
+                    heads_dict[exper_name][k] = pickle.load(fp)
+            except FileNotFoundError:
+                continue
+
+    for key in list(heads_dict.keys()):
+        if len(heads_dict[key].keys()) < 1:
+            heads_dict.pop(key)
+
+    return heads_dict
+
+
+def heads_list2mat(l, resize):
+    flt_imgs = np.empty((len(l), resize ** 2))
+    flt_imgs[:] = np.nan
+
+    for i, img in enumerate(l):
+        if img is not None:
+            resized_img = cv.resize(img, (resize, resize))
+            flt_imgs[i, :] = resized_img.flatten()
+    return flt_imgs.astype(
+        "uint8"
+    )  # TODO returning as uint8 converts np.nan to zero (0)
+
+
+def get_unified_heads_mat(vid_dims, first_date, resize=32, all_path=EXPERIMENTS_ROOT):
+    """
+    Generating the full matrix from 25~ trials is 1GB, should not use or maybe restrict sizes
+    or number of trials
+    """
+    heads_dict = get_cropped_dict(vid_dims, first_date, all_path)
+    mat_list = []
+
+    for key in heads_dict.keys():
+        for trial in heads_dict[key].keys():
+            mat_list.append(heads_list2mat(heads_dict[key][trial], resize))
+    return np.concatenate(mat_list).astype("uint8")
+
+""" ---------- From train_eval ------------- """
+
+
+def grid_input_output(
+    model_name,
+    df,
+    input_seqs,
+    output_seqs,
+    input_labels,
+    output_labels,
+    path,
+    num_epochs=5000,
+):
+    """
+    Perform 2D grid search over cartesian product of input and output sequence lengths with labels
+    assumes input_seqs and output_seqs are iterables
+    :return: pandas df with ADE scores
+    """
+
+    scores = pd.DataFrame(index=input_seqs, columns=output_seqs)
+    train, val, test = create_train_val_test_splits(df.index.unique(), [0.7, 0.2, 0.1])
+    count = 0
+    num_trains = len(input_seqs) * len(output_seqs)
+
+    for inp_seq in input_seqs:
+        for out_seq in output_seqs:
+            count += 1
+            print("================================================")
+            print(
+                f"{count}/{num_trains} Training with input_seq_len={inp_seq}, output_seq_len={out_seq}"
+            )
+
+            train_dl, val_dl, test_dl = create_train_val_test_dataloaders(
+                df, train, val, test, input_labels, output_labels, inp_seq, out_seq
+            )
+
+            net = model_name(len(input_labels), len(output_labels), out_seq)
+
+            _, best_ADE = train_trajectory_model(
+                net,
+                train_dl,
+                val_dl,
+                num_epochs,
+                path,
+                eval_freq=100,
+                model_name=f"model_{inp_seq}_{out_seq}",
+            )
+
+            scores.loc[inp_seq, out_seq] = best_ADE
+
+    return scores

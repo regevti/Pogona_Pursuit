@@ -1,23 +1,36 @@
+"""
+This module is responsible for creating visualizations for images, videos, statistical plots and notebook widgets.
+Documented more loosely than the other modules, as it's less important
+"""
+
 import os
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
-#from tqdm.auto import tqdm # py3.7 issues
+# from tqdm.auto import tqdm # py3.7 issues
 from tqdm import tqdm
 import matplotlib.patches as patches
+from matplotlib.collections import LineCollection
+
 
 from Prediction.detector import xyxy_to_centroid, nearest_detection
 import Prediction.calibration as calib
 
 
+"""
+-----------------------  Non Video functions ------------------------------
+"""
+
+
 def plot_image(detections, img, output_path=None, show_img=True):
     """
-    Draw bounding boxes from detections on img and optionally save to file.
-    detections - the output detections of a detector
-    img - bounding boxes are drawn on this image
-    output_path - path to save the image, or None to not save.
-    show_img - whether to show the image or not (boolean).
+    :param detections: Numpy array, output detections of a detector
+    :param img: Numpy array, bounding boxes are drawn on this image
+    :param output_path: path to save the image, or None to not save.
+    :param show_img: bool, whether to show the image or not
+    :return:
     """
+
 
     plt.figure()
     fig, ax = plt.subplots(1, figsize=(12, 9))
@@ -50,208 +63,69 @@ def plot_image(detections, img, output_path=None, show_img=True):
         plt.clf()
 
 
-def hsv_to_rgb(H, S, V):
+def draw_sequences(arr_X,
+                   arr_Y,
+                   arr_pred,
+                   ax,
+                   l_alpha=0.35,
+                   sctr_s=0.5,
+                   sctr_alpha=1,
+                   past_c='b', ftr_c='r', pred_c='g', diff_c='k',
+                   xlabel='past',
+                   ylabel='future',
+                   draw_diffs=True,
+                   tensor_func=lambda x: x[:, :, 2:]):
     """
-    transform angle to BGR color as 3-tuple
+    Draw sequences as points with lines connecting them. Operates on a single sequence or a batch of sequences.
+    Not recommended to draw more than a few thousands sequences or sequence pairs, possible to use other rasterized
+    functions
+    :param arr_X: 3D numpy array of X sequences
+    :param arr_Y: 3D numpy array of Y sequences
+    :param arr_pred: 3D numpy array of predictions
+    :param ax: matplotlib ax to draw on
+    :param l_alpha: float in [0,1], line alpha
+    :param sctr_s: int, size of the scatter points
+    :param sctr_alpha: float in [0,1], sactter alpha
+    :param past_c: str (or other represntation of color), color of X sequences
+    :param ftr_c: str, color of Y sequences
+    :param pred_c: str, color of prediction sequences
+    :param diff_c: str, color of line difference between ground truth and prediction sequences
+    :param draw_diffs: bool, whether to draw the differences
+    :param tensor_func: function to slice the 3D arrays with
     """
-    C = S * V
-    X = C * (1 - np.abs((H / 60) % 2 - 1))
-    m = V - C
+    if arr_X is not None:
+        if len(arr_X.shape) == 2:
+            arr_X = arr_X.reshape(1, arr_X.shape[0], arr_X.shape[1])
+        arr_X = tensor_func(arr_X)
+    if arr_Y is not None:
+        if len(arr_Y.shape) == 2:
+            arr_Y = arr_Y.reshape(1, arr_Y.shape[0], arr_Y.shape[1])
+        arr_Y = tensor_func(arr_Y)
+    if draw_diffs:
+        if len(arr_pred.shape) == 2:
+            arr_pred = arr_pred.reshape(1, arr_pred.shape[0], arr_pred.shape[1])
+        arr_pred = tensor_func(arr_pred)
 
-    if H >= 0 and H < 60:
-        r, g, b = C, X, 0
-    elif H >= 60 and H < 120:
-        r, g, b = X, C, 0
-    elif H >= 120 and H < 180:
-        r, g, b = 0, C, X
-    elif H >= 180 and H < 240:
-        r, g, b = 0, X, C
-    elif H >= 240 and H < 300:
-        r, g, b = X, 0, C
-    else:
-        r, g, b = C, 0, X
-
-    def roun(x):
-        return int(round(x))
-
-    # return b,g,r
-    return roun((b + m) * 255), roun((g + m) * 255), roun((r + m) * 255)
-
-
-def vec_to_bgr(vec):
-    """
-    input: 2D vector
-    return: 3-tuple, specifying BGR color selected using HSV formula.
-    """
-
-    # transform to [-pi,pi] and then to degrees
-    angle = np.arctan2(vec[1], vec[0]) * 180 / np.pi
-
-    # transform to [0,360]
-    angle = (angle + 360) % 360
-    return hsv_to_rgb(angle, 1, 1)
+    if arr_X is not None:
+        ax.add_collection(LineCollection(segments=[seq for seq in arr_X], colors=[past_c], label=xlabel, alpha=l_alpha))
+        ax.scatter(arr_X[:, :, 0], arr_X[:, :, 1], s=sctr_s, color=past_c, alpha=sctr_alpha)
+    if arr_Y is not None:
+        ax.add_collection(LineCollection(segments=[seq for seq in arr_Y], colors=[ftr_c], label=ylabel, alpha=l_alpha))
+        ax.scatter(arr_Y[:, :, 0], arr_Y[:, :, 1], s=sctr_s, color=ftr_c, alpha=sctr_alpha)
+    if draw_diffs:
+        ax.add_collection(
+            LineCollection(segments=[seq for seq in arr_pred], colors=[pred_c], label='pred', alpha=l_alpha))
+        diffs = [np.array([arr_pred[j, i], arr_Y[j, i]]) for i in range(arr_pred.shape[1]) for j in
+                 range(arr_pred.shape[0])]
+        ax.add_collection(LineCollection(segments=diffs, colors=[diff_c], label='diff', alpha=l_alpha))
+        ax.scatter(arr_pred[:, :, 0], arr_pred[:, :, 1], s=sctr_s, color=pred_c, alpha=sctr_alpha)
 
 
-def time_to_bgr(k, arrowWindow):  # DOES NOT WORK - TODO
-    # map the relative position of the frame to [0,360] angle and then to hue
-    rel = (arrowWindow - k) / arrowWindow
-    return hsv_to_rgb(0, 1, rel)
-
-
-def draw_arrow(
-    frame,
-    frameCounter,
-    centroids,
-    arrowWindow,
-    k,
-    vis_angle=True,
-    windowSize=1,
-    scale=2.5,
-):
-    """
-    draws the direction of the velocity vector from (arrowWindow) frames back
-    directions based on the first discrete derivative of the 2D coordinates of
-    windowSize consecutive centroids of the detecions, if both exist
-    """
-
-    # initial arrow
-    if frameCounter < windowSize:
-        return
-
-    # if no prediction at t - windowSize, bo drawing
-    if np.isnan(centroids[frameCounter - windowSize, 0]) or np.isnan(
-        centroids[frameCounter, 0]
-    ):
-        return
-
-    arrowBase = tuple(centroids[frameCounter - windowSize].astype(int))
-    arrowHead = tuple(centroids[frameCounter].astype(int))
-
-    # scale head for better visibility
-    extend_x = scale * (arrowHead[0] - arrowBase[0])
-    extend_y = scale * (arrowHead[1] - arrowBase[1])
-
-    new_x = arrowHead[0] + extend_x
-    new_y = arrowHead[1] + extend_y
-
-    if new_x < 0:
-        new_x = 0
-    if new_x > frame.shape[1]:
-        new_x = frame.shape[1]
-
-    if new_y < 0:
-        new_y = 0
-    if new_y > frame.shape[0]:
-        new_y = frame.shape[0]
-
-    arrowHead = (new_x, new_y)
-
-    # compute color based on angle or time
-    if vis_angle:
-        vec_color = vec_to_bgr(
-            [arrowHead[0] - arrowBase[0], arrowHead[1] - arrowBase[1]]
-        )
-    else:
-        vec_color = time_to_bgr(k, arrowWindow)
-
-    cv.arrowedLine(
-        frame,
-        arrowBase,
-        arrowHead,
-        color=vec_color,
-        thickness=2,
-        tipLength=0.2,
-        line_type=cv.LINE_AA,
-    )
-
-
-def draw_bounding_boxes(frame,
-                        detections,
-                        color=(0, 0, 255),
-                        is_xyxy=True,
-                        ):
-    """
-    frame - a numpy array representing the image.
-    detections - [(x, y, x, y, conf)...] bounding boxes array.
-    if is_xyxy==False, then assumes detections is xywh
-    
-    draws bounding boxes on frame (in place).
-    """
-
-    font = cv.FONT_HERSHEY_COMPLEX
-    scale = 0.4
-    thickness = cv.FILLED
-    margin = 4
-
-    if detections is not None:
-        for x1, y1, c, d, conf in detections:
-            x1 = int(x1)
-            y1 = int(y1)
-
-            x2, y2, box_w, box_h = None, None, None, None
-            if is_xyxy:
-                x2 = int(c)
-                y2 = int(d)
-            else:
-                box_w = int(c)
-                box_h = int(d)
-
-            text = str(round(conf, 2))
-            txt_size = cv.getTextSize(text, font, scale, thickness)
-            end_x = int(x1 + txt_size[0][0] + margin)
-            end_y = int(y1 + txt_size[0][1] + margin)
-
-            cv.rectangle(frame, (x1, y1), (end_x, end_y), color, thickness)
-
-            if is_xyxy:
-                cv.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            else:
-                cv.rectangle(frame, (x1, y1), (x1 + box_w, y1 + box_h), color, 2)
-            cv.putText(
-                frame,
-                text,
-                (x1, end_y - margin),
-                font,
-                scale,
-                (255, 255, 255),
-                1,
-                cv.LINE_AA,
-            )
-
-
-def draw_k_arrows(
-    frame, frameCounter, centroids, arrowWindow, visAngle, windowSize, scale=5
-):
-    for k in range(arrowWindow):
-        draw_arrow(
-            frame,
-            frameCounter - k,
-            centroids,
-            arrowWindow,
-            k,
-            visAngle,
-            windowSize,
-            scale,
-        )
-
-
-def draw_k_centroids(frame, frameCounter, centroids, k, color=(0, 0, 255)):
-    if k > frameCounter:
-        k = frameCounter - 1
-
-    for j in range(k):
-        if np.isnan(centroids[frameCounter - j][0]):
-            continue
-        x = int(centroids[frameCounter - j][0])
-        y = int(centroids[frameCounter - j][1])
-        cv.circle(
-            frame,
-            center=(x, y),
-            radius=2,
-            color=color,
-            thickness=-1,
-            lineType=cv.LINE_AA,
-        )
+"""
+-------------------- Video closure functions ----------------------
+Functions in this part follow a closure pattern. The functions return a function that's passed to the process_video
+function. 
+"""
 
 
 def online_centroid_visualizer(detector, color, window_size):
@@ -291,8 +165,11 @@ def online_centroid_visualizer(detector, color, window_size):
 
 
 def missed_frames_saver(
-    detector, output_dir, prefix="frame", save_thresh=0.8, above=False, draw_bbox=True
+        detector, output_dir, prefix="frame", save_thresh=0.8, above=False, draw_bbox=True
 ):
+    """
+    Save missed frames according to some threshold
+    """
     saved_counter = 0
 
     if above:
@@ -413,7 +290,7 @@ def is_point_in_bounds(p, frame):
 
 
 def visualize_prediction(
-    predictor, write_frame, forecast, hit_x, hit_steps, show_forecast_bbox=False
+        predictor, write_frame, forecast, hit_x, hit_steps, show_forecast_bbox=False
 ):
     bbox = predictor.history[predictor.frame_num - 1]
     if not np.isnan(bbox[0]):
@@ -450,11 +327,9 @@ def visualize_prediction(
                 )
 
             if show_forecast_bbox:
-
                 cv.rectangle(
                     write_frame, tuple(bbox[:2]), tuple(bbox[2:]), (255, 255, 0), 1
                 )
-
 
     if hit_x is not None:
         hp = (int(hit_x), predictor.prediction_y_threshold)
@@ -509,7 +384,7 @@ def predictor_visualizer(predictor, show_forecast_bbox=False):
 
 
 def get_correction_fn(
-    homography, screen_x_res, mtx=calib.MTX, dist=calib.DIST  # 1920
+        homography, screen_x_res, mtx=calib.MTX, dist=calib.DIST  # 1920
 ):
     """
     Receive the parameters to conduct the lense correction and coordinate transformation
@@ -545,27 +420,18 @@ def get_correction_fn(
 
 
 def process_video(
-    video_path,
-    output_path,
-    process_fns,
-    correction_fn=None,
-    start_frame=0,
-    num_frames=None,
-    frame_rate=None,
-    resize_to_width=None,
+        video_path,
+        output_path,
+        process_fns,
+        correction_fn=None,
+        start_frame=0,
+        num_frames=None,
+        frame_rate=None,
+        resize_to_width=None,
 ):
     """
     Open a video file, run all functions in process_fns, and write the
     processed video to file.
-
-    video_path - path of original video
-    output_path - path of processed video or None if writing is not necessary.
-    process_fns - a list of process functions
-    correction_fn - a function responsible for undistorting and transforming the image
-    start_frame - the first frame to be processed.
-    num_frames - number of frames to process or None to process the whole video.
-    frame_rate - the framerate of the processed video or None to use the original framerate.
-    resize_to_width - when not None, the output is resized after processing each frame.
 
     Each function in process_fns has the following signature:
 
@@ -578,8 +444,16 @@ def process_video(
     correction_fn has the following signature:
     fn(input_frame) -> output_frame
     output_frame is the transformed frame.
-    """
 
+    :param video_path: path of original video
+    :param output_path: path of processed video or None if writing is not necessary.
+    :param process_fns: a list of process functions
+    :param correction_fn: a function responsible for undistorting and transforming the image
+    :param start_frame: the first frame to be processed.
+    :param num_frames: number of frames to process or None to process the whole video.
+    :param frame_rate: the framerate of the processed video or None to use the original framerate.
+    :param resize_to_width: when not None, the output is resized after processing each frame.
+    """
     vcap = cv.VideoCapture(video_path)
 
     if start_frame != 0:
@@ -620,6 +494,7 @@ def process_video(
                 (rwidth, rheight),
             )
 
+        # process the frame with each function in the list
         for fn in process_fns:
             fn(orig_frame, write_frame, frame_counter)
 

@@ -1,3 +1,10 @@
+"""
+This module is responsible for implementing the detector of the animal's head. Contains an abstract class of a Detector,
+and currently a single implementation of such detector using the YOLO-v4 algorithm. It's possible to use other detectors
+with the same contract of the Detector abstract class. Additionally, it contains various functions for transforming
+between different bounding box formats and computing the IoU metric.
+"""
+
 import numpy as np
 import cv2 as cv
 from ctypes import c_int, pointer
@@ -8,10 +15,10 @@ import torch
 
 class Detector:
     """
-    Abstract class that detects bounding boxes in image data.
+    Abstract class for detecting bounding boxes in a frame.
     Subclasses should override the detect_image(self, img) method.
-    Abstract class with a detect_image() method that takes an image numpy array and
-    returns a (number of detections) X 5 numpy array.
+    Abstract class with a detect_image() method that takes an image numpy array and returns a
+    (number of detections) X 5 numpy array.
     Each row represents one detection as [left_x, top_y, right_x, bottom_y, confidence] of
     the bounding box, where (0,0) is the top left corner of the image.
     """
@@ -22,18 +29,17 @@ class Detector:
         Each row represents one detection as [left_x, top_y, right_x, bottom_y, confidence] of
         the bounding box, where (0,0) is the top left corner of the image.
 
-        img - The image as a numpy array (cv2 frame etc.)
-
-        Return the detection array for the supplied image.
+        :param img: numpy array image (cv2 frame etc.)
+        :return: Nx5 numpy detection array for the supplied image
         """
         pass
 
 
-class Detector_v4:
+class Detector_v4(Detector):
     """
-    Detector using version 4 of the YOLO algorithm, based on the paper "YOLOv4: Optimal Speed and Accuracy of Object Detection"
+    Detector using version 4 of the YOLO algorithm, based on the paper
+    "YOLOv4: Optimal Speed and Accuracy of Object Detection"
     Code from: https://github.com/AlexeyAB/darknet, including a python wrapper for the C modules.
-    Training was done with "non-examples", i.e frames from the arena with no detections and unrelated images.
 
     The resized image used for the last detection is stored in self.curr_img
     """
@@ -45,12 +51,16 @@ class Detector_v4:
                  conf_thres=0.9,
                  nms_thres=0.6):
         """
-        Instantiate detector.
-        cfg_path - Path to yolo network configuration file
-        weights_path - Path to trained network weights
-        meta_path - Path to yolo metadata file (pretty useless for inference but necessary)
-        conf_thres - Confidence threshold for bounding box detections
-        nms_thres - Non-max suppression threshold. Suppresses multiple detections for the same object.
+        Initialize detector. Requires at least 1.4GB of GPU memory.
+        Note: Because the detector is implemented in C and code is basically Python bindings for it, errors will
+        sometimes cause a segmentation fault, which will cause a Jupyter notebook kernel to crash.
+        The reason for this is usually issues with the path names.
+
+        :param cfg_path: Path to yolo network configuration file
+        :param weights_path: Path to trained network weights
+        :param meta_path: Path to yolo metadata file (pretty useless for inference but necessary)
+        :param conf_thres: float in (0,1), confidence threshold for bounding box detections
+        :param nms_thres: float in (0,1), Non-max suppression threshold. Suppresses multiple detections for the same object.
         """
         self.net = darknet4.load_net_custom(cfg_path.encode("ascii"),
                                             weights_path.encode("ascii"),
@@ -72,16 +82,19 @@ class Detector_v4:
 
     def detect_image(self, img):
         """
-        Receive an image as numpy array. Resize image to model size using open-cv.
-        Run the image through the network and collect detections.
-        Return a numpy array of detections. Each row is x1, y1, x2, y1, confidence 
-        (top-left and bottom-right corners).
+        Bounding box inference on input frame
+
+        :param img: numpy array image
+        :return: numpy array of detections. Each row is x1, y1, x2, y1, confidence  (top-left and bottom-right corners).
         """
+
         input_height, input_width, _ = img.shape
 
         image = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         image = cv.resize(image, (self.model_width, self.model_height), interpolation=cv.INTER_LINEAR)
         self.curr_img = image
+
+        # C bindings for Darknet inference
         image, arr = darknet4.array_to_image(image)
         num = c_int(0)
         pnum = pointer(num)
@@ -94,6 +107,7 @@ class Detector_v4:
         if self.nms_thres:
             darknet4.do_nms_sort(dets, num, self.meta.classes, self.nms_thres)
 
+        # change format of bounding boxes
         res = np.zeros((num, 5))
         for i in range(num):
             b = dets[i].bbox
@@ -111,9 +125,10 @@ class Detector_v4:
 
 def xywh_to_centroid(xywh):
     """
-    Return the centroids of a bbox array in xywh values (1 or 2 dimensional).
-    xywh - bbox array in x, y, width, height.
+    :param xywh: bbox numpy array in x, y, width, height.
+    :return: numpy array centroids of a bbox array in xywh values (1 or 2 dimensional).
     """
+
     if len(xywh.shape) == 1:
         x, y, w, h = xywh[:4]
         return np.array([x + w // 2, y + h // 2])
@@ -130,9 +145,8 @@ def xywh_to_xyxy(xywh):
     """
     Convert a numpy array of bbox coordinates from xywh to xyxy
 
-    xywh - bbox array in x, y, width, height
-
-    Return the bbox in xyxy coordinates - [x1, y1, x2, y2] (top-left, bottom-right corners)
+    :param xywh: bbox numpy array in x, y, width, height
+    :return: numpy bbox array in xyxy coordinates - [x1, y1, x2, y2] (top-left, bottom-right corners)
     """
     if len(xywh.shape) == 1:
         x, y, w, h = xywh[:4]
@@ -150,8 +164,8 @@ def xyxy_to_xywh(xyxy):
     """
     Convert a numpy array of bbox coordinates from xyxy to xywh
 
-    :param xywh: bboxes in x, y, width, height format
-    :return: bboxes in x,y, width, height format
+    :param xywh: numpy array bboxes in x, y, width, height format
+    :return: numpy array boxes in x,y, width, height format
     """
     if len(xyxy.shape) == 1:
         x1, y1, x2, y2 = xyxy[:4]
@@ -168,10 +182,10 @@ def xyxy_to_xywh(xyxy):
 def xyxy_to_centroid(xyxy):
     """
     Convert a numpy array of bbox coordinates (xyxy) to an array of bbox centroids.
-    Return an array of centroids, each row consisting of x, y centroid coordinates.
-
-    xyxy - bbox array in x1, y1, x2, y2
+    :param xyxy: bbox numpy array in x1, y1, x2, y2
+    :return: numpy array of centroids, each row consisting of x, y centroid coordinates.
     """
+
     if len(xyxy.shape) == 1:
         x1, y1, x2, y2 = xyxy[:4]
         return np.array([(x2 + x1) / 2, (y2 + y1) / 2])
@@ -208,11 +222,11 @@ def nearest_detection(detections, prev_centroid):
     Return the detection from the detections array whose centroid is closest to the previous centroid.
     When only one detection is supplied this detection is returned.
 
-    detections - A numpy detections array.
-    prev_centroid - The centroid of a previous detection (x, y) to compare to.
-
-    The returned detection is a single row from the detections array.
+    :param detections: numpy detections array
+    :param prev_centroid: numpy array centroid of a previous detection (x, y) to compare to
+    :return: detection is a single row from the detections array.
     """
+
     if detections.shape[0] > 1:
         detected_centroids = xyxy_to_centroid(detections)
         deltas = prev_centroid - detected_centroids
@@ -225,7 +239,10 @@ def nearest_detection(detections, prev_centroid):
 
 def bbox_iou(box1, box2, x1y1x2y2=True):
     """
-    Returns the IoU of two bounding boxes
+    :param box1: numpy array, predicted bounding box
+    :param box2: numpy array, ground-truth bounding box
+    :param x1y1x2y2: format of the bounding boxes
+    :return: float, intersection over union (IoU) of the bboxes
     """
     if not x1y1x2y2:
         # Transform from center and width to exact coordinates

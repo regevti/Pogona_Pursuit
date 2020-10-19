@@ -1,3 +1,23 @@
+"""
+This module is responsible for geometric transformations for correcting the distortion of the lens and transforming
+the data into a unified coordinate system, using existing functions from Open-CV.
+The functions from this are called by the HitPredictor object or offline by functions from the Dataset module.
+
+The first part of the module deals with correcting the lens distortion. As the camera is located close to the target,
+and captures a relatively wide angle frame, the barrel distortion is significant. The function get_distortion_matrix
+analyzes images that contain a checkerboard, and produces the required camera matrix. This parameter is static and
+does not depend on the camera location, but might change something changes in the lens.
+The function get_undistort_mapping computes from these parameters the required transformations, to be used upon frames,
+single points of data, or data arrays.
+
+The second part deals with transforming the data into a single coordinate system, in which the the screen lies
+approximately on the X axis. This part is more complex, as it depends on the precise location and angle of the camera
+with respect the arena. For that purpose, there are 4 Aruco markers located in the arena in known distance from each
+other. A function finds the Aruco markers in the arena, and computes the required homography transformation. Other
+functions use this transformation upon frames or coordinates data.
+
+"""
+
 import numpy as np
 import cv2 as cv
 import glob
@@ -7,7 +27,7 @@ import os
 # Undistortion code from:
 #   https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_calib3d/py_calibration/py_calibration.html
 
-# Undistort matrices for the Flir camera.
+# Static un-distortion matrices for the Flir camera.
 MTX = np.array(
     [
         [1.14515564e03, 0.00000000e00, 7.09060713e02],
@@ -48,16 +68,15 @@ class CalibrationException(Exception):
     pass
 
 
-# TODO: possible to use aruco.detectMarkers + aruco.estimatePoseSingleMarkers
-# but also needs multiple viewpoints.
 def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
     """
-    Finds the undistortion matrix of the lense based on multiple images
-    with checkerboard.
-    chkr_im_path - path to folder with images with checkerboards
+    Finds the undistortion matrix of the lens based on multiple images
+    with checkerboard. It's possible to implement this function using Aruco markers as well.
+
+    :param: chkr_im_path - path to folder with images with checkerboards
     :param: rows - number of rows in checkerboard
     :param: cols - number of cols in checkerboard
-    :return: camera matrix, distortion coefficients
+    :return: numpy array: camera matrix, numpy array: distortion coefficients
     """
 
     # termination criteria
@@ -108,10 +127,16 @@ def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
 def get_undistort_mapping(width, height, mtx=MTX, dist=DIST, alpha=0):
     """
     Computes the undistortion mapping for the given mtx and dist matrices.
-    Returns: (mapx, mapy), roi, newcameramtx
-    mapx, mapy - x,y coordinates for each image coordinate for undistorting an image.
-    roi - (x, y, w, h) region of interest tuple
-    newcameramtx - new camera matrix for undistorting points.
+
+    :param width: int, width of the image
+    :param height: int, height of the image
+    :param mtx: numpy array, camera matrix
+    :param dist: numpy array, distortion coefficients
+    :param alpha: float in the range (0,1)
+    :return:
+        mapx, mapy - numpy arrays, x,y coordinates for each image coordinate for undistorting an image.
+        roi - tuple, (x, y, w, h) region of interest tuple
+        newcameramtx - numpy array,  camera matrix for undistorting points in the specific (width, height) frame.
     """
     newcameramtx, roi = cv.getOptimalNewCameraMatrix(
         mtx, dist, (width, height), alpha, (width, height)
@@ -125,10 +150,10 @@ def get_undistort_mapping(width, height, mtx=MTX, dist=DIST, alpha=0):
 
 def undistort_image(img, mapping, roi=None):
     """
-    Return an undistorted version of img according to the mapping.
     When roi is not None the image is cropped to the ROI.
-    :param img: image to undistort
+    :param img: numpy array: image to undistort
     :param mapping: a tuple (mapx, mapy)
+    :return: numpy array: undistorted version of img according to the mapping
     """
     mapx, mapy = mapping
 
@@ -144,9 +169,12 @@ def undistort_image(img, mapping, roi=None):
 
 def undistort_point(p, newcameramtx, dist=DIST):
     """
-    Undistort point p.
-    newcameramtx - the matrix returned by get_undistort_mapping
+    :param p: iterable, coordinate to undistort
+    :param newcameramtx: numpy array, camera matrix for the specific (width, height) frame.
+    :param dist: numpy array, distortion coefficients
+    :return: numpy array, undistorted points
     """
+
     p = np.array(p)
     if np.any(np.isnan(p)):
         return np.nan, np.nan
@@ -165,23 +193,25 @@ def undistort_data(
 ):
     """
     Undistorts a bulk of data. assumes location data in (cent_x, cent_y, x1, y1, x2, y2) format
-    TODO possible to make more generic
-    :param data: pandas DataFrame
-    :param mapping: (mapx, mapy) tuple returned by gen_undistort_mapping.
-    :param cols: an iterable of iterables, each nested iterable is a pair of column names to undistort.
-    for example [(cent_x, cent_y), (x, y)]
-    :return: dataframe with the same columns (returns copy, doesn't change inplace)
-
-    for each pair of (x,y) points to undistort, create new dataframe with corrected data,
-    and assign to the returned dataframe
+    :param data: Pandas DataFrame, data to undistort
+    :param width: int
+    :param height: int
+    :param cols: tuple of pairs of strings which are column names in the df
+    :param mtx: numpy array, camera matrix
+    :param dist: numpy array,
+    :param alpha: float in (0,1)
+    :return: pandas df, the undistorted data (deep copy of the original data)
     """
 
+    # deep copy of the original data
     ret_df = data.copy()
 
+    # get transformation for the specific frame
     _, _, newcameramtx = get_undistort_mapping(
         width, height, mtx=mtx, dist=dist, alpha=alpha
     )
 
+    # for each pair of columns which constitute a coordinate, undistort
     for xy in cols:
         x = xy[0]
         y = xy[1]
@@ -195,164 +225,14 @@ def undistort_data(
 
 
 # Calibration: Use a calibration image to find the touch screen transition transform.
-# code taken from:
-#    https://pysource.com/2018/09/25/simple-shape-detection-opencv-with-python-3/
 
-
-# TODO: old black squares function
-def get_points(polygons, max_y=True):
-    """
-    Return the rightmost and leftmost upper points (closest to the screen) of two squares.
-    """
-
-    if any((polygons[0] - polygons[1])[:, 0] < 0):
-        right, left = polygons[1], polygons[0]
-    else:
-        right, left = polygons[0], polygons[1]
-
-    min_xs = np.argsort(right[:, 0])
-    if max_y:
-        p_right_ind = np.argmax(right[min_xs][:2, 1])
-    else:
-        p_right_ind = np.argmin(right[min_xs][:2, 1])
-
-    max_xs = np.argsort(left[:, 0])[::-1]
-    if max_y:
-        p_left_ind = np.argmax(left[max_xs][:2, 1])
-    else:
-        p_left_ind = np.argmin(left[max_xs][:2, 1])
-
-    return right[min_xs][p_right_ind], left[max_xs][p_left_ind]
-
-
-# TODO: old black squares function
-def thresh_dist(poly, min_thresh, max_thresh):
-    """
-    Return True if the distance between each pair of points is larger than
-    min_thresh and smaller than max_thresh.
-    """
-    for i, p1 in enumerate(poly):
-        for j, p2 in enumerate(poly[i + 1:]):
-            norm = np.linalg.norm(p1 - p2)
-            if norm < min_thresh or norm > max_thresh:
-                return False
-    return True
-
-
-# TODO: old black squares function
-def polygons_min_distance(polygons, min_dist=300):
-    """
-    Checks if the polygons centers are mutually far away from another, in case some reflections
-    are detected by mistake.
-    :param polygons: a list of polygons, numpy arrays each with 4 edges
-    :param min_dist: minimal L2 distance between polygons
-    :return: True if polygons are too close, else False
-    """
-
-    centroids = np.empty((len(polygons), 2))
-    for i, poly in enumerate(polygons):
-        centroids[i] = poly.mean(axis=0)
-
-    for i, cent in enumerate(centroids):
-        for j, cent2 in enumerate(centroids[i + 1:]):
-            dist = np.linalg.norm(cent - cent2)
-            if dist < min_dist:
-                return True
-    return False
-
-
-# TODO: Old function, operates on black squares
-def find_arena_homography_black_squares(
-        cal_img,
-        screen_x_res=1920,
-        contrast=2.4,
-        brightness=0,
-        min_near_edge_size=30,
-        min_far_edge_size=10,
-        max_near_edge_size=100,
-        max_far_edge_size=100,
-        near_far_y_split=700,
-        min_dist=300,
-):
-    """
-    Calculate the homography matrix to map from camera coordinates to
-    a coordinate system relative to the touch screen.
-
-    Assumes cal_img contains 4 visually clear black squares marking the screen edges
-    and the rear end of the arena.
-    Assumes the image is corrected for lense distortion.
-    Finds the innermost right and left points that are closest to the screen and
-    returns the transformation and an image with the features highlighted.
-    :return: homography H, labelled image, screen length in image pixels
-    """
-
-    img = cv.cvtColor(cal_img.copy(), cv.COLOR_BGR2GRAY)
-    img = cv.convertScaleAbs(img, alpha=contrast, beta=brightness)
-
-    _, threshold = cv.threshold(img, 128, 255, cv.THRESH_BINARY_INV)
-    contours, _ = cv.findContours(threshold, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-
-    img = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
-
-    near_polygons = []
-    far_polygons = []
-
-    for cnt in contours:
-        approx = cv.approxPolyDP(cnt, 0.02 * cv.arcLength(cnt, True), True)
-        if len(approx) != 4:
-            continue
-
-        approx = approx.squeeze()
-
-        if all(approx[:, 1] > near_far_y_split):
-            if thresh_dist(approx, min_near_edge_size, max_near_edge_size):
-                near_polygons.append(approx)
-                cv.drawContours(img, [approx], 0, (255, 255, 0), 5)
-            else:
-                cv.drawContours(img, [approx], 0, (255, 0, 0), 5)
-        else:
-            if thresh_dist(approx, min_far_edge_size, max_far_edge_size):
-                far_polygons.append(approx)
-                cv.drawContours(img, [approx], 0, (0, 0, 255), 5)
-            else:
-                cv.drawContours(img, [approx], 0, (255, 0, 0), 5)
-
-    if len(near_polygons) != 2 or len(far_polygons) != 2:
-        return None, img, "Could not find 2 far and 2 near square marks in the image."
-
-    if polygons_min_distance(near_polygons, min_dist):
-        return None, img, "Some of the near polygons are too close to each other."
-
-    if polygons_min_distance(far_polygons, min_dist):
-        return None, img, "Some of the far polygons are too close to each other."
-
-    p_bottom_r, p_bottom_l = get_points(near_polygons)
-    p_top_r, p_top_l = get_points(far_polygons, max_y=False)
-
-    # Draw the screen line.
-    cv.line(img, pt1=tuple(p_bottom_r), pt2=tuple(p_bottom_l), color=(0, 255, 0), thickness=10)
-    cv.line(img, pt1=tuple(p_bottom_r), pt2=tuple(p_top_r), color=(0, 255, 0), thickness=10)
-    cv.line(img, pt1=tuple(p_bottom_l), pt2=tuple(p_top_l), color=(0, 255, 0), thickness=10)
-    cv.line(img, pt1=tuple(p_top_r), pt2=tuple(p_top_l), color=(0, 255, 0), thickness=10)
-
-    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
-    dst_p = np.array([[0, 0],
-                      [screen_x_res, 0],
-                      [0, arena_h_pixels],
-                      [screen_x_res, arena_h_pixels]])
-    src_p = np.vstack([p_bottom_r, p_bottom_l, p_top_r, p_top_l]).astype(np.float64)
-
-    homography, _ = cv.findHomography(src_p, dst_p)
-
-    return homography, img, None
-
-
-# Aruco calibration
+# Aruco calibration tutorial and docs
 # https://mecaruco2.readthedocs.io/en/latest/notebooks_rst/Aruco/aruco_basics.html
 # https://docs.opencv.org/trunk/d5/dae/tutorial_aruco_detection.html
+
 def get_point_aruco(ids_array, corners_list, aruco_dict_index):
     """
-    :param ids_array: 2d (unsqueezed) array of indices for Aruco markers
+    :param ids_array: numpy 2d (unsqueezed) array of indices for Aruco markers
     :param corners_list: list of 3d (unsqueezed) numpy 4X2 arrays, corners of each marker
     :param aruco_dict_index: real world corner to retrieve
     :return: a (2,) numpy array, the required point from the marker
@@ -368,15 +248,14 @@ def find_arena_homography(
         screen_x_res=1920,
         aruco_dict=ARUCO_DICT):
     """
-    Calculate the homography matrix to map from camera coordinates to
-    a coordinate system relative to the touch screen.
-
+    Calculate the homography matrix to map from camera coordinates to a coordinate system relative to the touch screen.
     Assumes cal_img contains 4 visually clear Aruco patterns, which are the first 4 indices in the pattern list.
     Each pattern has it's original top left corner in a specified place in the arena to create a rectangular shape.
-    :param cal_img: Image to extract the homography from. Numpy image, assumed to be lense corrected
-    :param screen_x_res: horizontal resolution of the screen
+
+    :param cal_img: Numpy image to extract the homography from. Assumed to be lens corrected
+    :param screen_x_res: int, horizontal resolution of the screen
     :param aruco_dict: Aruco dictionary which contains the patterns. Default: aruco_dict_4x4_50, using ascending order
-    :return: homography H, labelled image, screen length in image pixels
+    :return: numpy array homography H, labelled image, screen length in image pixels
     """
 
     gray = cv.cvtColor(cal_img, cv.COLOR_BGR2GRAY)
@@ -386,6 +265,7 @@ def find_arena_homography(
                                                                parameters=parameters)
     frame_markers = cv.aruco.drawDetectedMarkers(cal_img.copy(), corners, ids)
 
+    # if less (or strictly more) than 4 Aruco markers found, return error
     if len(corners) != 4:
         return None, frame_markers, "Could not find 4 Aruco patterns in the image."
 
@@ -418,8 +298,8 @@ def find_arena_homography(
 def transform_point(p, h):
     """
     :param p: point, numpy array with shape (2,)
-    :param h: homography matrix
-    :return: transformed point
+    :param h: homography matrix, numpy array
+    :return: transformed point, numpy array
     """
     return cv.perspectiveTransform(p.reshape(-1, 1, 2), h).squeeze()
 
@@ -427,11 +307,12 @@ def transform_point(p, h):
 def transform_image(img, h, screen_x_res=1920):
     """
     Applies homography transformation and crop to image
+
     :param img: image to transform
     :param h: homograhy matrix, 3X3 numpy array
-    :param screen_x_res: resolution of the screen in the arena
-    :param screen_width: size of the screen in the image, as returned from calibrate function
-    :return:image in the new coordinate space
+    :param screen_x_res: int, resolution of the screen in the arena
+    :param screen_width: int, size of the screen in the image, as returned from calibrate function
+    :return: numbpy array image in the new coordinate space
     """
     arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
     img_shape = (screen_x_res, int(arena_h_pixels))
@@ -441,10 +322,11 @@ def transform_image(img, h, screen_x_res=1920):
 def transform_data(data, h, cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2"))):
     """
     Computes the transformed coordinates of undistorted 2D data by matrix multiplication
+
     :param data: pandas DataFrame, columns assume to contain ('cent_x', 'cent_y', 'x', 'y') and optionally 'w' and 'h'
     :param h: homography matrix, 3X3 numpy array
     :param cols: pairs of columns in the dataframe to transform
-    :return: dataframe with the transformed data in the
+    :return: pandas dataframe with the transformed data in the
     """
     ret_df = data.copy()
 
@@ -457,10 +339,10 @@ def transform_data(data, h, cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2
     return ret_df
 
 
-# TODO what is this function used for?
 def get_last_homography(homographies_folder=HOMOGRAPHIES_FOLDER):
     """
-    Get the latest homography from the homographies folder according to date
+    Get the latest homography from the homographies folder according to date. Called by the HitPredictor
+
     :param homographies_folder: path to the homographies files
     :return: numpy 3x3 homography matrix, source width and height (ints)
     """

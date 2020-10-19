@@ -18,6 +18,8 @@ stats/
 *.jpg
 *.jpeg
 *.png
+std*.txt
+
 
 Archive/
 Arena/calibration/*

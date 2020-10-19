@@ -1,18 +1,26 @@
+"""
+This module implements a trjaectory predictor based on sequence-to-sequence
+neural network models.
+
+Seq2SeqPredictor - A TrajectoryPredictor subclass that uses a pytorch model for prediction.
+TrajEncDec - A pytorch model that uses an encoder-decoder seq2seq architechture to predict trjaectories based on past trajectories.
+"""
+
 import torch
 from torch import nn
 from Prediction.predictor import TrajectoryPredictor
-import math
 
 
 class Seq2SeqPredictor(TrajectoryPredictor):
     """
-    A TrajectoryPredictor subclass that uses a pytorch model to generate forecasts.
+    A TrajectoryPredictor subclass that uses a pytorch model to generate trajectory forecasts.
     """
 
     def __init__(self, model, weights_path, input_len, forecast_horizon):
         """
         The model is sent to the available device, and weights are loaded from the file.
-        :param model: An initialized PyTorch seq2seq model (torch.nn.Module).
+
+        :param model: An initialized PyTorch seq2seq model (torch.nn.Module subclass).
         :param weights_path: Path to a pickled state dictionary containing trained weights for the model.
         :param input_len: Number of timesteps to look back in order to generate a forecast.
         :param forecast_horizon: The forecast size in timesteps into the future.
@@ -25,191 +33,84 @@ class Seq2SeqPredictor(TrajectoryPredictor):
         self.model.eval()
 
     def init_trajectory(self, detection):
+        """
+        No need to initialize trjaectory as this model is only concerned with the past input_len detections.
+        """
         pass
 
     def _update_and_predict(self, past_input):
         """
-        Receive an updated bbox history and generate and return a forecast trajectory by feed foraward the input
-        through the model
+        Receive an updated bbox trajectory of the last input_len time steps, and generate and return a forecast
+        trajectory by passing it as input to the model.
         """
-
         with torch.no_grad():
             inp = torch.from_numpy(past_input).to(self.device)
-            inp = inp.unsqueeze(0).float()  # PyTorch RNN's require a 3 dimensional Tensor as input
+            inp = inp.unsqueeze(0).float()  # Adds an additional dimension for a batch size of 1.
             forecast = self.model(inp)
             return forecast.squeeze().cpu().numpy()
 
 
-class LSTMdense(nn.Module):
-    def __init__(
-            self,
-            output_seq_size,
-            embedding_size=None,
-            hidden_size=128,
-            LSTM_layers=2,
-            dropout=0.0,
-    ):
-        """
-        Implementation of RED predictor - LSTM for encoding and Linear layer for decoding.
-        "RED: A simple but effective Baseline Predictor for the TrajNet Benchmark"
-        From pedestrian trajectory prediction literature
+class TrajEncDec(nn.Module):
+    """
+    Pytorch module implementing a sequence to sequence decoder-encoder architecture for bounding box trajectories.
+    The module expects a bounding box trajectory as input.
 
-        :param output_seq_size: forecast length
-        :param embedding_size: output dimension of linear embedding layer of input (default: None)
-        :param hidden_size: dimension of hidden vector in each LSTM layer
-        :param LSTM_layers: number of LSTM layers
-        :param dropout: dropout normalization probability (default: 0)
-        """
-        super(LSTMdense, self).__init__()
+    The input trajectory is encoded as a tensor with shape (batch_size, trajectory length, 4) where trajectory
+    length can be any size and is not constrained by the architecture.
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    The output of the module is a tensor with shape (batch_size, output_seq_size, 4) representing a predicted
+    trajectory of bounding boxes.
 
-        self.hidden_size = hidden_size
-        self.LSTM_layers = LSTM_layers
-        self.output_seq_size = output_seq_size
-        self.output_dim = 4 * output_seq_size
+    See the init function for details about customizing the module architecture.
+    """
 
-        if embedding_size is not None:
-            self.embedding_encoder = nn.Linear(in_features=4, out_features=embedding_size)
-        else:
-            embedding_size = 4
-            self.embedding_encoder = None
-
-        self.dropout = nn.Dropout(dropout)
-
-        self.LSTM = nn.LSTM(input_size=embedding_size,
-                            hidden_size=hidden_size,
-                            num_layers=LSTM_layers,
-                            dropout=dropout, ) # TODO: add batch first and remove transpose from forward?
-
-        self.out_dense = nn.Linear(in_features=hidden_size, out_features=self.output_dim)
-
-    def forward(self, input_seq):
-        # take the last coordinates from the input sequence and tile them to the output length shape, switch dims 0,1
-        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-
-        # compute diffs
-        diffs = input_seq[:, 1:] - input_seq[:, :-1]
-
-        if self.embedding_encoder is not None:
-            diffs = self.embedding_encoder(diffs)
-
-        inp = self.dropout(diffs)
-
-        # ignores output (0) and cell (1,1)
-        _, (h_out, _) = self.LSTM(inp.transpose(0, 1))
-
-        output = self.out_dense(h_out[-1])  # take hidden state of last layer
-        output_mat = output.view(-1, self.output_seq_size, 4)
-
-        # add the offset to the deltas output
-        return offset + output_mat
-
-
-class GRUEncDec(nn.Module):
     def __init__(
             self,
             output_seq_size=20,
             hidden_size=64,
-            GRU_layers=1,
+            rnn_layers=1,
             dropout=0.0,
+            decoder_type='RNN',
+            rnn_type='GRU',
+            use_abs_pos=False,
             tie_enc_dec=False,
-            use_gru_cell=False
+            use_rnn_cell=False,
     ):
         """
-        Encoder-decoder architechture with GRU cells as encoder and decoder
-        :param output_seq_size: forecast length (defualt: 20)
-        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
-        :param GRU_layers: number of GRU layers (defualt: 1)
-        :param dropout: probablity of dropout of input (default: 0)
-        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
-        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
-        """
-        super(GRUEncDec, self).__init__()
+        Initialize the module.
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        The init parameters allow for customizing the encoder-decoder architecture.
+        The RNN variant for the encoder and decoder can be set using the rnn_type parameter, and can be either
+        an LSTM or GRU network. The decoder can be either an RNN of the same type as the encoder or
+        a simple (and much faster) linear layer by changing the decoder_type parameter.
+        When both decoder and encoder are RNNs, it's possible to share weights between them by setting tie_enc_dec to
+        True. This however requires that both encoder and decoder are full RNN layers, while using a single RNN cell
+        for the decoder is faster. This can be set using the use_rnn_cell parameter. Additionally, in this case the
+        decoder will ignore the rnn_layers parameter, and will consist of a single layer.
 
-        self.output_seq_size = output_seq_size
-        self.hidden_size = hidden_size
-        self.tie_enc_dec = tie_enc_dec
-        self.use_gru_cell = use_gru_cell
+        Even though the input to the module is a trajectory of absolute bounding box position, the module normally
+        ignores the absolute position of the input trajectory and uses only the velocity vectors of the trajectory
+        as input features. When setting use_abs_pos to True, the module will also use the absolute positions as
+        input features.
 
-        self.dropout_layer = torch.nn.Dropout(dropout)
+        There are two dropout layers, the first is on the input vector of the encoder, and the second is used on
+        the output of the RNN decoder, before running through a linear layer that converts the output to bbox
+        coordinates.
 
-        self.encoderGRU = nn.GRU(input_size=4,
-                                 hidden_size=hidden_size,
-                                 num_layers=GRU_layers,
-                                 batch_first=True,
-                                 )
+        The module also supports schedule sampling based training (see Bengio et al., Scheduled Sampling for Sequence
+        Prediction with Recurrent Neural Networks, 2015). To use scheduled sampling set the sampling_eps attribute
+        to the desired probability for sampling from the target batch, and set the target attribute to the prediction
+        target tensor. These attributes should be updated before running each training batch.
 
-        if not tie_enc_dec:
-            if use_gru_cell:
-                self.decoderGRU = nn.GRUCell(input_size=4,
-                                             hidden_size=hidden_size,
-                                             )
-            else:
-                self.decoderGRU = nn.GRU(input_size=4,
-                                         hidden_size=hidden_size,
-                                         num_layers=GRU_layers,
-                                         batch_first=True,
-                                         )
-        else:
-            self.decoderGRU = self.encoderGRU
-
-        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
-
-    def forward(self, input_seq):
-        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-        input_vels = input_seq[:, 1:] - input_seq[:, :-1]
-
-        input_vels = self.dropout_layer(input_vels)
-
-        _, hn = self.encoderGRU(input_vels)
-        out_list = []
-
-        # prev_x = input_seq[:, -1]
-        vel = input_vels[:, -1]
-        # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
-
-        if self.use_gru_cell:
-            hn = hn[0]
-
-        for i in range(self.output_seq_size):
-            vel = self.dropout_layer(vel)
-            if self.use_gru_cell:
-                hn = self.decoderGRU(vel, hn)
-                vel = self.linear(hn)
-            else:
-                _, hn = self.decoderGRU(vel.unsqueeze(1), hn)
-                vel = self.linear(hn[-1])
-
-            # x = vel + prev_x
-            out_list.append(vel.unsqueeze(1))
-
-        out = torch.cat(out_list, dim=1)
-        # add the deltas to the last location
-        # cumsum marginally improves generalization
-        return out.cumsum(dim=1) + offset
-
-
-class GRUEncDecSched(nn.Module):
-    def __init__(
-            self,
-            output_seq_size=20,
-            hidden_size=64,
-            GRU_layers=1,
-            dropout=0.0,
-            tie_enc_dec=False,
-            use_gru_cell=False
-    ):
-        """
-        Encoder-decoder architechture with GRU cells as encoder and decoder
-        :param output_seq_size: forecast length (defualt: 20)
-        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
-        :param GRU_layers: number of GRU layers (defualt: 1)
-        :param dropout: probablity of dropout of input (default: 0)
-        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
-        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        :param output_seq_size: forecast trajectory length
+        :param hidden_size: dimension of hidden state in RNNs
+        :param rnn_layers: number of RNN layers in encoder and decoder
+        :param dropout: dropout probablity in dropout layers
+        :param decoder_type: Architecture of decoder. 'RNN' or 'Linear'.
+        :param rnn_type: RNN architecture. 'GRU' or 'LSTM'.
+        :param use_abs_pos: Boolean, whether to use absolute position as an additional encoder feature.
+        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder.
+        :param use_rnn_cell: Boolean, whether to use a pytorch RNN cell or an RNN layer for the decoder.
         """
         super().__init__()
 
@@ -217,325 +118,191 @@ class GRUEncDecSched(nn.Module):
 
         self.output_seq_size = output_seq_size
         self.hidden_size = hidden_size
-        self.tie_enc_dec = tie_enc_dec
-        self.use_gru_cell = use_gru_cell
+        self.use_rnn_cell = use_rnn_cell
+        self.use_abs_pos = use_abs_pos
+        self.decoder_type = decoder_type
+        self.rnn_type = rnn_type
 
-        self.epsi = 0
+        self.sampling_eps = 0  # scheduled sampling probability for training
         self.target = None
 
         self.dropout_layer = torch.nn.Dropout(dropout)
 
-        self.encoderGRU = nn.GRU(input_size=4,
-                                 hidden_size=hidden_size,
-                                 num_layers=GRU_layers,
-                                 batch_first=True,
-                                 )
-
-        if not tie_enc_dec:
-            if use_gru_cell:
-                self.decoderGRU = nn.GRUCell(input_size=4,
-                                             hidden_size=hidden_size,
-                                             )
-            else:
-                self.decoderGRU = nn.GRU(input_size=4,
-                                         hidden_size=hidden_size,
-                                         num_layers=GRU_layers,
-                                         batch_first=True,
-                                         )
+        if use_abs_pos:
+            input_size = 8
         else:
-            self.decoderGRU = self.encoderGRU
+            input_size = 4
 
-        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+        # initialize encoder
+        if rnn_type == 'GRU':
+            self.encoder = nn.GRU(input_size=input_size,
+                                  hidden_size=hidden_size,
+                                  num_layers=rnn_layers,
+                                  batch_first=True,
+                                  )
+        else:
+            self.encoder = nn.LSTM(input_size=input_size,
+                                   hidden_size=hidden_size,
+                                   num_layers=rnn_layers,
+                                   batch_first=True,
+                                   )
 
-    def forward(self, input_seq):
-        offset = input_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-        input_vels = input_seq[:, 1:] - input_seq[:, :-1]
+        # initialize decoder
+        if decoder_type == 'RNN':
+            if not tie_enc_dec:
+                if use_rnn_cell:
+                    if rnn_type == 'GRU':
+                        self.decoder = nn.GRUCell(input_size=input_size,
+                                                  hidden_size=hidden_size,
+                                                  )
+                    else:
+                        self.decoder = nn.LSTMCell(input_size=input_size,
+                                                   hidden_size=hidden_size,
+                                                   )
+                else:
+                    if rnn_type == 'GRU':
+                        self.decoder = nn.GRU(input_size=input_size,
+                                              hidden_size=hidden_size,
+                                              num_layers=rnn_layers,
+                                              batch_first=True,
+                                              )
+                    else:
+                        self.decoder = nn.LSTM(input_size=input_size,
+                                               hidden_size=hidden_size,
+                                               num_layers=rnn_layers,
+                                               batch_first=True,
+                                               )
 
-        input_vels = self.dropout_layer(input_vels)
-        if self.epsi:
-            vel_target = self.target[:, 1:] - self.target[:, :-1]
+            else:
+                self.decoder = self.encoder
+            self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+        else:
+            # linear decoder - maps hidden directly to velocities
+            self.decoder = nn.Linear(in_features=hidden_size, out_features=4 * self.output_seq_size)
 
-        _, hn = self.encoderGRU(input_vels)
+    def decoder_rnn(self, hn, cn, input_seq, input_vels):
+        """
+        Forward function for an RNN based decoder.
+
+        :param hn: last hidden state
+        :param cn: last cell state (LSTM only)
+        :param input_seq: module input sequence (used for batch size and last position)
+        :param input_vels: first difference of the input_seq (used for last input velocity)
+        """
         out_list = []
 
-        # prev_x = input_seq[:, -1]
-        vel = input_vels[:, -1]
-        # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
-
-        if self.use_gru_cell:
+        if self.use_rnn_cell:
+            # reduce hidden state dimension to pass into RNN single cell.
             hn = hn[0]
+            if self.rnn_type == "LSTM":
+                cn = cn[0]
 
+        if self.sampling_eps:
+            # generate the scheduled sampling target encoding.
+            pos_target = self.target[:, :-1]
+            vel_target = self.target[:, 1:] - self.target[:, :-1]
+            if self.use_abs_pos:
+                target_en = torch.cat((pos_target, vel_target), dim=-1)
+            else:
+                target_en = vel_target
+
+        # start iterating from the last position and velocity in the input.
+        x = input_seq[:, -1]
+        vel = input_vels[:, -1]
+
+        # iterate over the encoder to generate the output sequence.
         for i in range(self.output_seq_size):
 
             vel = self.dropout_layer(vel)
 
-            if self.epsi and i > 0:
+            if self.sampling_eps and i > 0:
+                # scheduled sampling. select random time steps to sample from the target sequence.
                 coins = torch.rand(input_seq.shape[0])
                 take_true = (coins < self.epsi).unsqueeze(1).to(self.device)
-                truths = take_true * vel_target[:, i - 1]
-                farts = (~take_true) * vel
-                vel = truths + farts
+                truths = take_true * target_en[:, i - 1]
+                if self.use_abs_pos:
+                    x = truths[:, :4] + (~take_true) * x
+                    vel = truths[:, -4:] + (~take_true) * vel
+                else:
+                    vel = truths + (~take_true) * vel
 
-            if self.use_gru_cell:
-                hn = self.decoderGRU(vel, hn)
+            if self.use_abs_pos:
+                decoder_input = torch.cat((x, vel), dim=-1)
+            else:
+                decoder_input = vel
+
+            if self.use_rnn_cell:
+                if self.rnn_type == "GRU":
+                    hn = self.decoder(decoder_input, hn)
+                else:
+
+                    hn, cn = self.decoder(decoder_input, (hn, cn))
                 vel = self.linear(hn)
             else:
-                _, hn = self.decoderGRU(vel.unsqueeze(1), hn)
+                if self.rnn_type == "GRU":
+                    _, hn = self.decoder(decoder_input.unsqueeze(1), hn)
+                else:
+                    _, (hn, cn) = self.decoder(decoder_input.unsqueeze(1), (hn, cn))
+
                 vel = self.linear(hn[-1])
 
-            # x = vel + prev_x
+            if self.use_abs_pos:
+                x = vel + x
+
             out_list.append(vel.unsqueeze(1))
 
+        # concatenate the output sequence and return an output sequence of velocity vectors.
         out = torch.cat(out_list, dim=1)
-        # add the deltas to the last location
-        # cumsum marginally improves generalization
-        return out.cumsum(dim=1) + offset
+        return out
 
-
-class GRUEncDecPosVel(nn.Module):
-    """
-    Encoder-decoder architechture with GRU cells as encoder and decoder
-    """
-
-    def __init__(
-            self,
-            output_seq_size=20,
-            hidden_size=64,
-            GRU_layers=1,
-            dropout=0.0,
-            tie_enc_dec=False,
-            use_gru_cell=False
-    ):
+    def decoder_linear(self, hn):
         """
-        :param output_seq_size: forecast length (defualt: 20)
-        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
-        :param GRU_layers: number of GRU layers (defualt: 1)
-        :param dropout: probablity of dropout of input (default: 0)
-        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
-        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
+        Forward function for a linear layer decoder. Use a single linear layer to transform
+        the encoder's hidden state into a sequence of positions relative to the last position
+        of the input trajectory sequence.
+
+        :param hn: the encoder's hidden state vector
         """
-        super().__init__()
+        # take hidden state of last encoder layer
+        h_out = hn[-1]
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # run through linear layer
+        output = self.decoder(h_out)
 
-        self.output_seq_size = output_seq_size
-        self.hidden_size = hidden_size
-        self.tie_enc_dec = tie_enc_dec
-        self.use_gru_cell = use_gru_cell
-
-        self.dropout_layer = torch.nn.Dropout(dropout)
-
-        self.encoderGRU = nn.GRU(input_size=8,
-                                 hidden_size=hidden_size,
-                                 num_layers=GRU_layers,
-                                 batch_first=True,
-                                 )
-
-        if not tie_enc_dec:
-            if use_gru_cell:
-                self.decoderGRU = nn.GRUCell(input_size=8,
-                                             hidden_size=hidden_size,
-                                             )
-            else:
-                self.decoderGRU = nn.GRU(input_size=8,
-                                         hidden_size=hidden_size,
-                                         num_layers=GRU_layers,
-                                         batch_first=True,
-                                         )
-        else:
-            self.decoderGRU = self.encoderGRU
-
-        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
+        # reshape the output into a sequence of bbox coordinates.
+        return output.view(-1, self.output_seq_size, 4)
 
     def forward(self, input_seq):
-        input_vel = input_seq[:, 1:] - input_seq[:, :-1]
-        input_en = torch.cat((input_seq[:, :-1], input_vel), dim=-1)
+        """
+        Main forward function for the encoder-decoder module.
+
+        :param input_seq: An input trajectory sequence tensor of size (batch size, sequence length, 4)
+        """
+
+        # switch from absolute positions to velocity vectors.
+        offset = input_seq[:, -1][:, None, :]
+        input_vels = input_seq[:, 1:] - input_seq[:, :-1]
+
+        if self.use_abs_pos:
+            # encode both positions and velocities features.
+            input_en = torch.cat((input_seq[:, :-1], input_vels), dim=-1)
+        else:
+            # use only velocity vectors as input features.
+            input_en = input_vels
 
         input_en = self.dropout_layer(input_en)
 
-        _, hn = self.encoderGRU(input_en)
-        out_list = []
+        # encode input
+        if self.rnn_type == "GRU":
+            _, hn = self.encoder(input_en)
+            cn = None
+        else:
+            _, (hn, cn) = self.encoder(input_en)
 
-        if self.use_gru_cell:
-            hn = hn[0]
+        # decode output
+        if self.decoder_type == 'RNN':
+            out = self.decoder_rnn(hn, cn, input_seq, input_vels)
+        else:
+            out = self.decoder_linear(hn)
 
-        x = input_seq[:, -1]
-        vel = input_vel[:, -1]
-
-        for i in range(self.output_seq_size):
-            vel = self.dropout_layer(vel)
-            input_dec = torch.cat((x, vel), dim=-1)
-
-            if self.use_gru_cell:
-                hn = self.decoderGRU(input_dec, hn)
-                vel = self.linear(hn)
-            else:
-                _, hn = self.decoderGRU(input_dec.unsqueeze(1), hn)
-                vel = self.linear(hn[-1])
-
-            #x = x + vel
-            out_list.append(vel.unsqueeze(1))
-
-        out = torch.cat(out_list, dim=1)
-
-        return out.cumsum(dim=1) + input_seq[:, -1][:, None, :]
-
-
-class ConvEncoder(nn.Module):
-    """
-    Convolutional encoder to map cropped head image to a low dimensional vector. Trained jointly with
-    the the rest of the network. Constant architechture with 2 conv layers.
-    """
-    def __init__(self, in_width, in_height, out_size, conv1_out_chan, conv2_out_chan):
-        """
-        :param in_width: image width
-        :param in_height: image height
-        :param out_size: 1d dimension of the embedding vector
-        :param conv1_out_chan: number of kernels in conv1
-        :param conv2_out_chan: number of kernels in conv2
-        """
-        super().__init__()
-        self.conv1 = torch.nn.Conv2d(in_channels=1, out_channels=conv1_out_chan, kernel_size=3)
-        self.conv2 = torch.nn.Conv2d(in_channels=conv1_out_chan, out_channels=conv2_out_chan, kernel_size=3)
-        self.pool = torch.nn.MaxPool2d(2)
-
-        inp = torch.rand(1, 1, in_width, in_height)
-        inp = self.conv1(inp)
-        inp = self.pool(inp)
-        inp = self.conv2(inp)
-        inp = self.pool(inp)
-
-        self.fc = torch.nn.Linear(inp.flatten().size(0), out_size)
-
-        self.out_size = out_size
-        self.in_width = in_width
-        self.in_height = in_height
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = torch.nn.functional.relu(x)
-        x = self.pool(x)
-        x = self.conv2(x)
-        x = torch.nn.functional.relu(x)
-        x = self.pool(x)
-        return self.fc(x.reshape(x.size(0), -1))
-
-
-class GRUEncDecWithHead(nn.Module):
-    def __init__(
-            self,
-            output_seq_size=20,
-            hidden_size=64,
-            GRU_layers=1,
-            dropout=0.0,
-            head_embedder=ConvEncoder(32, 32, 5, 4, 10),
-    ):
-        """
-        Encoder-decoder architechture with GRU cells as encoder and decoder
-        :param output_seq_size: forecast length (defualt: 20)
-        :param hidden_size: dimension of hidden state in GRU cell (defualt: 64)
-        :param GRU_layers: number of GRU layers (defualt: 1)
-        :param dropout: probability of dropout of input (default: 0)
-        :param tie_enc_dec: Boolean, whether to use the same parameters in the encoder and decoder (default: False)
-        :param use_gru_cell: Boolean, whether to use the nn.GRUCell class instead of nn.GRU (default: False)
-        :param head_embedder: initialized torch.nn module to map cropped head image to a low dimensional vector
-        """
-        super().__init__()
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.output_seq_size = output_seq_size
-        self.hidden_size = hidden_size
-
-        self.dropout_layer = torch.nn.Dropout(dropout)
-
-        self.encoderGRU = nn.GRU(input_size=4 + head_embedder.out_size,
-                                 hidden_size=hidden_size,
-                                 num_layers=GRU_layers,
-                                 batch_first=True,
-                                 )
-
-        self.decoderGRU = nn.GRUCell(input_size=4,
-                                     hidden_size=hidden_size)
-
-        self.linear = nn.Linear(in_features=hidden_size, out_features=4)
-
-        self.head_embedder = head_embedder
-
-    def forward(self, bbox_seq, head_seq):
-        offset = bbox_seq[:, -1].repeat(self.output_seq_size, 1, 1).transpose(0, 1)
-        diffs = bbox_seq[:, 1:] - bbox_seq[:, :-1]
-
-        diffs = self.dropout_layer(diffs)
-
-        # drop last head image, unnecessary for diffs
-        head_seq = head_seq[:, :-1]
-
-        # reshape tensor for batch inference of images
-        head_input = head_seq.unsqueeze(2).reshape(-1, 1, head_seq.size(-2), head_seq.size(-1))
-        head_embedding = self.head_embedder(head_input)
-
-        # reshape tensor back to (batch, sequence) dimensions.
-        head_embedding = head_embedding.reshape(diffs.size(0), diffs.size(1), -1)
-
-        _, hn = self.encoderGRU(torch.cat([diffs, head_embedding], dim=2))
-        out_list = []
-
-        # prev_x = input_seq[:, -1]
-        prev_x = diffs[:, -1]
-        # prev_x = torch.zeros(diffs[:, -1].size()).to(self.device) # doesn't seem to make a difference...
-
-        hn = hn[0]
-
-        for i in range(self.output_seq_size):
-            hn = self.decoderGRU(prev_x, hn)
-            lin = self.linear(hn)
-
-            x = lin + prev_x
-            out_list.append(x.unsqueeze(1))
-            prev_x = x
-
-        out = torch.cat(out_list, dim=1)
-        # add the deltas to the last location
-        # cumsum marginally improves generalization
         return out.cumsum(dim=1) + offset
- 
-
-class VelLinear(nn.Module):
-    """
-    A baseline linear fully-connected model with one hidden layer and RELU activation.
-    """
-    def __init__(
-            self,
-            input_size=4,
-            output_size=4,
-            input_seq_size=20,
-            output_seq_size=20,
-            hidden_size=64,
-            dropout=0.0,
-    ):
-        super(VelLinear, self).__init__()
-
-        self.output_size = output_size
-        self.output_seq_size = output_seq_size
-        self.input_seq_size = output_seq_size
-
-        self.dropout_layer = torch.nn.Dropout(dropout)
-        self.encoder = torch.nn.Linear(
-            in_features=input_size * (input_seq_size - 1), out_features=hidden_size
-        )
-        self.decoder = torch.nn.Linear(
-            in_features=hidden_size, out_features=output_size * output_seq_size
-        )
-
-    def forward(self, input_seq):
-        diffs = input_seq[:, 1:] - input_seq[:, :-1]
-
-        x = self.dropout_layer(diffs)
-        x = self.encoder(x.view(x.shape[0], -1))
-        x = torch.nn.functional.relu(x)
-        x = self.decoder(x)
-
-        out = x.view(x.shape[0], self.input_seq_size, self.output_size)
-
-        return out + input_seq[:, -1][:, None, :]
