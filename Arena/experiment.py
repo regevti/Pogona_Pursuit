@@ -231,7 +231,7 @@ class ExperimentAnalyzer:
         res = pd.DataFrame()
         touches_path = trial_path / 'screen_touches.csv'
         if touches_path.exists():
-            res = pd.read_csv(touches_path, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
+            res = pd.read_csv(touches_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
 
         return res
 
@@ -247,15 +247,15 @@ class ExperimentAnalyzer:
         exp_df['strike_accuracy'] = to_percent(group(res_df.query('is_hit==1'))['is_hit'].count() / num_strikes)
         exp_df['reward_accuracy'] = to_percent(group(res_df.query('is_reward_bug==1'))['is_reward_bug'].count() / num_strikes)
 
-        exp_df['time'] = [date_parser.parse(z[0].split('_')[-1]) for z in exp_group.count().index.to_list()]
+        exp_df['exp_time'] = [date_parser.parse(z[0].split('_')[-1]) for z in exp_group.count().index.to_list()]
         trial_ids = exp_df.index.get_level_values(1)
-        first_strikes = (exp_group['timestamp'].first() - exp_df['time']).astype('timedelta64[s]')
+        first_strikes = (exp_group['time'].first() - exp_df['exp_time']).astype('timedelta64[s]')
         trial_start = exp_group['trial_duration'].first() * (trial_ids - 1) + exp_group['iti'].first() * (trial_ids - 1)
         exp_df['time_to_first_strike'] = first_strikes - trial_start
 
         exp_cols = [x for x in experiment_arguments() if x in res_df.columns and x != 'animal_id']
         exp_df = pd.concat([exp_df, exp_group[exp_cols].first()], axis=1)
-        exp_df = exp_df.sort_values(by=['time', 'trial'])
+        exp_df = exp_df.sort_values(by=['exp_time', 'trial'])
         exp_df.drop(columns=['num_trials'], inplace=True, errors='ignore')
 
         return exp_df
