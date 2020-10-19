@@ -142,7 +142,7 @@ class Experiment:
         touches_file = Path(self.trial_path) / LOG_TOPICS.get("touch", '')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
-            touches_df = pd.read_csv(touches_file, parse_dates=['timestamp'], index_col=0).reset_index(drop=True)
+            touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)
             log += f'  Number of touches on the screen: {len(touches_df)}\n'
             num_hits = len(touches_df.query("is_hit == True"))
             log += f'  Number of successful hits: {num_hits}\n'
