@@ -1,8 +1,6 @@
 import re
-
 from dateutil import parser as date_parser
 from dotenv import load_dotenv
-
 load_dotenv()
 from utils import get_datetime_string, mkdir, is_debug_mode, turn_display_on, turn_display_off, to_integer
 from arena import record
@@ -10,6 +8,7 @@ from cache import CacheColumns, RedisCache
 from mqtt import MQTTPublisher, LOG_TOPICS, SUBSCRIPTION_TOPICS
 from logger import EXPERIMENT_LOG
 from pathlib import Path
+from multiprocessing import Process, Queue
 import pandas as pd
 import argparse
 import inspect
@@ -19,6 +18,7 @@ import json
 mqtt_client = MQTTPublisher()
 EXPERIMENTS_DIR = 'experiments'
 REWARD_TYPES = ['always', 'end_trial']
+EXTRA_TIME_RECORDING = 30  # seconds
 
 
 class Experiment:
@@ -59,7 +59,7 @@ class Experiment:
         mqtt_client.publish_event(EXPERIMENT_LOG, msg)
 
     def start(self):
-        self.log('>> Experiment started\n')
+        self.log(f'>> Experiment {self.name} started\n')
         mkdir(self.experiment_path)
         self.save_experiment_log()
         self.init_experiment_cache()
@@ -84,21 +84,46 @@ class Experiment:
         mkdir(self.trial_path)
         turn_display_on()
         mqtt_client.publish_command('led_light', 'on')
-        mqtt_client.publish_command('init_bugs', self.bug_options)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.trial_duration)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration + self.iti)
-        self.log(f'>> Trial {self.current_trial} started')
-        if not is_debug_mode():
-            acquire_stop = {'record_time': self.trial_duration}
-            if self.is_always_reward:
-                acquire_stop.update({'trial_alive': True})
-            record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
-                   is_use_predictions=self.is_use_predictions, **acquire_stop)
-        else:
-            time.sleep(self.trial_duration)
+        self.log(f'>> Trial {self.current_trial} recording started')
+        process = self.start_recording()
+        time.sleep(EXTRA_TIME_RECORDING)
+        mqtt_client.publish_command('init_bugs', self.bug_options)
+        self.log(f'>> Trial {self.current_trial} bugs initiated')
+
+        t0 = time.time()
+        while time.time() - t0 < self.trial_duration:
+            process.join(1)
+            if not process.is_alive():
+                break
+
         mqtt_client.publish_command('hide_bugs')
+        self.log(f'>> Trial {self.current_trial} bugs stopped')
+        time.sleep(EXTRA_TIME_RECORDING)
         mqtt_client.publish_command('end_trial')
         turn_display_off()
+        process.join(10)
+        if process.is_alive():
+            process.kill()
+
+    def start_recording(self) -> Process:
+        """Start cameras recording on a separate process"""
+        def _start_recording():
+            record_duration = self.trial_duration + 2 * EXTRA_TIME_RECORDING
+            if not is_debug_mode():
+                acquire_stop = {'record_time': record_duration}
+                if self.is_always_reward:
+                    acquire_stop.update({'trial_alive': True})
+                record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
+                       is_use_predictions=self.is_use_predictions, **acquire_stop)
+            else:
+                time.sleep(record_duration)
+
+        p = Process(target=_start_recording)
+        p.start()
+
+        return p
 
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:

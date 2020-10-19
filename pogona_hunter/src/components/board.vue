@@ -235,6 +235,7 @@ export default {
           isHit = true
         }
         this.$mqtt.publish('event/log/touch', JSON.stringify({
+          time: Date.now(),
           x: x,
           y: y,
           bug_x: bug.x,
