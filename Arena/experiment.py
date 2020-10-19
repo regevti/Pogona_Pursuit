@@ -105,7 +105,7 @@ class Experiment:
         turn_display_off()
         process.join(10)
         if process.is_alive():
-            process.kill()
+            process.terminate()
 
     def start_recording(self) -> Process:
         """Start cameras recording on a separate process"""
