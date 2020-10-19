@@ -90,14 +90,15 @@ def led_light(state):
 @app.task
 def save_to_csv(topic, payload):
     try:
+        if topic != 'trajectory':
+            payload = [payload]
+        df = pd.DataFrame(payload)
         if topic in ['trajectory', 'touch']:
-            df = pd.DataFrame(payload)
             try:
                 df['time'] = pd.to_datetime(df['time'], unit='ms').dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem')
             except Exception as exc:
                 logger.warning(f'Unable to convert trajectory time to local; {exc}')
         else:
-            df = pd.DataFrame([payload])
             df['timestamp'] = datetime.now()
         filename = get_csv_filename(topic)
         if filename.exists():
