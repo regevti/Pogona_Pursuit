@@ -25,8 +25,10 @@ apt-get -qq install -y \
   libatlas-base-dev \
   gfortran \
   libhdf5-dev \
-  python3.7-dev \
-  python3-pip && \
+  python3.7-dev
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 1
+RUN apt-get install python3-pip && \
 pip3 install --upgrade pip && \
 pip3 install numpy && \
 apt-get autoclean && apt-get clean && \
@@ -153,4 +155,4 @@ RUN cd spinnaker && (echo "yes" && cat) | ./install_spinnaker.sh
 ENV TZ=Asia/Jerusalem
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN echo 'alias python="python3"' >> ~/.bashrc
+RUN echo 'alias python="python3.7"' >> ~/.bashrc
