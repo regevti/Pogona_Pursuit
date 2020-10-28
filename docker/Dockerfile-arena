@@ -25,9 +25,9 @@ apt-get -qq install -y \
   libatlas-base-dev \
   gfortran \
   libhdf5-dev \
+  python3.7-dev && \
   python3-pip && \
 pip3 install --upgrade pip && \
-apt-get -qq install python3.7-dev -y && \
 pip3 install numpy && \
 apt-get autoclean && apt-get clean && \
 rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -147,7 +147,7 @@ RUN apt-get -qq update && apt-get -qq install -y lsb-release \
   libusb-1.0.0
 
 RUN pip3 install -r arena.txt
-RUN pip3 install spinnaker/spinnaker_python-2.0.0.147-cp36-cp36m-linux_x86_64.whl
+RUN pip3 install spinnaker/spinnaker_python-2.2.0.48-cp37-cp37m-linux_x86_64.whl
 RUN cd spinnaker && (echo "yes" && cat) | ./install_spinnaker.sh
 
 ENV TZ=Asia/Jerusalem
