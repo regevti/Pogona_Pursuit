@@ -336,7 +336,19 @@ def get_device_id(cam) -> str:
 
 def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
     """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
-    current_devices = [get_device_id(c) for c in cam_list]
+
+    def _get_device_ids():
+        current_devices0 = [get_device_id(c) for c in cam_list]
+        d = {}
+        for c in current_devices0:
+            m = re.search(r'1950\d{4}', c)
+            if m:
+                d[m.group(0)] = c
+            else:
+                d[c] = c
+        return d
+
+    current_devices = _get_device_ids()
     chosen_devices = []
     for cam_id in cameras_string.split(','):
         if re.match(r'[a-zA-z]+', cam_id):
@@ -352,7 +364,7 @@ def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
 
     for d in current_devices:
         if d not in chosen_devices:
-            _remove_from_cam_list(d)
+            _remove_from_cam_list(current_devices[d])
 
 
 def display_info():
