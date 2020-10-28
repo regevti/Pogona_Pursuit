@@ -1,5 +1,6 @@
-import os
 import logging
+import serial
+import time
 from pathlib import Path
 import numpy as np
 import asyncio
@@ -76,18 +77,6 @@ def get_logger(device_id: str, dir_path: str, log_stream=None) -> logging.Logger
     return logger
 
 
-def is_debug_mode():
-    return os.environ.get('DEBUG', False)
-
-
-def is_predictor_experiment():
-    return os.environ.get('PREDICTOR_EXPERIMENT', False)
-
-
-def get_predictor_model():
-    return os.environ.get('PREDICTOR_MODEL', 'lstm')
-
-
 def calculate_fps(frame_times):
     diffs = [j - i for i, j in zip(frame_times[:-1], frame_times[1:])]
     fps = 1 / np.mean(diffs)
@@ -113,3 +102,26 @@ def to_integer(x):
         return int(x)
     except Exception:
         return x
+
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
+SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_BAUD = 9600
+
+
+class Serializer:
+    """Serializer for connecting the TTL Arduino"""
+    def __init__(self):
+        self.ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+        time.sleep(0.5)
+
+    def start_acquisition(self):
+        self.ser.write(b'H')
+
+    def stop_acquisition(self):
+        self.ser.write(b'L')

@@ -1,33 +1,24 @@
-import os
 import sys
 import logging
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-from celery import Celery, Task
+from celery import Celery
 from celery.utils.log import get_task_logger
-
 from parallel_port import ParallelPort
-from cache import CacheColumns, RedisCache, REDIS_HOST
+from cache import CacheColumns, RedisCache
+import config
 import paho.mqtt.client as mqtt
 
 
-MQTT_HOST = os.environ.get('MQTT_HOST', 'mqtt')
-EXPERIMENT_LOG = 'event/log/experiment'
-LOG_TOPICS = {
-    'touch': 'screen_touches.csv',
-    'hit': 'hits.csv',
-    'prediction': 'predictions.csv',
-    'trajectory': 'bug_trajectory.csv'
-}
+mqtt = mqtt.Client()
+cache = RedisCache()
 logger = get_task_logger(__name__)
 h = logging.StreamHandler(sys.stdout)
 logger.addHandler(h)
 
-mqtt = mqtt.Client()
-cache = RedisCache()
 parport = None
-if os.environ.get('IS_USE_PARPORT'):
+if config.is_use_parport:
     try:
         parport = ParallelPort()
     except Exception as exc:
@@ -41,11 +32,11 @@ def is_always_reward():
 def log(msg):
     logger.info(msg)
     if mqtt is not None:
-        mqtt.connect(MQTT_HOST)
-        mqtt.publish(EXPERIMENT_LOG, msg)
+        mqtt.connect(config.mqtt_host)
+        mqtt.publish(config.experiment_topic, msg)
 
 
-app = Celery('logger', broker=f'redis://{REDIS_HOST}:6379/0')
+app = Celery('logger', broker=f'redis://{config.redis_host}:6379/0')
 
 
 @app.task
@@ -117,4 +108,4 @@ def get_csv_filename(topic) -> Path:
         parent = f'events/{datetime.today().strftime("%Y%m%d")}'
         Path(parent).mkdir(parents=True, exist_ok=True)
 
-    return Path(f'{parent}/{LOG_TOPICS[topic]}')
+    return Path(f'{parent}/{config.logger_files[topic]}')

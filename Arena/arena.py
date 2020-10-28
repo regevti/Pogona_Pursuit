@@ -2,7 +2,6 @@
 
 import time
 import re
-import os
 import cv2
 import json
 import argparse
@@ -12,42 +11,19 @@ import pandas as pd
 import numpy as np
 from multiprocessing.dummy import Pool
 import PySpin
+import config
 from cache import CacheColumns
 from mqtt import MQTTPublisher
-from utils import get_logger, calculate_fps, mkdir, get_log_stream, is_debug_mode, is_predictor_experiment, get_predictor_model
+from utils import get_logger, calculate_fps, mkdir, get_log_stream
 
+################################################ Predictor ################################################
 
-DEFAULT_NUM_FRAMES = 1000
-DEFAULT_MAX_THROUGHPUT = 94578303
-EXPOSURE_TIME = int(os.environ.get('EXPOSURE_TIME', 8000))
-OUTPUT_DIR = 'output'
-UNSORTED_DIR = mkdir('output/unsorted')
-FPS = 60
-SAVED_FRAME_RESOLUTION = (1440, 1088)
-INFO_FIELDS = ['AcquisitionFrameRate', 'AcquisitionMode', 'TriggerSource', 'TriggerMode', 'TriggerSelector',
-               'PayloadSize', 'EventSelector', 'LineStatus', 'ExposureTime',
-               'DeviceLinkCurrentThroughput', 'DeviceLinkThroughputLimit', 'DeviceMaxThroughput', 'DeviceLinkSpeed']
-CAMERA_NAMES = {
-    'realtime': '19506468',
-    'right': '19506475',
-    'left': '19506455',
-    'back': '19506481'
-}
-ACQUIRE_STOP_OPTIONS = {
-    'num_frames': int,
-    'record_time': int,
-    'manual_stop': 'cache',
-    'trial_alive': 'cache'
-}
 IS_PREDICTOR_READY = False
-IS_PREDICTOR_EXPERIMENT = is_predictor_experiment()
-DETECTOR_THRESH = float(os.environ.get('DETECTOR_THRESH', 0.9))
-REALTIME_CAMERA = os.environ.get('REALTIME_CAMERA', 'realtime')
-if not os.environ.get('DISABLE_PREDICTOR'):
+if not config.is_disable_predictor:
     try:
         from Prediction import predictor, detector, seq2seq_predict
 
-        _detector = detector.Detector_v4(conf_thres=DETECTOR_THRESH)
+        _detector = detector.Detector_v4(conf_thres=config.detector_thresh)
 
         class PredictModel:
             def __init__(self, weigths, traj_model):
@@ -71,12 +47,14 @@ if not os.environ.get('DISABLE_PREDICTOR'):
     except Exception as exc:
         print(f'Error loading detector: {exc}')
 
+################################################ End Predictor ################################################
+
 
 class SpinCamera:
     def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None,
                  is_use_predictions=False):
         self.cam = cam
-        self.acquire_stop = acquire_stop or {'num_frames': DEFAULT_NUM_FRAMES}
+        self.acquire_stop = acquire_stop or {'num_frames': config.default_num_frames}
         self.dir_path = dir_path
         self.cache = cache
         self.is_use_predictions = is_use_predictions
@@ -93,7 +71,7 @@ class SpinCamera:
         if self.is_realtime_mode:
             self.logger.info('Working in realtime mode')
             self.predictor_experiment_ids = []
-            self.predictor = _models[get_predictor_model()].hit_pred
+            self.predictor = _models[config.predictor_model].hit_pred
             self.mqtt_client = MQTTPublisher()
 
     def begin_acquisition(self, exposure):
@@ -198,11 +176,11 @@ class SpinCamera:
         if self.is_realtime_mode:
             self.handle_prediction(img, i)
 
-        if not self.is_realtime_mode or is_predictor_experiment():
+        if not self.is_realtime_mode or config.is_predictor_experiment:
             if self.dir_path and self.video_out is None:
                 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
                 h, w = img.shape[:2]
-                self.video_out = cv2.VideoWriter(self.video_path, fourcc, FPS, (w, h), True)
+                self.video_out = cv2.VideoWriter(self.video_path, fourcc, config.fps, (w, h), True)
 
             self.video_out.write(img)
 
@@ -210,8 +188,8 @@ class SpinCamera:
 
     def validate_acquire_stop(self):
         for key, value in self.acquire_stop.items():
-            assert key in ACQUIRE_STOP_OPTIONS, f'unknown acquire_stop: {key}'
-            if ACQUIRE_STOP_OPTIONS[key] == 'cache':
+            assert key in config.acquire_stop_options, f'unknown acquire_stop: {key}'
+            if config.acquire_stop_options[key] == 'cache':
                 assert self.cache is not None
             else:
                 assert isinstance(value, int), f'acquire stop {key}: expected type int, received {type(value)}'
@@ -238,20 +216,20 @@ class SpinCamera:
         return self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON)
 
     def handle_prediction(self, img, i):
-        if IS_PREDICTOR_EXPERIMENT and not i % 60:
+        if config.is_predictor_experiment and not i % 60:
             self.predictor_experiment_ids.append(i)
             self.mqtt_client.publish_command('show_pogona', 3)
         forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
         if hit_point is None or not hit_steps:
             return
 
-        time2hit = (1 / FPS) * hit_steps  # seconds
+        time2hit = (1 / config.fps) * hit_steps  # seconds
         self.mqtt_client.publish_event('event/log/prediction', json.dumps({'hit_point': hit_point.tolist(), 'time2hit': time2hit}))
 
     def log_info(self):
         """Print into logger the info of the camera"""
         st = '\n'
-        for k, v in zip(INFO_FIELDS, self.info()):
+        for k, v in zip(config.info_fields, self.info()):
             st += f'{k}: {v}\n'
         self.logger.info(st)
 
@@ -265,7 +243,7 @@ class SpinCamera:
 
         frame_times = pd.to_datetime(frame_times, unit='s')
         frame_times.to_csv(self.timestamp_path)
-        if IS_PREDICTOR_EXPERIMENT and self.is_realtime_mode:
+        if config.is_predictor_experiment and self.is_realtime_mode:
             predictor_times = frame_times[self.predictor_experiment_ids]
             predictor_times.to_csv(f'{self.dir_path}/predictor_times.csv')
 
@@ -282,7 +260,7 @@ class SpinCamera:
         """Get All camera values of INFO_FIELDS and return as a list"""
         nan = 'x'
         values = []
-        for field in INFO_FIELDS:
+        for field in config.info_fields:
             try:
                 value = getattr(self.cam, field.replace(' ', ''))
                 if not value:
@@ -304,7 +282,7 @@ class SpinCamera:
             max_throughput = int(self.cam.DeviceMaxThroughput.GetValue())
         except Exception as exc:
             self.logger.warning(exc)
-            max_throughput = DEFAULT_MAX_THROUGHPUT
+            max_throughput = config.default_max_throughput
 
         return max_throughput
 
@@ -316,7 +294,7 @@ class SpinCamera:
             return True
 
     def get_camera_name(self):
-        for name, device_id in CAMERA_NAMES.items():
+        for name, device_id in config.camera_names.items():
             if self.device_id == device_id:
                 return name
 
@@ -343,7 +321,7 @@ class SpinCamera:
 
     @property
     def is_realtime_mode(self):
-        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == REALTIME_CAMERA
+        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == config.realtime_camera
 
 
 
@@ -362,7 +340,7 @@ def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
     chosen_devices = []
     for cam_id in cameras_string.split(','):
         if re.match(r'[a-zA-z]+', cam_id):
-            device = CAMERA_NAMES.get(cam_id)
+            device = config.camera_names.get(cam_id)
             if device and device in current_devices:
                 chosen_devices.append(device)
         elif re.match(r'[0-9]+', cam_id):
@@ -390,7 +368,7 @@ def display_info():
         df.append(sc.info())
         index.append(sc.device_id)
 
-    df = pd.DataFrame(df, columns=INFO_FIELDS, index=index)
+    df = pd.DataFrame(df, columns=config.info_fields, index=index)
     del cam, sc
     output = f'\nCameras Info:\n\n{df.to_string()}\n'
     cam_list.Clear()
@@ -432,7 +410,7 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def capture_image(camera: str, exposure=EXPOSURE_TIME) -> (np.ndarray, None):
+def capture_image(camera: str, exposure=config.exposure_time) -> (np.ndarray, None):
     """
     Capture single image from a camera
     :param camera: The camera name (don't use more than one camera)
@@ -452,8 +430,8 @@ def capture_image(camera: str, exposure=EXPOSURE_TIME) -> (np.ndarray, None):
     return img
 
 
-def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, folder_prefix=None, is_auto_start=False, cache=None,
-           is_use_predictions=False, **acquire_stop) -> str:
+def record(exposure=config.exposure_time, cameras=None, output=config.output_dir, folder_prefix=None,
+           is_auto_start=False, cache=None, is_use_predictions=False, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
     :param exposure: The exposure time to be set to the cameras
@@ -464,9 +442,9 @@ def record(exposure=EXPOSURE_TIME, cameras=None, output=OUTPUT_DIR, folder_prefi
     :param cache: memory cache to be used by the cameras
     :param is_use_predictions: relevant for realtime camera only - using strike prediction
     """
-    if is_debug_mode():
+    if config.is_debug_mode:
         return 'DEBUG MODE'
-    assert all(k in ACQUIRE_STOP_OPTIONS for k in acquire_stop.keys())
+    assert all(k in config.acquire_stop_options for k in acquire_stop.keys())
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
     log_stream = get_log_stream()
@@ -505,10 +483,10 @@ def main():
                     help=f"Stop record using cache key MANUAL_RECORD_STOP.")
     ap.add_argument("--experiment_alive", action="store_true", default=False,
                     help=f"Stop record if the experiment ended")
-    ap.add_argument("-o", "--output", type=str, default=OUTPUT_DIR,
-                    help=f"Specify output directory path. Default={OUTPUT_DIR}")
-    ap.add_argument("-e", "--exposure", type=int, default=EXPOSURE_TIME,
-                    help=f"Specify cameras exposure time. Default={EXPOSURE_TIME}")
+    ap.add_argument("-o", "--output", type=str, default=config.output_dir,
+                    help=f"Specify output directory path. Default={config.output_dir}")
+    ap.add_argument("-e", "--exposure", type=int, default=config.exposure_time,
+                    help=f"Specify cameras exposure time. Default={config.exposure_time}")
     ap.add_argument("-c", "--camera", type=str, required=False,
                     help=f"filter cameras by last digits or according to CAMERA_NAMES (for more than one use ',').")
     ap.add_argument("-i", "--info", action="store_true", default=False,
@@ -520,7 +498,7 @@ def main():
         print(display_info())
     else:
         acquire_stop = {}
-        for key in ACQUIRE_STOP_OPTIONS:
+        for key in config.acquire_stop_options:
             if key in args:
                 acquire_stop[key] = args[key]
         record(args.get('exposure'), args.get('camera'), args.get('output'), **acquire_stop)

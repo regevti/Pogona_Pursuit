@@ -1,19 +1,8 @@
-import os
 import json
-from logger import LOG_TOPICS, save_to_csv, handle_hit, end_trial, end_experiment, reward, led_light
+from logger import save_to_csv, handle_hit, end_trial, end_experiment, reward, led_light
 from cache import RedisCache
 import paho.mqtt.client as mqtt
-
-HOST = os.environ.get('MQTT_HOST', 'mqtt')
-
-LOG_TOPIC_PREFIX = 'event/log/'
-SUBSCRIPTION_TOPICS = {
-    'reward': 'event/command/reward',
-    'led_light': 'event/command/led_light',
-    'end_trial': 'event/command/end_trial',
-    'end_experiment': 'event/command/end_experiment'
-}
-SUBSCRIPTION_TOPICS.update({k: LOG_TOPIC_PREFIX + k for k in LOG_TOPICS.keys()})
+import config
 
 
 class MQTTClient:
@@ -29,26 +18,26 @@ class MQTTClient:
 
     @staticmethod
     def on_connect(client, userdata, flags, rc):
-        print(f'MQTT connecting to host: {HOST}; rc: {rc}')
-        client.subscribe([(topic, 0) for topic in SUBSCRIPTION_TOPICS.values()])
+        print(f'MQTT connecting to host: {config.mqtt_host}; rc: {rc}')
+        client.subscribe([(topic, 0) for topic in config.subscription_topics.values()])
 
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode('utf-8')
         print(f'received message with topic {msg.topic}')
-        if msg.topic == SUBSCRIPTION_TOPICS['reward']:
+        if msg.topic == config.subscription_topics['reward']:
             reward.delay(is_force=True)
 
-        elif msg.topic == SUBSCRIPTION_TOPICS['led_light']:
+        elif msg.topic == config.subscription_topics['led_light']:
             led_light.delay(payload)
 
-        elif msg.topic == SUBSCRIPTION_TOPICS['end_experiment']:
+        elif msg.topic == config.subscription_topics['end_experiment']:
             end_experiment.delay()
 
-        elif msg.topic == SUBSCRIPTION_TOPICS['end_trial']:
+        elif msg.topic == config.subscription_topics['end_trial']:
             end_trial.delay()
 
-        elif msg.topic.startswith(LOG_TOPIC_PREFIX):
-            topic = msg.topic.replace(LOG_TOPIC_PREFIX, '')
+        elif msg.topic.startswith(config.log_topic_prefix):
+            topic = msg.topic.replace(config.log_topic_prefix, '')
             try:
                 payload = json.loads(payload)
                 if topic == 'touch':
@@ -58,7 +47,7 @@ class MQTTClient:
                 print(f'Unable to parse log payload of {topic}: {exc}')
 
     def publish_event(self, topic, payload, retain=False):
-        self.client.connect(HOST)
+        self.client.connect(config.mqtt_host)
         self.client.publish(topic, payload, retain=retain)
 
     def publish_command(self, command, payload='', retain=False):

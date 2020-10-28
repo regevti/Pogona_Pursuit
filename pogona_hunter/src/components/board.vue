@@ -74,6 +74,7 @@
            :timeInEdge="timeInEdge"
            :speed="currentBugOptions.speed"
            :movementType="movementType"
+           :isAntiClockWise="isAntiClockWise"
            ref="bugChild">
       </bug>
     </canvas>
@@ -99,6 +100,7 @@ export default {
       numOfBugs: 0,
       isStopOnReward: false,
       isHandlingTouch: false,
+      isAntiClockWise: false,
       timeBetweenBugs: 2000,
       bloodDuration: 2000,
       timeInEdge: 2000,
@@ -133,6 +135,7 @@ export default {
       this.movementType = options.movementType ? options.movementType : this.movementType
       this.timeBetweenBugs = options.timeBetweenBugs !== undefined ? Number(options.timeBetweenBugs) * 1000 : this.timeBetweenBugs
       this.currentBugOptions.speed = options.speed ? Number(options.speed) : this.currentBugOptions.speed
+      this.isAntiClockWise = options.isAntiClockWise !== undefined ? options.isAntiClockWise : false
       let isLogTrajectory = options.isLogTrajectory ? Boolean(options.isLogTrajectory) : false
       this.$store.commit('reset_score')
       this.initBoard(isLogTrajectory)

@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 import json
 import os
-from utils import is_predictor_experiment
+import config
 
 
 class HitPredictor:
@@ -113,7 +113,7 @@ class HitPredictor:
             if forecast is not None:
                 hit_point, hit_steps = self.predict_hit(forecast)
 
-        if is_predictor_experiment() and detection is not None:
+        if config.is_predictor_experiment and detection is not None:
             forecast, hit_point, hit_steps = detection, np.array([0, 0, 0, 0]), 1
 
         self.frame_num += 1

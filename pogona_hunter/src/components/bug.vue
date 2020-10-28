@@ -23,7 +23,8 @@ export default {
     bugTypes: Array[String],
     timeInEdge: Number,
     speed: Number,
-    movementType: String
+    movementType: String,
+    isAntiClockWise: Boolean
   },
   computed: {
     isMoveInCircles: function () {
@@ -58,10 +59,11 @@ export default {
       return img
     },
     getNextBugType() {
-      if (this.bugTypes.length === 1) {
+      if (!Array.isArray(this.bugTypes) || this.bugTypes.length === 1) {
         this.currentBugType = this.bugTypes[0]
         return
       }
+      console.log(this.bugTypes)
       let nextBugOptions = this.bugTypes.filter(bug => bug !== this.currentBugType)
       let nextIndex = randomRange(0, nextBugOptions.length)
       this.currentBugType = nextBugOptions[nextIndex]
@@ -87,7 +89,7 @@ export default {
       this.edgeDetection()
       if (this.isMoveInCircles) {
         this.theta += Math.abs(this.dx) * Math.sqrt(2) / this.r
-        this.x = this.r0[0] + this.r * Math.cos(this.theta)
+        this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.isAntiClockWise ? -1 : 1)
         this.y = this.r0[1] + this.r * Math.sin(this.theta)
       } else {
         // move in straight lines
@@ -188,7 +190,7 @@ export default {
     },
     getAngleRadians() {
       if (this.isMoveInCircles) {
-        return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + Math.PI
+        return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + (this.isAntiClockWise ? 0 : Math.PI)
       }
       return Math.atan2(this.dy, this.dx) + Math.PI / 2
     },

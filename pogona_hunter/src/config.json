@@ -20,17 +20,6 @@
       },
       "stepsPerImage": 10
     },
-    "vegetables": {
-      "text": "Vegetables",
-      "numImagesPerBug": 2,
-      "isStatic": true,
-      "speed": 1,
-      "radiusRange": {
-        "min": 250,
-        "max": 300
-      },
-      "stepsPerImage": 10
-    },
     "red_beetle": {
       "text": "Red Beetle",
       "numImagesPerBug": 12,

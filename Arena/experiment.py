@@ -1,49 +1,50 @@
-import re
-import time
-import json
-import inspect
 import argparse
-import pandas as pd
-from dateutil import parser as date_parser
-from multiprocessing import Process
+import inspect
+import json
+import time
+from dataclasses import dataclass, field
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
 
-from utils import get_datetime_string, mkdir, is_debug_mode, turn_display_on, turn_display_off, to_integer
+import pandas as pd
+
+import config
 from arena import record
 from cache import CacheColumns, RedisCache
-from mqtt import MQTTPublisher, LOG_TOPICS, SUBSCRIPTION_TOPICS
-from logger import EXPERIMENT_LOG
-
+from mqtt import MQTTPublisher
+from utils import get_datetime_string, mkdir, turn_display_on, turn_display_off
 
 mqtt_client = MQTTPublisher()
-EXPERIMENTS_DIR = 'experiments'
-REWARD_TYPES = ['always', 'end_trial']
-EXTRA_TIME_RECORDING = 30  # seconds
 
 
+@dataclass
 class Experiment:
-    def __init__(self, name: str, animal_id: str, bug_types: str, cameras, cache: RedisCache = None,
-                 trial_duration: int = 60, num_trials: int = 1, iti: int = 10, bug_speed=None, movement_type=None,
-                 is_use_predictions: bool = False, time_between_bugs: int = None, reward_type='end_trial',
-                 reward_bugs: str = None):
-        self.name = f'{name}_{get_datetime_string()}'
-        self.animal_id = animal_id
-        self.cache = cache or RedisCache()
-        self.num_trials = num_trials
-        self.trial_duration = trial_duration
-        self.iti = iti
-        self.current_trial = 1
-        self.cameras = cameras
-        self.is_use_predictions = is_use_predictions
-        self.bug_types = bug_types.split(',')
-        self.reward_bugs = reward_bugs.split(',') if reward_bugs else self.bug_types
-        self.reward_type = reward_type
-        self.bug_speed = bug_speed
-        self.movement_type = movement_type
-        self.time_between_bugs = time_between_bugs
+    name: str
+    animal_id: str
+    bug_types: list
+    cameras: str
+    cache: RedisCache = field(default_factory=RedisCache, repr=False)
+    trial_duration: int = 60
+    num_trials: int = 1
+    iti: int = 10
+    bug_speed: int = None
+    movement_type: str = None
+    is_use_predictions: bool = False
+    time_between_bugs: int = None
+    reward_type: str = 'end_trial'
+    reward_bugs: list = None
+    is_anticlockwise: bool = False
+    current_trial: int = field(default=1, repr=False)
+    pool: ThreadPool = field(default=None, repr=False)
+
+    def __post_init__(self):
+        self.name = f'{self.name}_{get_datetime_string()}'
+        if isinstance(self.bug_types, str):
+            self.bug_types = self.bug_types.split(',')
+        if self.reward_bugs and isinstance(self.reward_bugs, str):
+            self.reward_bugs = self.reward_bugs.split(',')
+        else:
+            self.reward_bugs = self.bug_types
 
     def __str__(self):
         output = ''
@@ -59,23 +60,24 @@ class Experiment:
     @staticmethod
     def log(msg):
         print(msg)
-        mqtt_client.publish_event(EXPERIMENT_LOG, msg)
+        mqtt_client.publish_event(config.experiment_topic, msg)
 
     def start(self):
         self.log(f'>> Experiment {self.name} started\n')
         mkdir(self.experiment_path)
         self.save_experiment_log()
         self.init_experiment_cache()
-        turn_display_on()
         mqtt_client.publish_command('hide_bugs')
         for i in range(self.num_trials):
-            if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
-                self.log('experiment was stopped')
-                break
-            self.current_trial = i + 1
-            if i != 0:
-                time.sleep(self.iti)
-            self.run_trial()
+            try:
+                self.current_trial = i + 1
+                if i != 0:
+                    self.sleep(self.iti)
+                self.run_trial()
+            except EndExperimentException:
+                self.hide_bugs()
+                self.terminate_pool()
+                self.log('>> experiment was stopped externally')
 
             self.log(self.trial_summary)
 
@@ -87,34 +89,37 @@ class Experiment:
         mkdir(self.trial_path)
         turn_display_on()
         mqtt_client.publish_command('led_light', 'on')
+
+        self.trial_log('recording started')
+        self.pool = self.start_recording()
+        self.sleep(config.extra_time_recording)
+
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.trial_duration)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration + self.iti)
-        self.log(f'>> Trial {self.current_trial} recording started')
-        pool = self.start_recording()
-        time.sleep(EXTRA_TIME_RECORDING)
         mqtt_client.publish_command('init_bugs', self.bug_options)
-        self.log(f'>> Trial {self.current_trial} bugs initiated')
-        time.sleep(self.trial_duration)
-        mqtt_client.publish_command('hide_bugs')
-        self.log(f'>> Trial {self.current_trial} bugs stopped')
-        time.sleep(EXTRA_TIME_RECORDING)
+        self.trial_log('bugs initiated')
+        self.sleep(self.trial_duration)
+        self.hide_bugs()
+
+        self.sleep(config.extra_time_recording)
         mqtt_client.publish_command('end_trial')
         turn_display_off()
-        pool.terminate()
-        pool.join()
+        self.terminate_pool()
 
     def start_recording(self) -> ThreadPool:
         """Start cameras recording on a separate process"""
+
         def _start_recording():
-            record_duration = self.trial_duration + 2 * EXTRA_TIME_RECORDING
-            if not is_debug_mode():
+            record_duration = self.trial_duration + 2 * config.extra_time_recording
+            if not config.is_debug_mode:
                 acquire_stop = {'record_time': record_duration}
                 # if self.is_always_reward:
                 #     acquire_stop.update({'trial_alive': True})
                 record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
                        is_use_predictions=self.is_use_predictions, **acquire_stop)
             else:
-                time.sleep(record_duration)
+                self.sleep(record_duration)
+            self.log('>> recording ended')
 
         pool = ThreadPool(processes=1)
         pool.apply_async(_start_recording)
@@ -124,6 +129,8 @@ class Experiment:
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.log', 'w') as f:
             f.write(str(self))
+        with open(f'{self.experiment_path}/config.log', 'w') as f:
+            f.write(config_string())
 
     def init_experiment_cache(self):
         self.cache.set(CacheColumns.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
@@ -135,7 +142,7 @@ class Experiment:
     @property
     def trial_summary(self):
         log = f'Summary of Trial {self.current_trial}:\n'
-        touches_file = Path(self.trial_path) / LOG_TOPICS.get("touch", '')
+        touches_file = Path(self.trial_path) / config.logger_files.get("touch", '')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)
@@ -150,9 +157,29 @@ class Experiment:
         log += 2 * '\n'
 
         if num_hits and self.reward_type == 'end_trial':
-            mqtt_client.publish_event(SUBSCRIPTION_TOPICS['reward'], '')
+            mqtt_client.publish_event(config.subscription_topics['reward'], '')
 
         return log
+
+    def sleep(self, duration):
+        """Sleep while checking for experiment end"""
+        t0 = time.time()
+        while time.time() - t0 < duration:
+            if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
+                raise EndExperimentException()
+            time.sleep(2)
+
+    def trial_log(self, msg):
+        self.log(f'>> Trial {self.current_trial} {msg}')
+
+    def hide_bugs(self):
+        mqtt_client.publish_command('hide_bugs')
+        self.trial_log('bugs stopped')
+
+    def terminate_pool(self):
+        if self.pool:
+            self.pool.terminate()
+            self.pool.join()
 
     @property
     def bug_options(self):
@@ -164,16 +191,18 @@ class Experiment:
             'movementType': self.movement_type,
             'timeBetweenBugs': self.time_between_bugs,
             'isStopOnReward': self.is_always_reward,
-            'isLogTrajectory': True
+            'isLogTrajectory': True,
+            'isAntiClockWise': self.is_anticlockwise
         })
 
     @property
     def experiment_duration(self):
-        return round((self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
+        return round((self.num_trials * (self.trial_duration + 2 * config.extra_time_recording)
+                + (self.num_trials - 1) * self.iti) * 1.5)
 
     @property
     def experiment_path(self):
-        return f'{EXPERIMENTS_DIR}/{self.name}'
+        return f'{config.experiments_dir}/{self.name}'
 
     @property
     def trial_path(self):
@@ -188,116 +217,21 @@ class Experiment:
         return self.reward_type == 'always'
 
 
-class ExperimentAnalyzer:
-    def __init__(self, start_date, end_date, bug_types=None, animal_id=None):
-        self.start_date = date_parser.parse(start_date)
-        self.end_date = date_parser.parse(end_date + 'T23:59')
-        self.bug_types = bug_types
-        self.animal_id = animal_id
+class EndExperimentException(Exception):
+    pass
 
-    def get_experiments(self) -> pd.DataFrame:
-        res_df = []
-        for exp_path in Path(EXPERIMENTS_DIR).glob('*'):
-            info_path = exp_path / 'experiment.log'
-            if not info_path.exists() or not self.is_in_date_range(exp_path):
-                continue
-            info = self.get_experiment_info(info_path)
-            if not self.is_match_conditions(info):
-                continue
-            trial_data = self.get_trial_data(exp_path, info)
-            res_df.append(trial_data)
 
-        df = pd.concat(res_df)
-        if len(df) > 0:
-            df.rename(columns={'name': 'experiment'}, inplace=True)
-            df = self.group_by_experiment_and_trial(df)
-            # df.index.name = None  # for removing index title row
-        return df
-
-    def get_trial_data(self, exp_path: Path, info: dict) -> pd.DataFrame:
-        trials = []
-        for trial_path in exp_path.glob('trial*'):
-            trial = self.get_screen_touches(trial_path)
-            trial_num = int(trial_path.stem.split('trial')[-1])
-            trial['trial'] = trial_num if len(trial) > 0 else [trial_num]
-            trials.append(trial)
-
-        trials = pd.concat(trials)
-        for key, value in info.items():
-            trials[key] = value
-
-        return trials
-
-    @staticmethod
-    def get_screen_touches(trial_path: Path) -> pd.DataFrame:
-        res = pd.DataFrame()
-        touches_path = trial_path / 'screen_touches.csv'
-        if touches_path.exists():
-            res = pd.read_csv(touches_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
-
-        return res
-
-    @staticmethod
-    def group_by_experiment_and_trial(res_df: pd.DataFrame) -> pd.DataFrame:
-        group = lambda x: x.groupby(['experiment', 'trial'])
-        to_percent = lambda x: (x.fillna(0) * 100).map('{:.1f}%'.format)
-        exp_group = group(res_df)
-        exp_df = exp_group[['animal_id']].first()
-
-        num_strikes = exp_group['is_hit'].count()
-        exp_df['num_of_strikes'] = num_strikes
-        exp_df['strike_accuracy'] = to_percent(group(res_df.query('is_hit==1'))['is_hit'].count() / num_strikes)
-        exp_df['reward_accuracy'] = to_percent(group(res_df.query('is_reward_bug==1'))['is_reward_bug'].count() / num_strikes)
-
-        exp_df['exp_time'] = [date_parser.parse(z[0].split('_')[-1]) for z in exp_group.count().index.to_list()]
-        exp_df['exp_time'] = exp_df['exp_time'].dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem')
-        trial_ids = exp_df.index.get_level_values(1)
-        first_strikes = (exp_group['time'].first().dt.tz_convert('Asia/Jerusalem') - exp_df['exp_time']).astype('timedelta64[s]')
-        trial_start = exp_group['trial_duration'].first() * (trial_ids - 1) + exp_group['iti'].first() * (trial_ids - 1)
-        exp_df['time_to_first_strike'] = first_strikes - trial_start
-
-        exp_cols = [x for x in experiment_arguments() if x in res_df.columns and x != 'animal_id']
-        exp_df = pd.concat([exp_df, exp_group[exp_cols].first()], axis=1)
-        exp_df = exp_df.sort_values(by=['exp_time', 'trial'])
-        exp_df.drop(columns=['num_trials'], inplace=True, errors='ignore')
-
-        return exp_df
-
-    def is_in_date_range(self, exp_path):
-        try:
-            exp_date = str(exp_path).split('_')[-1]
-            exp_date = date_parser.parse(exp_date)
-            return self.start_date <= exp_date <= self.end_date
-        except Exception as exc:
-            print(f'Error parsing experiment {exp_path}; {exc}')
-
-    def is_match_conditions(self, info):
-        attrs2check = ['bug_types', 'animal_id']
-        for attr in attrs2check:
-            req_value = getattr(self, attr)
-            if not req_value:
-                continue
-            info_value = info.get(attr)
-            if not info_value or \
-                    (isinstance(req_value, (int, float)) and req_value != to_integer(info_value)) or \
-                    (isinstance(req_value, str) and req_value not in info_value):
-                return False
-        return True
-
-    @staticmethod
-    def get_experiment_info(p: Path):
-        """Load the experiment info file to data frame"""
-        info = {}
-        int_fields = ['iti', 'trial_duration', 'animal_id']
-        with p.open('r') as f:
-            m = re.finditer(r'(?P<key>\w+): (?P<value>\S+)', f.read())
-            for r in m:
-                key = r.groupdict()['key'].lower()
-                value = r.groupdict()['value']
-                if key in int_fields:
-                    value = to_integer(value)
-                info[key] = value
-        return info
+def config_string():
+    """Get a printable string of config"""
+    drop_config_fields = ['Env', 'env']
+    config_dict = config.__dict__
+    for k in config_dict.copy():
+        if k.startswith('__') or k in drop_config_fields:
+            config_dict.pop(k)
+    s = ''
+    for k, v in config_dict.items():
+        s += f'{k}: {v}\n'
+    return s
 
 
 def experiment_arguments():
