@@ -48,10 +48,10 @@ fps = env.int('FPS', 60)
 output_dir = env('OUTPUT_DIR', 'output')
 saved_frame_resolution = env.list('SAVED_FRAME_RESOLUTION', [1440, 1088])
 camera_names = {
-    'realtime': 19506468,
-    'right': 19506475,
-    'left': 19506455,
-    'back': 19506481,
+    'realtime': '19506468',
+    'right': '19506475',
+    'left': '19506455',
+    'back': '19506481',
 }
 acquire_stop_options = {
     'num_frames': int,
