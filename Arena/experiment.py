@@ -12,7 +12,7 @@ import config
 from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTPublisher
-from utils import get_datetime_string, mkdir, turn_display_on, turn_display_off
+from utils import datetime_string, mkdir, turn_display_on, turn_display_off
 
 mqtt_client = MQTTPublisher()
 
@@ -38,7 +38,7 @@ class Experiment:
     pool: ThreadPool = field(default=None, repr=False)
 
     def __post_init__(self):
-        self.name = f'{self.name}_{get_datetime_string()}'
+        self.name = f'{self.name}_{datetime_string()}'
         if isinstance(self.bug_types, str):
             self.bug_types = self.bug_types.split(',')
         if self.reward_bugs and isinstance(self.reward_bugs, str):

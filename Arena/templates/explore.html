@@ -21,13 +21,23 @@
         <input id="endDate" width="276"/>
 
         <div class="mt-3">
-            <label for="bugType">Bug Type</label>
-            <input id="bugType" type="text" class="form-control"/>
+            <label for="minStrikes">Minimum Number of Strikes</label>
+            <input id="minStrikes" type="number" class="form-control col-sm-3" value="1"/>
         </div>
 
         <div class="mt-3">
             <label for="animalId">Animal ID</label>
-            <input id="animalId" type="number" class="form-control"/>
+            <input id="animalId" type="number" class="form-control col-sm-3"/>
+        </div>
+
+        <div class="mt-3">
+            <label for="movementType">Movement Type</label>
+            <input id="movementType" type="text" class="form-control col-sm-8"/>
+        </div>
+
+        <div class="mt-3">
+            <label for="bugType">Bug Type</label>
+            <input id="bugType" type="text" class="form-control col-sm-8"/>
         </div>
 
         <div class="mt-3">
@@ -70,7 +80,9 @@
           start_date: $("#startDate").val(),
           end_date: $("#endDate").val(),
           bug_types: $("#bugType").val(),
-          animal_id: $("#animalId").val()
+          animal_id: Number($("#animalId").val()),
+          num_of_strikes: Number($("#minStrikes").val()),
+          movement_type: $("#movementType").val()
         }),
         contentType: "application/json",
         beforeSend: function () {

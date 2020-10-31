@@ -37,6 +37,8 @@ def experiment_results():
     data = request.json
     ea = ExperimentAnalyzer(**data)
     df = ea.get_experiments()
+    if len(df) < 1:
+        return Response('No experiments found')
     return Response(df.to_html(classes='table-responsive'))
 
 

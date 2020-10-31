@@ -89,7 +89,7 @@ def mkdir(path):
     return path
 
 
-def get_datetime_string():
+def datetime_string():
     return datetime.now().strftime('%Y%m%dT%H%M%S')
 
 

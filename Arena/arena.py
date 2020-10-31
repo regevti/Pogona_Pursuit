@@ -14,7 +14,7 @@ import PySpin
 import config
 from cache import CacheColumns
 from mqtt import MQTTPublisher
-from utils import get_logger, calculate_fps, mkdir, get_log_stream
+from utils import get_logger, calculate_fps, mkdir, get_log_stream, datetime_string
 
 ################################################ Predictor ################################################
 
@@ -300,7 +300,7 @@ class SpinCamera:
 
     @property
     def video_path(self):
-        return f'{self.dir_path}/{self.device_id}.avi'
+        return f'{self.dir_path}/{self.name}_{datetime_string()}.avi'
 
     @property
     def timestamp_path(self):
@@ -324,31 +324,18 @@ class SpinCamera:
         return IS_PREDICTOR_READY and self.is_use_predictions and self.name == config.realtime_camera
 
 
-
 ############################################################################################################
 
 
 def get_device_id(cam) -> str:
     """Get the camera device ID of the cam instance"""
     nodemap_tldevice = cam.GetTLDeviceNodeMap()
-    return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
+    return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceSerialNumber')).GetValue()
 
 
 def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
     """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
-
-    def _get_device_ids():
-        current_devices0 = [get_device_id(c) for c in cam_list]
-        d = {}
-        for c in current_devices0:
-            m = re.search(r'1950\d{4}', c)
-            if m:
-                d[m.group(0)] = c
-            else:
-                d[c] = c
-        return d
-
-    current_devices = _get_device_ids()
+    current_devices = [get_device_id(cam) for cam in cam_list]
     chosen_devices = []
     for cam_id in cameras_string.split(','):
         if re.match(r'[a-zA-z]+', cam_id):
@@ -364,7 +351,7 @@ def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
 
     for d in current_devices:
         if d not in chosen_devices:
-            _remove_from_cam_list(current_devices[d])
+            _remove_from_cam_list(d)
 
 
 def display_info():
@@ -442,14 +429,14 @@ def capture_image(camera: str, exposure=config.exposure_time) -> (np.ndarray, No
     return img
 
 
-def record(exposure=config.exposure_time, cameras=None, output=config.output_dir, folder_prefix=None,
+def record(exposure=config.exposure_time, cameras=None, output=None, folder_prefix=None,
            is_auto_start=False, cache=None, is_use_predictions=False, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
     :param exposure: The exposure time to be set to the cameras
     :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
-    :param output: Output dir for videos
-    :param folder_prefix: Prefix to be added to folder name
+    :param output: Output dir for videos and timestamps, if not exist save into a timestamp folder in default output dir.
+    :param folder_prefix: Prefix to be added to folder name. Not used if output is given.
     :param is_auto_start: Start record automatically or wait for user input
     :param cache: memory cache to be used by the cameras
     :param is_use_predictions: relevant for realtime camera only - using strike prediction
@@ -464,12 +451,14 @@ def record(exposure=config.exposure_time, cameras=None, output=config.output_dir
     if cameras:
         filter_cameras(cam_list, cameras)
 
-    folder_name = datetime.now().strftime('%Y%m%d-%H%M%S')
-    if folder_prefix:
-        folder_name = f'{folder_prefix}_{folder_name}'
-    dir_path = mkdir(f"{output}/{folder_name}")
+    if not output:
+        folder_name = datetime_string()
+        if folder_prefix:
+            folder_name = f'{folder_prefix}_{folder_name}'
+        output = f"{config.output_dir}/{folder_name}"
+    output = mkdir(output)
 
-    filtered = [(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]
+    filtered = [(cam, acquire_stop, output, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]
     print(f'\nCameras detected: {len(filtered)}')
     print(f'Acquire Stop: {acquire_stop}')
     if filtered:

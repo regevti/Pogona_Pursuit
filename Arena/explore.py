@@ -1,17 +1,19 @@
+from datetime import datetime, timedelta
 import re
-import pandas as pd
-from pathlib import Path
-import datetime
-from dateutil import parser as date_parser
 from dataclasses import dataclass
+from pathlib import Path
+
+import pandas as pd
+from dateutil import parser as date_parser
+
 import config
 from utils import to_integer
 
 
 @dataclass
 class ExperimentAnalyzer:
-    start_date: datetime.datetime
-    end_date: datetime.datetime
+    start_date: datetime
+    end_date: datetime
     bug_types: str = None
     animal_id: int = None
     movement_type: str = None
@@ -33,7 +35,7 @@ class ExperimentAnalyzer:
             info = self.get_experiment_info(info_path)
             if not self.is_match_conditions(info):
                 continue
-            trial_data = self.get_trial_data(exp_path, info)
+            trial_data = self.get_trials_data(exp_path, info)
             res_df.append(trial_data)
 
         if len(res_df) > 0:
@@ -44,13 +46,16 @@ class ExperimentAnalyzer:
 
         return res_df
 
-    def get_trial_data(self, exp_path: Path, info: dict) -> pd.DataFrame:
+    def get_trials_data(self, exp_path: Path, info: dict) -> pd.DataFrame:
         trials = []
         for trial_path in exp_path.glob('trial*'):
-            trial = self.get_screen_touches(trial_path)
-            trial_num = int(trial_path.stem.split('trial')[-1])
-            trial['trial'] = trial_num if len(trial) > 0 else [trial_num]
-            trials.append(trial)
+            trial_df = self.get_screen_touches(trial_path)
+            trial_meta = dict()
+            trial_meta['trial'] = int(re.match(r'trial(\d+)', trial_path.stem)[1])
+            trial_meta['trial_start'] = self.get_trial_start(trial_path, info, trial_meta['trial'])
+            for k, v in trial_meta.items():
+                trial_df[k] = v if len(trial_df) > 1 else [v]
+            trials.append(trial_df)
 
         trials = pd.concat(trials)
         for key, value in info.items():
@@ -64,8 +69,26 @@ class ExperimentAnalyzer:
         touches_path = trial_path / 'screen_touches.csv'
         if touches_path.exists():
             res = pd.read_csv(touches_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
-
         return res
+
+    def get_trial_start(self, trial_path: Path, info: dict, trial_id: int) -> (datetime, None):
+        """Get start time for a trial based on trajectory csv's first record or if not exists, based on calculating
+        trial start using meta data such as trial_duration, ITI, etc.."""
+        def _calculate_trial_start_from_meta():
+            extra_time_recording = info['extra_time_recording']
+            time2trials = info['trial_duration'] * (trial_id - 1) + info['iti'] * (trial_id - 1) + \
+                          extra_time_recording * trial_id + extra_time_recording * (trial_id - 1)
+            exp_time = self.get_experiment_time(info)
+            return exp_time + timedelta(seconds=time2trials)
+
+        traj_path = trial_path / 'bug_trajectory.csv'
+        if not traj_path.exists():
+            return _calculate_trial_start_from_meta()
+
+        res = pd.read_csv(traj_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
+        if len(res) < 1:
+            return _calculate_trial_start_from_meta()
+        return res['time'][0]
 
     @staticmethod
     def group_by_experiment_and_trial(res_df: pd.DataFrame) -> pd.DataFrame:
@@ -80,19 +103,16 @@ class ExperimentAnalyzer:
         exp_df['reward_accuracy'] = to_percent(
             group(res_df.query('is_reward_bug==1'))['is_reward_bug'].count() / num_strikes)
 
-        exp_df['exp_time'] = [date_parser.parse(z[0].split('_')[-1]) for z in exp_group.count().index.to_list()]
-        exp_df['exp_time'] = exp_df['exp_time'].dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem')
-        trial_ids = exp_df.index.get_level_values(1)
-        first_strikes = (exp_group['time'].first().dt.tz_convert('Asia/Jerusalem') - exp_df['exp_time']).astype(
-            'timedelta64[s]')
-        trial_start = exp_group['trial_duration'].first() * (trial_ids - 1) + \
-                      exp_group['iti'].first() * (trial_ids - 1) + \
-                      config.extra_time_recording * trial_ids + config.extra_time_recording * (trial_ids - 1)
-        exp_df['time_to_first_strike'] = first_strikes - trial_start
-        # exp_cols = [x for x in experiment_arguments() if x in res_df.columns and x != 'animal_id']
-        # exp_df = pd.concat([exp_df, exp_group[exp_cols].first()], axis=1)
-        exp_df = exp_df.sort_values(by=['exp_time', 'trial'])
-        exp_df.drop(columns=['num_trials'], inplace=True, errors='ignore')
+        first_strikes_times = remove_tz(exp_group['time'].first())
+        exp_df['trial_start'] = remove_tz(exp_group['trial_start'].first())
+        exp_df['time_to_first_strike'] = (first_strikes_times - exp_df['trial_start']).astype('timedelta64[s]')
+        exp_df['trial_start'] = localize_dt(exp_df['trial_start'])
+
+        META_COLS = ['bug_speed', 'movement_type', 'bug_types']
+        exp_cols = [x for x in META_COLS if x in res_df.columns]
+        exp_df = pd.concat([exp_df, exp_group[exp_cols].first()], axis=1)
+        exp_df = exp_df.sort_values(by=['trial_start', 'trial'])
+        exp_df.drop(columns=['num_trials', 'exp_time'], inplace=True, errors='ignore')
 
         return exp_df
 
@@ -111,6 +131,10 @@ class ExperimentAnalyzer:
         except Exception as exc:
             print(f'Error parsing experiment {exp_path}; {exc}')
 
+    @staticmethod
+    def get_experiment_time(info: dict) -> datetime:
+        return date_parser.parse(info.get('name').split('_')[-1])
+
     def is_match_conditions(self, info):
         attrs2check = ['bug_types', 'animal_id', 'movement_type']
         for attr in attrs2check:
@@ -128,7 +152,7 @@ class ExperimentAnalyzer:
     def get_experiment_info(p: Path):
         """Load the experiment info file to data frame"""
         info = {}
-        int_fields = ['iti', 'trial_duration', 'animal_id']
+        int_fields = ['iti', 'trial_duration', 'animal_id', 'extra_time_recording']
         with p.open('r') as f:
             m = re.finditer(r'(?P<key>\w+): (?P<value>\S+)', f.read())
             for r in m:
@@ -138,3 +162,11 @@ class ExperimentAnalyzer:
                     value = to_integer(value)
                 info[key] = value
         return info
+
+
+def remove_tz(col):
+    return pd.to_datetime(col, utc=True).dt.tz_convert('utc').dt.tz_localize(None)
+
+
+def localize_dt(col: pd.Series):
+    return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%Y-%m-%d %H:%M:%S')
