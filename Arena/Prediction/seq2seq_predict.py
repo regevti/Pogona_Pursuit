@@ -218,7 +218,7 @@ class TrajEncDec(nn.Module):
             if self.sampling_eps and i > 0:
                 # scheduled sampling. select random time steps to sample from the target sequence.
                 coins = torch.rand(input_seq.shape[0])
-                take_true = (coins < self.epsi).unsqueeze(1).to(self.device)
+                take_true = (coins < self.sampling_eps).unsqueeze(1).to(self.device)
                 truths = take_true * target_en[:, i - 1]
                 if self.use_abs_pos:
                     x = truths[:, :4] + (~take_true) * x
@@ -290,6 +290,8 @@ class TrajEncDec(nn.Module):
             # use only velocity vectors as input features.
             input_en = input_vels
 
+        if self.decoder_type == "RNN":
+            input_en = input_en[:, :-1]  # up until and including v_{m-2}, v_{m-1} is the decoder's first input
         input_en = self.dropout_layer(input_en)
 
         # encode input

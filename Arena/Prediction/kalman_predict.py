@@ -158,3 +158,41 @@ class KalmanPredictor(TrajectoryPredictor):
             pred2 = np.dot(self.kf2.F, pred2)
 
         return forecast
+
+
+def filter_trial(df, cols=["x1", "y1"], q_var=2.145, r_var=120.0):
+    discontinuity = True
+    kf = None
+    values = df[cols].values
+
+    def init_trajectory(p):
+        nonlocal kf
+        init_x = np.zeros(4, np.float)
+        init_x[0::2] = p
+
+        kf = create_kalman_filter(
+            init_x=init_x, input_dim=2, num_terms=2, q_var=q_var, r_var=r_var,
+        )
+
+    def filter_point(p):
+        nonlocal discontinuity
+        if not np.isnan(p[0]):
+            if discontinuity:
+                # Reinitialize trajectory after a discontinuity (a sequence of NaNs has ended)
+                init_trajectory(p)
+                discontinuity = False
+            else:
+                # Update the filters according to the new measurement
+                kf.predict()
+                kf.update(p)
+
+            return kf.x[::2]
+        else:
+            discontinuity = True
+            return np.nan
+
+    filtered = np.empty_like(values)
+    for i in range(values.shape[0]):
+        filtered[i] = filter_point(values[i])
+
+    return filtered

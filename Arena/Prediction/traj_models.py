@@ -12,9 +12,11 @@ import json
 from datetime import datetime
 import re
 import matplotlib.pyplot as plt
+import traceback
 
 from Prediction import seq2seq_predict
 from Prediction import train_eval
+
 
 # Path to a directory containing model weight files.
 WEIGHTS_DIR = "Prediction/traj_models"
@@ -191,6 +193,10 @@ def train_model(
         print("Interrupted")
         interrupted = True
 
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+
     finally:
         model_dict = {
             "network_params": net_params,
@@ -207,13 +213,21 @@ def train_model(
         return model, results, interrupted
 
 
+
 def pretty_name(name):
     """Transform a model name to a more fitting name for visualization."""
     return "|".join(re.sub(r"\d{4}-\d{4}", "", name).split("_"))
 
 
 def plot_train_results(
-    results_list, title, pretty=None, fname=None, base="../experiments_plots/"
+        results_list,
+        title,
+        pretty=None,
+        fname=None,
+        base="../experiments_plots/",
+        FDE=False,
+        figsize=(14,5),
+        legend=True
 ):
     """
     Plot ADE, FDE and loss as function of epoch for a list of training results.
@@ -224,14 +238,21 @@ def plot_train_results(
     :param fname: Filename for saving the plot. When None a default filename is used.
     :param base: Path to a directory where plots will be stored.
     """
-    fig, axs = plt.subplots(1, 3, figsize=(25, 7))
+    if FDE:
+        fig, axs = plt.subplots(1, 3, figsize=(figsize[0]*2, figsize[1]))
+    else:
+        fig, axs = plt.subplots(1, 2, figsize=figsize)
     fig.suptitle(title)
 
-    axs[0].set_ylabel("ADE")
-    axs[1].set_ylabel("FDE")
-    axs[2].set_ylabel("loss")
+    for ax in axs:
+        ax.set_xlabel("Epoch")
 
-    longest = 0
+    axs[0].set_ylabel("ADE")
+    axs[1].set_ylabel("loss")
+
+    if FDE:
+        axs[2].set_ylabel("FDE")
+
     for results in results_list:
         (losses, ADEs, FDEs, name) = (
             results.losses,
@@ -246,21 +267,19 @@ def plot_train_results(
         if pretty:
             name = pretty(name)
 
-        if len(list(ADEs.keys())) > longest:
-            longest = len(list(ADEs.keys()))
-            axs[0].set_xticklabels(ADEs.keys())
-            axs[1].set_xticklabels(FDEs.keys())
+        axs[0].plot(list(ADEs.keys()), list(ADEs.values()), label=name, linestyle=lstyle)
+        axs[0].scatter(list(ADEs.keys()), list(ADEs.values()), alpha=0.5, s=10)
 
-        axs[0].plot(list(ADEs.values()), label=name, linestyle=lstyle)
+        axs[1].plot(losses, label=name, linestyle=lstyle)
 
-        # axs[0].legend()
-        axs[1].plot(list(FDEs.values()), label=name, linestyle=lstyle)
-        # axs[1].legend()
-        # axs[0].set_xticklabels(np.ar)
-        axs[2].plot(losses, label=name, linestyle=lstyle)
-        axs[2].legend(fontsize=10)
+        if legend:
+            axs[1].legend(fontsize=10)
+
+        if FDE:
+            axs[2].plot(list(FDEs.values()), label=name, linestyle=lstyle)
+            axs[2].legend(fontsize=10)
     if not fname:
         fn = os.path.join(base, datetime.now().strftime("%m%d-%H%M") + ".jpg")
     else:
         fn = os.path.join(base, fname + ".jpg")
-    fig.savefig(fn)
+    fig.savefig(fn, dpi=220)

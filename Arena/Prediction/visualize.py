@@ -7,8 +7,7 @@ import os
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
-# from tqdm.auto import tqdm # py3.7 issues
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import matplotlib.patches as patches
 from matplotlib.collections import LineCollection
 
@@ -30,7 +29,6 @@ def plot_image(detections, img, output_path=None, show_img=True):
     :param show_img: bool, whether to show the image or not
     :return:
     """
-
 
     plt.figure()
     fig, ax = plt.subplots(1, figsize=(12, 9))
@@ -63,18 +61,23 @@ def plot_image(detections, img, output_path=None, show_img=True):
         plt.clf()
 
 
-def draw_sequences(arr_X,
-                   arr_Y,
-                   arr_pred,
-                   ax,
-                   l_alpha=0.35,
-                   sctr_s=0.5,
-                   sctr_alpha=1,
-                   past_c='b', ftr_c='r', pred_c='g', diff_c='k',
-                   xlabel='past',
-                   ylabel='future',
-                   draw_diffs=True,
-                   tensor_func=lambda x: x[:, :, 2:]):
+def draw_sequences(
+    arr_X,
+    arr_Y,
+    arr_pred,
+    ax,
+    l_alpha=0.35,
+    sctr_s=0.5,
+    sctr_alpha=1,
+    past_c="b",
+    ftr_c="r",
+    pred_c="g",
+    diff_c="k",
+    xlabel="past",
+    ylabel="future",
+    draw_diffs=True,
+    tensor_func=lambda x: x[:, :, 2:],
+):
     """
     Draw sequences as points with lines connecting them. Operates on a single sequence or a batch of sequences.
     Not recommended to draw more than a few thousands sequences or sequence pairs, possible to use other rasterized
@@ -107,18 +110,53 @@ def draw_sequences(arr_X,
         arr_pred = tensor_func(arr_pred)
 
     if arr_X is not None:
-        ax.add_collection(LineCollection(segments=[seq for seq in arr_X], colors=[past_c], label=xlabel, alpha=l_alpha))
-        ax.scatter(arr_X[:, :, 0], arr_X[:, :, 1], s=sctr_s, color=past_c, alpha=sctr_alpha)
+        ax.add_collection(
+            LineCollection(
+                segments=[seq for seq in arr_X],
+                colors=[past_c],
+                label=xlabel,
+                alpha=l_alpha,
+            )
+        )
+        ax.scatter(
+            arr_X[:, :, 0], arr_X[:, :, 1], s=sctr_s, color=past_c, alpha=sctr_alpha
+        )
     if arr_Y is not None:
-        ax.add_collection(LineCollection(segments=[seq for seq in arr_Y], colors=[ftr_c], label=ylabel, alpha=l_alpha))
-        ax.scatter(arr_Y[:, :, 0], arr_Y[:, :, 1], s=sctr_s, color=ftr_c, alpha=sctr_alpha)
+        ax.add_collection(
+            LineCollection(
+                segments=[seq for seq in arr_Y],
+                colors=[ftr_c],
+                label=ylabel,
+                alpha=l_alpha,
+            )
+        )
+        ax.scatter(
+            arr_Y[:, :, 0], arr_Y[:, :, 1], s=sctr_s, color=ftr_c, alpha=sctr_alpha
+        )
     if draw_diffs:
         ax.add_collection(
-            LineCollection(segments=[seq for seq in arr_pred], colors=[pred_c], label='pred', alpha=l_alpha))
-        diffs = [np.array([arr_pred[j, i], arr_Y[j, i]]) for i in range(arr_pred.shape[1]) for j in
-                 range(arr_pred.shape[0])]
-        ax.add_collection(LineCollection(segments=diffs, colors=[diff_c], label='diff', alpha=l_alpha))
-        ax.scatter(arr_pred[:, :, 0], arr_pred[:, :, 1], s=sctr_s, color=pred_c, alpha=sctr_alpha)
+            LineCollection(
+                segments=[seq for seq in arr_pred],
+                colors=[pred_c],
+                label="pred",
+                alpha=l_alpha,
+            )
+        )
+        diffs = [
+            np.array([arr_pred[j, i], arr_Y[j, i]])
+            for i in range(arr_pred.shape[1])
+            for j in range(arr_pred.shape[0])
+        ]
+        ax.add_collection(
+            LineCollection(segments=diffs, colors=[diff_c], label="diff", alpha=l_alpha)
+        )
+        ax.scatter(
+            arr_pred[:, :, 0],
+            arr_pred[:, :, 1],
+            s=sctr_s,
+            color=pred_c,
+            alpha=sctr_alpha,
+        )
 
 
 """
@@ -165,7 +203,7 @@ def online_centroid_visualizer(detector, color, window_size):
 
 
 def missed_frames_saver(
-        detector, output_dir, prefix="frame", save_thresh=0.8, above=False, draw_bbox=True
+    detector, output_dir, prefix="frame", save_thresh=0.8, above=False, draw_bbox=True
 ):
     """
     Save missed frames according to some threshold
@@ -230,14 +268,24 @@ def video_sampler(output_path, freq, f_name):
     return fn
 
 
-def offline_centroid_visualizer(centroids, color, window_size):
-    def fn(orig_frame, write_frame, frame_counter):
-        draw_k_centroids(write_frame, frame_counter, centroids, window_size, color)
-
-    return fn
+def is_point_in_bounds(p, frame):
+    px, py = p
+    return px >= 0 and px < frame.shape[1] and py >= 0 and py < frame.shape[0]
 
 
-def offline_bbox_visualizer(bboxes, color=(0, 0, 255), window_size=20):
+def offline_bbox_visualizer(
+    bboxes, color=(0, 0, 255), window_size=20, line_thickness=1
+):
+    """
+    Return a visualize function that draws a number of last bboxes on each frame according to
+    the bboxes array.
+
+    :param bboxes: Numpy array containing bboxes for each frame
+    :param color: Bbox color as a BGR tuple
+    :param window_size: Number of previous bboxes that will be drawn to the frame
+    :param line_thickness: Bbox rectangle line thickness
+    """
+
     def fn(orig_frame, write_frame, frame_counter):
         for i in range(window_size):
             idx = max(frame_counter - i, 0)
@@ -245,90 +293,171 @@ def offline_bbox_visualizer(bboxes, color=(0, 0, 255), window_size=20):
             if not np.isnan(bbox[0]):
                 bbox = bbox * (bbox > 0)  # zero out negative coords.
                 bbox = bbox.astype(int)
-                cv.rectangle(write_frame, tuple(bbox[:2]), tuple(bbox[2:]), color, 1)
+                cv.rectangle(
+                    write_frame, tuple(bbox[:2]), tuple(bbox[2:]), color, line_thickness
+                )
 
     return fn
 
 
-def offline_arrow_visualizer(centroids, window_size, vis_angle=True, scale=5):
-    def fn(orig_frame, write_frame, frame_counter):
-        draw_k_arrows(
-            write_frame, frame_counter, centroids, window_size, vis_angle, 2, scale
-        )
-
-    return fn
-
-
-def offline_kalman_visualizer(cents_df, max_k):
-    def fn(orig_frame, write_frame, frame_counter):
-        if any(np.isnan(cents_df[["det_x", "det_y"]].iloc[frame_counter])):
-            return
-
-        orig = tuple(
-            cents_df[["det_x", "det_y"]].iloc[frame_counter].values.astype(int)
-        )
-        pred = tuple(
-            cents_df[["pred_x", "pred_y"]].iloc[frame_counter].values.astype(int)
-        )
-
-        k = int(cents_df.k[frame_counter])
-
-        cv.circle(write_frame, orig, radius=2, color=(0, 0, 255), thickness=-1)
-        if k == max_k - 1:
-            color = (0, 255, 0)
-        else:
-            color = (0, 0, 255)
-
-        cv.line(write_frame, orig, pred, color=color, thickness=2, lineType=cv.LINE_AA)
-
-    return fn
-
-
-def is_point_in_bounds(p, frame):
-    px, py = p
-    return px >= 0 and px < frame.shape[1] and py >= 0 and py < frame.shape[0]
-
-
-def visualize_prediction(
-        predictor, write_frame, forecast, hit_x, hit_steps, show_forecast_bbox=False
+def offline_centroid_visualizer(
+    bboxes, color=(255, 0, 0), window_size=20, dot_radius=4
 ):
-    bbox = predictor.history[predictor.frame_num - 1]
-    if not np.isnan(bbox[0]):
+    """
+    Return a visualize function that draws a number of last bbox centroids on each frame
+    according to the bboxes array.
+
+    :param bboxes: Numpy array containing bboxes for each frame
+    :param color: Centroid color as a BGR tuple
+    :param window_size: Number of previous centroids that will be drawn to the frame
+    :param dot_radius: Radius of the centroid dot
+    """
+
+    def fn(orig_frame, write_frame, frame_counter):
+        for i in range(window_size):
+            idx = max(frame_counter - i, 0)
+            bbox = bboxes[idx]
+            if not np.isnan(bbox[0]):
+                c = xyxy_to_centroid(bbox).astype(int)
+                if is_point_in_bounds(c, write_frame):
+                    cv.circle(
+                        write_frame,
+                        center=tuple(c),
+                        radius=dot_radius,
+                        color=color,
+                        thickness=-1,
+                        lineType=cv.LINE_AA,
+                    )
+
+    return fn
+
+
+def draw_trajectory(
+    write_frame,
+    traj_bboxes,
+    draw_lines=True,
+    dot_radius=4,
+    color=(255, 0, 0),
+    line_thickness=1,
+):
+    """
+    Draws a trajectory of the center bottom edge points in the traj_bboxes array.
+    
+    :param write_frame: Video frame array to draw to
+    :param traj_bboxes: Numpy array of trajectory bboxes
+    :param draw_lines: Whether to draw lines between consecutive trajectory points
+    :param dot_radius: Radius of trajectory points
+    :param color: Trajectory color as a BGR tuple
+    :param line_thickness: Trajectory lines thickness
+    """
+    prev_point = None
+
+    for bbox in traj_bboxes:
+        if np.isnan(bbox[0]):
+            continue
+
         c = xyxy_to_centroid(bbox).astype(int)
-        if is_point_in_bounds(c, write_frame):
+        p = (c[0], int(bbox[3]))
+        if is_point_in_bounds(p, write_frame):
             cv.circle(
                 write_frame,
-                center=tuple(c),
-                radius=4,
-                color=(255, 0, 0),
+                center=p,
+                radius=dot_radius,
+                color=color,
                 thickness=-1,
                 lineType=cv.LINE_AA,
             )
 
-        bbox = bbox * (bbox > 0)  # zero out negative coords.
-        bbox = bbox.astype(int)
-        cv.rectangle(write_frame, tuple(bbox[:2]), tuple(bbox[2:]), (255, 0, 0), 1)
+        if draw_lines and prev_point is not None:
+            cv.line(
+                write_frame, prev_point, p, color, thickness=line_thickness,
+            )
+        prev_point = p
 
+
+def offline_trajectory_visualizer(
+    bboxes,
+    past_length,
+    future_length,
+    past_color=(255, 0, 0),
+    future_color=(0, 0, 255),
+    draw_lines=True,
+    dot_radius=4,
+    line_thickness=1,
+):
+    """
+    Return a visualize function that draws the past and future trajectory of the supplied bboxes.
+
+    :param bboxes: Numpy array of bboxes
+    :param past_length: Number of time steps to draw from the past trajectory
+    :param future_length: Number of time steps to draw from the future trajectory
+    :param past_color: Color of past trajectory as BGR tuple
+    :param future_color: Color of future trajectory as BRG tuple
+    :param draw_lines: Whether to draw lines between consecutive trajectory points
+    :param dot_radius: Radius of trajectory points
+    :param line_thickness: Thickness of trajectory lines
+    """
+
+    def fn(orig_frame, write_frame, frame_counter):
+        if frame_counter - past_length - 1 >= 0:
+            past = bboxes[frame_counter - past_length - 1 : frame_counter - 1]
+            draw_trajectory(
+                write_frame, past, draw_lines, dot_radius, past_color, line_thickness,
+            )
+
+        if frame_counter + future_length - 1 < bboxes.shape[0]:
+            future = bboxes[frame_counter - 1 : frame_counter + future_length - 1]
+            draw_trajectory(
+                write_frame,
+                future,
+                draw_lines,
+                dot_radius,
+                future_color,
+                line_thickness,
+            )
+
+    return fn
+
+
+def visualize_prediction(
+    predictor,
+    write_frame,
+    forecast,
+    hit_x,
+    hit_steps,
+    draw_forecast_bbox=False,
+    draw_pred_lines=True,
+    prediction_color=(0, 255, 0),
+    hit_color=(0, 0, 255),
+    bbox_color=(255, 255, 0),
+    dot_radius=4,
+    line_thickness=1,
+):
+    """
+    Draw a predictor prediction on a frame
+    """
     if forecast is not None:
-        for bbox in forecast:
-            bbox = bbox.astype(int)
-            bbox = bbox * (bbox > 0)  # zero out negative coords.
+        draw_trajectory(
+            write_frame,
+            forecast,
+            draw_pred_lines,
+            dot_radius,
+            prediction_color,
+            line_thickness,
+        )
 
-            # center of bottom bbox edge
-            c = xyxy_to_centroid(bbox).astype(int)
-            if is_point_in_bounds(c, write_frame):
-                cv.circle(
-                    write_frame,
-                    center=(c[0], bbox[3]),
-                    radius=2,
-                    color=(0, 255, 0),
-                    thickness=-1,
-                    lineType=cv.LINE_AA,
-                )
+        if draw_forecast_bbox:
+            for bbox in forecast:
+                if np.isnan(bbox[0]):
+                    continue
 
-            if show_forecast_bbox:
+                bbox = bbox * (bbox > 0)  # zero out negative coords.
                 cv.rectangle(
-                    write_frame, tuple(bbox[:2]), tuple(bbox[2:]), (255, 255, 0), 1
+                    write_frame,
+                    tuple(bbox[:2]),
+                    tuple(bbox[2:]),
+                    bbox_color,
+                    line_thickness,
                 )
 
     if hit_x is not None:
@@ -339,7 +468,7 @@ def visualize_prediction(
                 write_frame,
                 center=hp,
                 radius=4,
-                color=(0, 0, 255),
+                color=hit_color,
                 thickness=-1,
                 lineType=cv.LINE_AA,
             )
@@ -356,7 +485,15 @@ def visualize_prediction(
             )
 
 
-def offline_predictor_visualizer(predictor, bboxes, show_forecast_bbox=False):
+def offline_predictor_visualizer(predictor, bboxes, **visualize_prediction_args):
+    """
+    Return a visualize function that draws a predictor's forecast on each frame.
+
+    :param predictor: HitPredictor object that is used to generate forecasts
+    :param bboxes: Numpy array of bboxes per frame
+    :param visualize_prediction_args: Additional arguments that will be passed to visualize_prediction().
+    """
+
     def fn(orig_frame, write_frame, frame_counter):
         forecast, hit_point, hit_steps = predictor.handle_detection(
             bboxes[frame_counter]
@@ -367,7 +504,7 @@ def offline_predictor_visualizer(predictor, bboxes, show_forecast_bbox=False):
             forecast,
             hit_point,
             hit_steps,
-            show_forecast_bbox=show_forecast_bbox,
+            **visualize_prediction_args
         )
 
     return fn
@@ -383,9 +520,7 @@ def predictor_visualizer(predictor, show_forecast_bbox=False):
     return fn
 
 
-def get_correction_fn(
-        homography, screen_x_res, mtx=calib.MTX, dist=calib.DIST  # 1920
-):
+def get_correction_fn(homography, screen_x_res, mtx=calib.MTX, dist=calib.DIST):  # 1920
     """
     Receive the parameters to conduct the lense correction and coordinate transformation
     on the write_frame image.
@@ -420,14 +555,14 @@ def get_correction_fn(
 
 
 def process_video(
-        video_path,
-        output_path,
-        process_fns,
-        correction_fn=None,
-        start_frame=0,
-        num_frames=None,
-        frame_rate=None,
-        resize_to_width=None,
+    video_path,
+    output_path,
+    process_fns,
+    correction_fn=None,
+    start_frame=0,
+    num_frames=None,
+    frame_rate=None,
+    resize_to_width=None,
 ):
     """
     Open a video file, run all functions in process_fns, and write the
@@ -506,5 +641,26 @@ def process_video(
 
     vcap.release()
 
-    if output_path is not None:
+    if output_path is not None and videowriter:
         videowriter.release()
+
+
+def get_vid_frames(vid_path, start, num, correction_fn=None):
+    """
+    Return a consecutive list of frames from a video file.
+    
+    :param vid_path: Path of the video file.
+    :param start: The first frame to retrieve.
+    :param num: The number of frames to retrieve.
+    :param correction_fn: A lens and homography correction function to apply to each frame.
+    """
+    vcap = cv.VideoCapture(vid_path)
+    vcap.set(cv.CAP_PROP_POS_FRAMES, start)
+    frames = []
+    for i in range(num):
+        ret, frame = vcap.read()
+        if correction_fn:
+            frame = correction_fn(frame)
+        frames.append(frame)
+
+    return frames

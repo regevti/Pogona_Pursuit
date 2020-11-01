@@ -45,7 +45,7 @@ HOMOGRAPHY_IM_FN = "homography.jpg"
 
 # various folders and terms in the experiments folder to exclude from the analysis and data collection
 EXCLUDE_TERMS = [
-    "initial_20200916",
+    "initial",
     "delete",
     "fps",
     "vegetables",
@@ -143,10 +143,11 @@ def analyze_single_video(
 
     if num_frames is None:
         num_frames = int(vcap.get(cv.CAP_PROP_FRAME_COUNT)) - start_frame
+        if num_frames == 0:
+            raise DatasetException(f"No Frames found in video {video_path}")
 
     width = int(vcap.get(3))
     height = int(vcap.get(4))
-    detector.set_input_size(width, height)
 
     # frames_data: centroid x,centroid y, x1, y1, x2, y2, confidence, num_boxes
     frames_data = np.empty((num_frames, 8))
@@ -499,7 +500,7 @@ def collect_data(
 
     dataframes_list = []
 
-    for trial in data_paths.keys():
+    for trial in tqdm(data_paths.keys()):
         trial_dict = {key: None for key, val in data_sources.items()}
 
         with open(data_paths[trial]["vid_stats"], "r") as f:
@@ -531,7 +532,7 @@ def collect_data(
             ]
 
         if data_paths[trial]["timestamps"]:
-            df["frame_ts"] = pd.to_datetime(trial_dict["timestamps"]["0"])
+            df["frame_ts"] = pd.to_datetime(trial_dict["timestamps"]["0"], utc=True)
 
         if data_paths[trial]["dlc"] and trial_dict["dlc"] is not None:
             temp_dlc = trial_dict["dlc"]
@@ -563,11 +564,10 @@ def collect_data(
             if not trial_dict["touches"].shape[0] == 0:
                 align_touches(df, trial_dict["touches"])
 
-        df = transform_df(df, homography_column_pairs, vid_stats)
-
-        df.index = [str(trial[0]) + "_" + str(trial[1])] * df.shape[0]
-
-        if not (df.num_bbox == 0).all():
+        # transform and add trial only if more than a single detection exists
+        if not (df.num_bbox == 1).sum() == 0:
+            df = transform_df(df, homography_column_pairs, vid_stats)
+            df.index = [str(trial[0]) + "_" + str(trial[1])] * df.shape[0]
             dataframes_list.append(df)
 
     if len(dataframes_list) == 0:
@@ -582,6 +582,10 @@ def collect_data(
 
     # place NaN's instead of 0's where there are no detections
     unified_df.loc[unified_df.num_bbox == 0, DF_COLUMNS] = np.nan
+
+    # using categorical index saves a lot of memory
+    # TODO - maybe should be applied earlier
+    unified_df.index = pd.CategoricalIndex(unified_df.index)
 
     print(f"{len(dataframes_list)} trials loaded")
     return unified_df
@@ -621,20 +625,16 @@ def align_touches(df, temp_touches):
     """
     Align the the screen touching data to the detections data, by aligning the data according to closest timestamps
     changes dataframe inplace.
-    
-    Added a partial fix for the timezones issue, that operates directly on the numerical diffrences and shifts the 
-    screen touch timestamps by a round number of hours back. This assumes that the trials are a few minutes long
-    at most, that they discrepency between the camera and screen is caused by timezones issues,
-    so the shift is by round hours. This is probably prone to errors and further bugs.
-    A more permanent and robust fix is to make sure any timestamp written by the system is written in the same timezone,
-    or that the timezone itself ("Asia/Tel_Aviv", "UTC" or other) are saved with the timestamp.
+
+    last fix - 31/10. All files have only 'time' column. - check if touch timestamp data is tz aware:
+    if not, localize and shift to 'Israel' tz.
+    This is probably still a buggy and incorrect solution, should be fixed in the future
 
     :param df: detections dataframe
     :param temp_touches: screen touches dataframe
     """
 
     touches = temp_touches.copy()
-    touches.drop(columns=[touches.columns[0]], inplace=True)
     if "is_hit" not in temp_touches.columns:
         touches.insert(
             loc=len(touches.columns) - 1,
@@ -642,28 +642,26 @@ def align_touches(df, temp_touches):
             value=[True] * touches.shape[0],
         )
 
-    touches["timestamp"] = pd.to_datetime(touches["timestamp"])
+    touches['timestamp'] = pd.to_datetime(touches['time'])
+
+    # tz naive timestamp
+    if touches['timestamp'][0].utcoffset() is None:
+        touches['timestamp'] = touches['timestamp'].dt.tz_localize('UTC')
+
+    touches['timestamp'] = touches['timestamp'].dt.tz_convert('Israel')
+
+    # convert camera timestamps
+    df['frame_ts'] = df.frame_ts.dt.tz_convert('Israel')
 
     # initalize columns for screen touching data
     for col in ["hit_x", "hit_y", "bug_x", "bug_y", "is_hit", "touch_ts"]:
         df[col] = np.nan
     df["is_touch"] = False
 
-    # timezones workaround
-    max_touch_ts = touches.timestamp.max()
-    max_diff_hr = np.min((max_touch_ts - df.frame_ts.min()).total_seconds() / 60 / 60)
-    hr_diff = np.round(max_diff_hr)
-
-    if np.abs(hr_diff) >= 1:
-        hr_delta = pd.Timedelta(hr_diff, unit='h')
-        if hr_diff < 0:
-            temp_touches.timestamp = touches.timestamp + hr_delta
-        else:
-            temp_touches.timestamp = touches.timestamp - hr_delta
-
     # for timestamp of each touch, get frame with closest timestamp
     for i, ts in enumerate(touches.timestamp):
-        frame_argmin = np.argmin((df["frame_ts"] - ts).dt.total_seconds().abs())
+
+        frame_argmin = np.argmin((df.frame_ts - ts).dt.total_seconds().abs())
 
         col_inds = [
             df.columns.get_loc(col)
@@ -678,6 +676,7 @@ def align_touches(df, temp_touches):
         df.iloc[frame_argmin, col_inds] = touches.iloc[i, to_set].values
         df.iloc[frame_argmin, df.columns.get_loc("is_touch")] = True
     df["touch_ts"] = pd.to_datetime(df["touch_ts"])
+
 
 
 """ ###############  Utility functions  ###############  """

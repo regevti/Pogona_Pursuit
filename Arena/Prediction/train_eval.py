@@ -7,11 +7,9 @@ The second part deals with using the DataLoaders to train seq2seq RNN models.
 The third part includes Numpy data masking functions, compute some statistic on the sequences array and mask the data
 according to some boolean condition.
 """
-import pandas as pd
 import numpy as np
 import torch
 import time
-import cv2 as cv
 from torch.utils.data import Dataset, DataLoader
 from tqdm.auto import tqdm  # python 3.7 issues
 
@@ -46,45 +44,12 @@ class TrajectoriesData(Dataset):
         return self.X[item], self.Y[item]
 
 
-class TrajectoriesDataWithHeads(Dataset):
-    """
-    The same as the TrajectoriesData Dataset, but includes the cropped images of the heads of the animals
-    """
-    def __init__(self, X, X_images, Y):
-        assert X.shape[0] == Y.shape[0]
-
-        self.X_images = X_images
-        self.X = X
-        self.Y = Y
-
-    def __len__(self):
-        return self.X.shape[0]
-
-    def __getitem__(self, item):
-        return (self.X[item], self.X_images[item]), self.Y[item]
-
-
-def im2tensor(im, resize=32):
-    """
-    :param im: image array
-    :param resize: dimension of the square edge to resize to
-    :return: resized image tensor
-    """
-    if im is None:
-        ret_tensor = torch.empty(resize, resize)
-        ret_tensor[:] = float("nan")
-    else:
-        ret_tensor = torch.tensor(cv.resize(im, (resize, resize)))
-    return ret_tensor
-
-
 def trial_to_samples(
     trial_df,
     input_labels,
     output_labels,
     input_seq_size,
     output_seq_size,
-    input_images=None,
     keep_nans=False,
     mask_fn=None,
 ):
@@ -102,7 +67,6 @@ def trial_to_samples(
     :param output_labels: same
     :param input_seq_size: int, length of the X sequence
     :param output_seq_size: int, length of the Y sequence
-    :param input_images: 4D tensor if cropped heads are used, None by deafault
     :param keep_nans: bool, whether to keep sequences with NaN
     :param mask_fn: boolean bask function, to filter data before creating the tensor
     :return: tuple (X, Y), 3D tensors of sequences
@@ -110,21 +74,14 @@ def trial_to_samples(
 
     input_2d_arrays = []
     output_2d_arrays = []
-    input_3d_images = []
 
     inds_range = trial_df.shape[0] - input_seq_size - output_seq_size + 1
 
     input_data = trial_df[input_labels].values
     output_data = trial_df[output_labels].values
 
-    if input_images is not None:
-        image_tensors = torch.stack([im2tensor(im, resize=32) for im in input_images])
-
     for i in range(inds_range):
         inp_seq = input_data[i : i + input_seq_size]
-        if input_images is not None:
-            img_seq = image_tensors[i : i + input_seq_size]
-
         out_seq = output_data[i + input_seq_size : i + input_seq_size + output_seq_size]
 
         if not keep_nans and (np.any(np.isnan(inp_seq)) or np.any(np.isnan(out_seq))):
@@ -133,29 +90,18 @@ def trial_to_samples(
         input_2d_arrays.append(inp_seq)
         output_2d_arrays.append(out_seq)
 
-        if input_images is not None:
-            input_3d_images.append(img_seq)
     if len(input_2d_arrays) == 0:
         return None, None
     X = np.stack(input_2d_arrays)
     Y = np.stack(output_2d_arrays)
-
-    if input_images is not None:
-        X_images = torch.stack(input_3d_images)
 
     if mask_fn is not None:
         mask = mask_fn(X, Y)
         X = X[mask]
         Y = Y[mask]
 
-        if input_images is not None:
-            X_images = X_images[mask]
-
     # X = torch.from_numpy(X).float()
     # Y = torch.from_numpy(Y).float()
-
-    if input_images is not None:
-        return (X, X_images), Y
 
     return X, Y
 
@@ -199,7 +145,7 @@ def create_samples(
     """
     trials_dict = dict()
     mask_fn_keep = keep_mask(mask_fn, keep_prob=keep_prob)
-    for trial in df.index.unique():
+    for trial in tqdm(df.index.unique()):
         trial_dict = dict()
 
         X, Y = trial_to_samples(
@@ -252,7 +198,7 @@ def update_trials_dict(trials_dict, mask_fn, keep_prob):
     :param keep_prob: float, percentage of random data to keep in the samples
     :return: no return value, updates in-place
     """
-    for trial_dict in trials_dict.values():
+    for trial_dict in tqdm(trials_dict.values()):
         update_trial_dict(trial_dict, mask_fn, keep_prob)
 
 
@@ -571,18 +517,11 @@ def train_trajectory_model(
 
         for i, (x, y) in enumerate(train_dataloader):
             optimizer.zero_grad()
-            if type(x) is list:  # x = (bbox, head image)
-                x_bbox, x_head = x
-                x_bbox = x_bbox.to(device)
-                x_head = x_head.to(device)
-                y = y.to(device)
-                output = model(x_bbox, x_head)
-            else:
-                x, y = x.to(device), y.to(device)
-                model.sampling_eps = sched_epsi
-                model.target = y
-                output = model(x)
-                model.sampling_eps = 0
+            x, y = x.to(device), y.to(device)
+            model.sampling_eps = sched_epsi
+            model.target = y
+            output = model(x)
+            model.sampling_eps = 0
 
             loss = loss_fn(output, y)
 
@@ -626,15 +565,8 @@ def eval_trajectory_model(model, test_dataloader):
     count = 0
     for (x, y) in test_dataloader:
         with torch.no_grad():
-            if type(x) is list:  # x = (bbox, head image)
-                x_bbox, x_head = x
-                x_bbox = x_bbox.to(device)
-                x_head = x_head.to(device)
-                y = y.to(device)
-                output = model(x_bbox, x_head)
-            else:
-                x, y = x.to(device), y.to(device)
-                output = model(x)
+            x, y = x.to(device), y.to(device)
+            output = model(x)
 
             total_ADE += calc_ADE(output, y)
             total_FDE += calc_FDE(output, y)
@@ -908,6 +840,7 @@ def compute_batch_r(seq_data):
     numers = (x_minus_xbar * y_minus_ybar).sum(1)
     denoms = comp_sqr_residuals(x_minus_xbar) * comp_sqr_residuals(y_minus_ybar)
     return np.abs(numers / denoms)
+    #return numers / denoms
 
 
 def mask_corr(min_corr, max_corr, by_X=True, by_Y=True):
