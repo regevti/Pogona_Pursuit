@@ -1,5 +1,5 @@
 # Realtime Detection and Movement Prediction Module
-### Final BA project in Sagol school of Neuroscience, Computer-Science and Psychology.
+### Final BA project in Sagol school of Neuroscience, Computer-Science and Psychology, Tel-Aviv University
 #### Itai Turkenich, and Tal Eisenberg
 
 This part of the system uses a YOLOv4 object detector to find the bounding box of the pogona's head in the arena. The detections trajectories are then used to predict the future trajectories, and alert the system when the lizard is going to attack the screen.
