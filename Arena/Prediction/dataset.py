@@ -16,12 +16,10 @@ import pandas as pd
 import numpy as np
 import re
 import os
-import random
 import cv2 as cv
 import pickle
 from tqdm.auto import tqdm
 import json
-import pickle
 
 from Prediction.detector import nearest_detection, xyxy_to_centroid
 import Prediction.calibration as calib

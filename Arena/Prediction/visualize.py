@@ -467,7 +467,7 @@ def visualize_prediction(
             cv.circle(
                 write_frame,
                 center=hp,
-                radius=4,
+                radius=dot_radius * 4,
                 color=hit_color,
                 thickness=-1,
                 lineType=cv.LINE_AA,
