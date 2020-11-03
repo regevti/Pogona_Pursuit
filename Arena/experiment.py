@@ -49,7 +49,7 @@ class Experiment:
     def __str__(self):
         output = ''
         for obj in experiment_arguments():
-            if obj in ['self', 'cache']:
+            if obj in ['self', 'cache', 'pool', 'current_trial']:
                 continue
             value = getattr(self, obj)
             if isinstance(value, list):

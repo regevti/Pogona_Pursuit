@@ -330,7 +330,11 @@ class SpinCamera:
 def get_device_id(cam) -> str:
     """Get the camera device ID of the cam instance"""
     nodemap_tldevice = cam.GetTLDeviceNodeMap()
-    return PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceSerialNumber')).GetValue()
+    device_id = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
+    m = re.search(r'd{8}', device_id)
+    if not m:
+        return device_id
+    return m[0]
 
 
 def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:

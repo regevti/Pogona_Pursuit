@@ -1,5 +1,6 @@
 <template>
   <div class="board-canvas-wrapper" oncontextmenu="return false;">
+    <audio ref="audio1"><source src="@/assets/sounds/2.mp3" type="audio/mpeg"></audio>
     <p style="float: right">SCORE: {{ $store.state.score }}</p>
     <Slide style="z-index: 20;">
       <div>
@@ -256,6 +257,7 @@ export default {
       }
       this.$refs.bugChild[bugIndex].isDead = true
       if (isRewardBug) {
+        this.$refs.audio1.play()
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {

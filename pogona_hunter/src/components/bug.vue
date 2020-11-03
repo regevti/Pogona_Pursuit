@@ -123,8 +123,12 @@ export default {
         let bugImage = this.isDead ? this.getDeadImage() : this.$refs.bugImg
         this.ctx.setTransform(1, 0, 0, 1, this.x, this.y)
         this.ctx.rotate(this.getAngleRadians())
+        // drawImage(image, dx, dy, dWidth, dHeight)
         this.ctx.drawImage(bugImage, -this.radius / 2, -this.radius / 2, this.radius, this.radius)
         this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        // this.ctx.arc(this.x, this.y, this.radius / 1.5, 0, 2 * Math.PI, false)
+        // this.ctx.fillStyle = 'rgba(255,0,0,0.3)'
+        // this.ctx.fill()
       } catch (e) {
         console.error(e)
       }
