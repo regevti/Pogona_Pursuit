@@ -55,6 +55,7 @@ class Experiment:
             if isinstance(value, list):
                 value = ','.join(value)
             output += f'{obj}: {value}\n'
+        output += f'extra_time_recording: {config.extra_time_recording}'
         return output
 
     @staticmethod

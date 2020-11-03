@@ -75,7 +75,7 @@ class ExperimentAnalyzer:
         """Get start time for a trial based on trajectory csv's first record or if not exists, based on calculating
         trial start using meta data such as trial_duration, ITI, etc.."""
         def _calculate_trial_start_from_meta():
-            extra_time_recording = info['extra_time_recording']
+            extra_time_recording = info.get('extra_time_recording') or config.extra_time_recording
             time2trials = info['trial_duration'] * (trial_id - 1) + info['iti'] * (trial_id - 1) + \
                           extra_time_recording * trial_id + extra_time_recording * (trial_id - 1)
             exp_time = self.get_experiment_time(info)
