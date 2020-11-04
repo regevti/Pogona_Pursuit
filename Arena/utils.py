@@ -43,13 +43,12 @@ def get_log_stream():
     return StringIO()
 
 
-def get_logger(device_id: str, dir_path: str, log_stream=None, is_only_file=False) -> logging.Logger:
+def get_logger(device_id: str, dir_path: str, log_stream=None) -> logging.Logger:
     """
     Create file and stream logger for camera
     :param device_id: Camera device id
     :param dir_path: The path of the dir in which logger file should be saved
     :param log_stream: Log stream for string logging
-    :param is_only_file: Log to file only, not to stdout or string
     :return: Logger
     """
     logger = logging.getLogger(device_id)
@@ -64,17 +63,16 @@ def get_logger(device_id: str, dir_path: str, log_stream=None, is_only_file=Fals
         fh.setFormatter(formatter)
         logger.addHandler(fh)
 
-    if not is_only_file:
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        ch.setFormatter(formatter)
-        logger.addHandler(ch)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
-        if log_stream:
-            sh = logging.StreamHandler(log_stream)
-            sh.setLevel(logging.INFO)
-            sh.setFormatter(formatter)
-            logger.addHandler(sh)
+    if log_stream:
+        sh = logging.StreamHandler(log_stream)
+        sh.setLevel(logging.INFO)
+        sh.setFormatter(formatter)
+        logger.addHandler(sh)
 
     return logger
 

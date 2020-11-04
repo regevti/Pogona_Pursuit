@@ -147,8 +147,8 @@ class SpinCamera:
 
             self.logger.info(f'Number of frames taken: {i}')
             mean_fps, std_fps = self.analyze_timestamps(frame_times)
-            self.logger.info(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
-            self.logger.info(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
+            self.logger.debug(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
+            self.logger.debug(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
             self.save_predictions()
 
         self.cam.EndAcquisition()  # End acquisition
@@ -239,9 +239,7 @@ class SpinCamera:
         st = '\n'
         for k, v in zip(config.info_fields, self.info()):
             st += f'{k}: {v}\n'
-        self.logger.propagate = False
-        self.logger.info(st)
-        self.logger.propagate = True
+        self.logger.debug(st)
 
     def analyze_timestamps(self, frame_times):
         """Convert camera's timestamp to server time, save server timestamps and calculate FPS"""
