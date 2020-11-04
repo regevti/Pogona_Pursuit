@@ -25,9 +25,9 @@ experiment_topic = "event/log/experiment"
 log_topic_prefix = "event/log/"
 logger_files = {
     'touch': 'screen_touches.csv',
-    'hit': 'hits.csv',
     'prediction': 'predictions.csv',
-    'trajectory': 'bug_trajectory.csv'
+    'trajectory': 'bug_trajectory.csv',
+    'temperature': 'temperature.csv'
 }
 subscription_topics = {
     'reward': 'event/command/reward',
@@ -37,7 +37,8 @@ subscription_topics = {
     'touch': 'event/log/touch',
     'hit': 'event/log/hit',
     'prediction': 'event/log/prediction',
-    'trajectory': 'event/log/trajectory'
+    'trajectory': 'event/log/trajectory',
+    'temperature': 'event/log/temperature'
 }
 
 # Arena

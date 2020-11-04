@@ -90,7 +90,7 @@ def save_to_csv(topic, payload):
             except Exception as exc:
                 logger.warning(f'Unable to convert trajectory time to local; {exc}')
         else:
-            df['timestamp'] = datetime.now()
+            df['time'] = datetime.now()
         filename = get_csv_filename(topic)
         if filename.exists():
             df.to_csv(filename, mode='a', header=False)

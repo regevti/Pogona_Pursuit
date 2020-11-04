@@ -64,6 +64,7 @@ class SpinCamera:
         self.video_out = None
         self.start_acquire_time = None
         self.mqtt_client = None
+        self.thread_event = None
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
@@ -191,6 +192,9 @@ class SpinCamera:
             assert key in config.acquire_stop_options, f'unknown acquire_stop: {key}'
             if config.acquire_stop_options[key] == 'cache':
                 assert self.cache is not None
+            elif config.acquire_stop_options[key] == 'event':
+                assert value is not None
+                self.thread_event = value
             else:
                 assert isinstance(value, int), f'acquire stop {key}: expected type int, received {type(value)}'
 
@@ -214,6 +218,9 @@ class SpinCamera:
 
     def check_trial_alive(self, iteration):
         return self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON)
+
+    def check_thread_event(self, iteration):
+        return self.thread_event.is_set()
 
     def handle_prediction(self, img, i):
         if config.is_predictor_experiment and not i % 60:

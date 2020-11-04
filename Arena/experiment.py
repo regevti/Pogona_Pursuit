@@ -2,8 +2,10 @@ import argparse
 import inspect
 import json
 import time
+import re
 from dataclasses import dataclass, field
 from multiprocessing.pool import ThreadPool
+from threading import Event
 from pathlib import Path
 
 import pandas as pd
@@ -12,7 +14,7 @@ import config
 from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTPublisher
-from utils import datetime_string, mkdir, turn_display_on, turn_display_off
+from utils import datetime_string, mkdir, turn_display_on, turn_display_off, Serializer
 
 mqtt_client = MQTTPublisher()
 
@@ -36,6 +38,7 @@ class Experiment:
     is_anticlockwise: bool = False
     current_trial: int = field(default=1, repr=False)
     pool: ThreadPool = field(default=None, repr=False)
+    threads_event: Event = field(default=Event(), repr=False)
 
     def __post_init__(self):
         self.name = f'{self.name}_{datetime_string()}'
@@ -49,7 +52,7 @@ class Experiment:
     def __str__(self):
         output = ''
         for obj in experiment_arguments():
-            if obj in ['self', 'cache', 'pool', 'current_trial']:
+            if obj in ['self', 'cache', 'pool', 'current_trial', 'threads_event']:
                 continue
             value = getattr(self, obj)
             if isinstance(value, list):
@@ -92,7 +95,7 @@ class Experiment:
         mqtt_client.publish_command('led_light', 'on')
 
         self.trial_log('recording started')
-        self.pool = self.start_recording()
+        self.pool = self.start_threads()
         self.sleep(config.extra_time_recording)
 
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.trial_duration)
@@ -107,23 +110,36 @@ class Experiment:
         turn_display_off()
         self.terminate_pool()
 
-    def start_recording(self) -> ThreadPool:
-        """Start cameras recording on a separate process"""
+    def start_threads(self) -> ThreadPool:
+        """Start cameras recording and temperature recording on a separate processes"""
+        self.threads_event.set()
 
         def _start_recording():
             record_duration = self.trial_duration + 2 * config.extra_time_recording
             if not config.is_debug_mode:
-                acquire_stop = {'record_time': record_duration}
-                # if self.is_always_reward:
-                #     acquire_stop.update({'trial_alive': True})
+                acquire_stop = {'record_time': record_duration, 'thread_event': self.threads_event}
                 record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
                        is_use_predictions=self.is_use_predictions, **acquire_stop)
             else:
                 self.sleep(record_duration)
             self.log('>> recording ended')
 
-        pool = ThreadPool(processes=1)
+        def _read_temp():
+            ser = Serializer()
+            while self.threads_event.is_set():
+                try:
+                    line = ser.read_line()
+                    if line and isinstance(line, bytes):
+                        m = re.search(r'Temperature is: ([\d.]+)', line.decode())
+                        if m:
+                            mqtt_client.publish_event(config.subscription_topics['temperature'], m[1])
+                except Exception as exc:
+                    print(f'Error in read_temp: {exc}')
+                time.sleep(5)
+
+        pool = ThreadPool(processes=2)
         pool.apply_async(_start_recording)
+        pool.apply_async(_read_temp)
 
         return pool
 
@@ -178,9 +194,9 @@ class Experiment:
         self.trial_log('bugs stopped')
 
     def terminate_pool(self):
-        if self.pool:
-            self.pool.terminate()
-            self.pool.join()
+        self.threads_event.clear()
+        self.pool.terminate()
+        self.pool.join()
 
     @property
     def bug_options(self):

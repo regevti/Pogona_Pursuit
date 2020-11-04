@@ -110,15 +110,18 @@ class AttrDict(dict):
         self.__dict__ = self
 
 
-SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_PORT_TEMP = '/dev/ttyACM1'
 SERIAL_BAUD = 9600
 
 
 class Serializer:
     """Serializer for connecting the TTL Arduino"""
-    def __init__(self):
-        self.ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+    def __init__(self, port=SERIAL_PORT_TEMP, baud=SERIAL_BAUD):
+        self.ser = serial.Serial(port, baud, timeout=1)
         time.sleep(0.5)
+
+    def read_line(self):
+        return self.ser.read_until()
 
     def start_acquisition(self):
         self.ser.write(b'H')
