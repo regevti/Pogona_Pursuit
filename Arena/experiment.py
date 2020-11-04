@@ -107,7 +107,7 @@ class Experiment:
             self.trial_log('recording started')
             if not config.is_debug_mode:
                 acquire_stop = {'record_time': self.overall_trial_duration} #, 'thread_event': self.threads_event
-                record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
+                record(cameras=self.cameras, output=self.videos_path, cache=self.cache,
                        is_use_predictions=self.is_use_predictions, **acquire_stop)
             else:
                 self.wait(self.overall_trial_duration)
@@ -115,6 +115,7 @@ class Experiment:
 
         def _read_temp():
             ser = Serializer()
+            print('read_temp started')
             while self.threads_event.is_set():
                 try:
                     line = ser.read_line()

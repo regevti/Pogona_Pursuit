@@ -6,7 +6,6 @@ import cv2
 import json
 import argparse
 
-from datetime import datetime
 import pandas as pd
 import numpy as np
 from multiprocessing.dummy import Pool
@@ -88,13 +87,15 @@ class SpinCamera:
     def __del__(self):
         if self.is_realtime_mode:
             self.predictor.reset()
+        if self.cam.IsStreaming():
+            self.cam.EndAcquisition()
         self.cam.DeInit()
 
     def configure_camera(self, exposure):
         """Configure camera for trigger mode before acquisition"""
         try:
-            self.cam.AcquisitionFrameRateEnable.SetValue(False)
             # self.cam.AcquisitionFrameRate.SetValue(FPS)
+            self.cam.AcquisitionFrameRateEnable.SetValue(False)
             self.cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
             self.cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
             self.cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
@@ -108,20 +109,6 @@ class SpinCamera:
 
         except PySpin.SpinnakerException as exc:
             self.logger.error(f'(configure_images); {exc}')
-
-    def capture_image(self, exposure):
-        """Capture single image"""
-        self.begin_acquisition(exposure)
-        try:
-            image_result = self.cam.GetNextImage()
-            img = image_result.GetNDArray()
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            image_result.Release()
-            return img
-        except PySpin.SpinnakerException as exc:
-            self.logger.error(f'(image_capture); {exc}')
-        finally:
-            self.cam.EndAcquisition()
 
     def acquire(self):
         """Acquire images and measure FPS"""
@@ -222,6 +209,20 @@ class SpinCamera:
     def check_thread_event(self, iteration):
         return self.thread_event.is_set()
 
+    def capture_image(self, exposure):
+        """Capture single image"""
+        self.begin_acquisition(exposure)
+        try:
+            image_result = self.cam.GetNextImage()
+            img = image_result.GetNDArray()
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            image_result.Release()
+            return img
+        except PySpin.SpinnakerException as exc:
+            self.logger.error(f'(image_capture); {exc}')
+        finally:
+            self.cam.EndAcquisition()
+
     def handle_prediction(self, img, i):
         if config.is_predictor_experiment and not i % 60:
             self.predictor_experiment_ids.append(i)
@@ -265,7 +266,7 @@ class SpinCamera:
 
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
-        nan = 'x'
+        nan_string = 'x'
         values = []
         for field in config.info_fields:
             try:
@@ -279,7 +280,7 @@ class SpinCamera:
                         value = value.GetValue()
             except Exception as exc:
                 self.logger.warning(f'{field}: {exc}')
-                value = nan
+                value = nan_string
             values.append(value)
 
         return values
@@ -393,27 +394,6 @@ def start_camera(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_us
     return sc
 
 
-def wait_for_streaming(results: list, is_auto_start=False):
-    """Wait for user approval for start streaming and send serial for Arduino to start TTL.
-    If keyboard interrupt turn all is_ready to false, so acquisition will not start"""
-    serializer = None
-    try:
-        if not is_auto_start:
-            key = input(f'\nThere are {len([sc for sc in results if sc.is_ready])} cameras ready for streaming.\n'
-                        f'Press any key for sending TTL serial to start streaming.\n'
-                        f"If you like to start TTL manually press 'm'\n>> ")
-            # if not key == 'm':
-            #     serializer = Serializer()
-            #     serializer.start_acquisition()
-
-    except Exception as exc:
-        print(f'Error: {exc}')
-        for sc in results:
-            sc.is_ready = False
-
-    return results, serializer
-
-
 def start_streaming(sc: SpinCamera):
     """Thread function for start acquiring frames from camera"""
     sc.acquire()
@@ -441,14 +421,13 @@ def capture_image(camera: str, exposure=config.exposure_time) -> (np.ndarray, No
 
 
 def record(exposure=config.exposure_time, cameras=None, output=None, folder_prefix=None,
-           is_auto_start=False, cache=None, is_use_predictions=False, **acquire_stop) -> str:
+           cache=None, is_use_predictions=False, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
     :param exposure: The exposure time to be set to the cameras
     :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
     :param output: Output dir for videos and timestamps, if not exist save into a timestamp folder in default output dir.
     :param folder_prefix: Prefix to be added to folder name. Not used if output is given.
-    :param is_auto_start: Start record automatically or wait for user input
     :param cache: memory cache to be used by the cameras
     :param is_use_predictions: relevant for realtime camera only - using strike prediction
     """
@@ -475,9 +454,7 @@ def record(exposure=config.exposure_time, cameras=None, output=None, folder_pref
     if filtered:
         with Pool(len(filtered)) as pool:
             results = pool.starmap(start_camera, filtered)
-            results, serializer = wait_for_streaming(results, is_auto_start)
-            results = [(sc,) for sc in results]
-            pool.starmap(start_streaming, results)
+            pool.starmap(start_streaming, [(sc,) for sc in results])
         del filtered, results  # must delete this list in order to destroy all pointers to cameras.
 
     cam_list.Clear()
