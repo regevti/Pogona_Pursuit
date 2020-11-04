@@ -107,8 +107,11 @@ class Experiment:
             self.trial_log('recording started')
             if not config.is_debug_mode:
                 acquire_stop = {'record_time': self.overall_trial_duration, 'thread_event': self.threads_event}
-                record(cameras=self.cameras, output=self.videos_path, cache=self.cache,
-                       is_use_predictions=self.is_use_predictions, **acquire_stop)
+                try:
+                    record(cameras=self.cameras, output=self.videos_path, cache=self.cache,
+                           is_use_predictions=self.is_use_predictions, **acquire_stop)
+                except Exception as exc:
+                    print(f'Error in start_recording: {exc}')
             else:
                 self.wait(self.overall_trial_duration)
             self.trial_log('recording ended')

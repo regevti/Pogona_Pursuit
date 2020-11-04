@@ -65,9 +65,9 @@ class SpinCamera:
         self.start_acquire_time = None
         self.mqtt_client = None
 
-
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
+        self.file_logger = get_logger(self.device_id, dir_path, is_only_file=True)
         self.name = self.get_camera_name()
         if self.is_realtime_mode:
             self.logger.info('Working in realtime mode')
@@ -240,7 +240,7 @@ class SpinCamera:
         st = '\n'
         for k, v in zip(config.info_fields, self.info()):
             st += f'{k}: {v}\n'
-        self.logger.info(st)
+        self.file_logger.info(st)
 
     def analyze_timestamps(self, frame_times):
         """Convert camera's timestamp to server time, save server timestamps and calculate FPS"""
