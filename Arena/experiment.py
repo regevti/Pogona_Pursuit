@@ -39,7 +39,7 @@ class Experiment:
     is_anticlockwise: bool = False
     current_trial: int = field(default=1, repr=False)
     pool: ThreadPool = field(default=None, repr=False)
-    threads_event: Event = field(default=Event(), repr=False)
+    threads_event: Event = field(default_factory=Event, repr=False)
 
     def __post_init__(self):
         self.name = f'{self.name}_{datetime_string()}'
