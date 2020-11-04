@@ -52,7 +52,7 @@ def get_logger(device_id: str, dir_path: str, log_stream=None, is_only_file=Fals
     :param is_only_file: Log to file only, not to stdout or string
     :return: Logger
     """
-    logger = logging.getLogger(device_id + '_file' if is_only_file else '')
+    logger = logging.getLogger(device_id)
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter(f'%(asctime)s - %(levelname)s - <CAM:{device_id: >8}> - %(message)s')
     if logger.hasHandlers():
