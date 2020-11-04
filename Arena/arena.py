@@ -57,13 +57,14 @@ class SpinCamera:
         self.dir_path = dir_path
         self.cache = cache
         self.is_use_predictions = is_use_predictions
+        self.thread_event = None
         self.validate_acquire_stop()
 
         self.is_ready = False  # ready for acquisition
         self.video_out = None
         self.start_acquire_time = None
         self.mqtt_client = None
-        self.thread_event = None
+
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
