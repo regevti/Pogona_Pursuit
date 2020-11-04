@@ -80,7 +80,7 @@ class SpinCamera:
             self.configure_camera(exposure)
             self.cam.BeginAcquisition()
             self.is_ready = True
-            self.logger.info('Entering to trigger mode')
+            self.logger.debug('Entering to trigger mode')
         except Exception as exc:
             self.logger.error(f'(run); {exc}')
 
