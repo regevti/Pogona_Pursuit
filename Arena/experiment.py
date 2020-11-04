@@ -153,6 +153,7 @@ class Experiment:
                        timeout=self.overall_trial_duration + self.iti)
 
     def end_trial(self):
+        mqtt_client.publish_command('led_light', 'off')
         self.terminate_pool()
         self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
         self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_PATH)
@@ -181,7 +182,8 @@ class Experiment:
 
     def terminate_pool(self):
         self.threads_event.clear()
-        self.pool.terminate()
+        time.sleep(3)
+        self.pool.close()
         self.pool.join()
 
     @property
