@@ -32,7 +32,7 @@ logger_files = {
 subscription_topics = {
     'reward': 'event/command/reward',
     'led_light': 'event/command/led_light',
-    'end_trial': 'event/command/end_trial',
+    'end_bugs_wait': 'event/command/end_bugs_wait',
     'end_experiment': 'event/command/end_experiment',
     'touch': 'event/log/touch',
     'hit': 'event/log/hit',
@@ -58,7 +58,8 @@ acquire_stop_options = {
     'num_frames': int,
     'record_time': int,
     'manual_stop': 'cache',
-    'trial_alive': 'cache'
+    'trial_alive': 'cache',
+    'thread_event': 'event'
 }
 info_fields = [
     'AcquisitionFrameRate',

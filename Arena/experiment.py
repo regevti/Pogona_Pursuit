@@ -33,6 +33,7 @@ class Experiment:
     movement_type: str = None
     is_use_predictions: bool = False
     time_between_bugs: int = None
+    extra_time_recording: int = config.extra_time_recording
     reward_type: str = 'end_trial'
     reward_bugs: list = None
     is_anticlockwise: bool = False
@@ -58,15 +59,10 @@ class Experiment:
             if isinstance(value, list):
                 value = ','.join(value)
             output += f'{obj}: {value}\n'
-        output += f'extra_time_recording: {config.extra_time_recording}'
         return output
 
-    @staticmethod
-    def log(msg):
-        print(msg)
-        mqtt_client.publish_event(config.experiment_topic, msg)
-
     def start(self):
+        """Main Function for starting an experiment"""
         self.log(f'>> Experiment {self.name} started\n')
         mkdir(self.experiment_path)
         self.save_experiment_log()
@@ -76,12 +72,13 @@ class Experiment:
             try:
                 self.current_trial = i + 1
                 if i != 0:
-                    self.sleep(self.iti)
+                    self.wait(self.iti)
                 self.run_trial()
             except EndExperimentException:
                 self.hide_bugs()
-                self.terminate_pool()
+                self.end_trial()
                 self.log('>> experiment was stopped externally')
+                return str(self)
 
             self.log(self.trial_summary)
 
@@ -90,39 +87,31 @@ class Experiment:
         return str(self)
 
     def run_trial(self):
-        mkdir(self.trial_path)
-        turn_display_on()
-        mqtt_client.publish_command('led_light', 'on')
-
-        self.trial_log('recording started')
+        """Run trial flow"""
+        self.init_trial()
         self.pool = self.start_threads()
-        self.sleep(config.extra_time_recording)
+        self.wait(self.extra_time_recording)
 
-        self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.trial_duration)
-        self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path, timeout=self.trial_duration + self.iti)
-        mqtt_client.publish_command('init_bugs', self.bug_options)
-        self.trial_log('bugs initiated')
-        self.sleep(self.trial_duration)
+        self.start_bugs()
+        self.wait(self.trial_duration, check_bugs_on=True)
+
         self.hide_bugs()
-
-        self.sleep(config.extra_time_recording)
-        mqtt_client.publish_command('end_trial')
-        turn_display_off()
-        self.terminate_pool()
+        self.wait(self.extra_time_recording)
+        self.end_trial()
 
     def start_threads(self) -> ThreadPool:
         """Start cameras recording and temperature recording on a separate processes"""
         self.threads_event.set()
 
         def _start_recording():
-            record_duration = self.trial_duration + 2 * config.extra_time_recording
+            self.trial_log('recording started')
             if not config.is_debug_mode:
-                acquire_stop = {'record_time': record_duration, 'thread_event': self.threads_event}
+                acquire_stop = {'record_time': self.overall_trial_duration, 'thread_event': self.threads_event}
                 record(cameras=self.cameras, output=self.videos_path, is_auto_start=True, cache=self.cache,
                        is_use_predictions=self.is_use_predictions, **acquire_stop)
             else:
-                self.sleep(record_duration)
-            self.log('>> recording ended')
+                self.wait(self.overall_trial_duration)
+            self.trial_log('recording ended')
 
         def _read_temp():
             ser = Serializer()
@@ -152,9 +141,62 @@ class Experiment:
     def init_experiment_cache(self):
         self.cache.set(CacheColumns.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
         self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
-
         if self.is_always_reward:
             self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.experiment_duration)
+
+    def init_trial(self):
+        mkdir(self.trial_path)
+        turn_display_on()
+        mqtt_client.publish_command('led_light', 'on')
+        self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.overall_trial_duration)
+        self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path,
+                       timeout=self.overall_trial_duration + self.iti)
+
+    def end_trial(self):
+        self.terminate_pool()
+        self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
+        self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_PATH)
+
+    def start_bugs(self):
+        mqtt_client.publish_command('init_bugs', self.bug_options)
+        self.cache.set(CacheColumns.BUGS_ON, True)
+        self.trial_log('bugs initiated')
+
+    def hide_bugs(self):
+        mqtt_client.publish_command('hide_bugs')
+        mqtt_client.publish_command('end_bugs_wait')
+        self.trial_log('bugs stopped')
+        turn_display_off()
+
+    def wait(self, duration, check_bugs_on=False):
+        """Sleep while checking for experiment end"""
+        t0 = time.time()
+        while time.time() - t0 < duration:
+            if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
+                raise EndExperimentException()
+            if check_bugs_on and not self.cache.get(CacheColumns.BUGS_ON):
+                self.trial_log('Reward Bug catch')
+                return
+            time.sleep(2)
+
+    def terminate_pool(self):
+        self.threads_event.clear()
+        self.pool.terminate()
+        self.pool.join()
+
+    @property
+    def bug_options(self):
+        return json.dumps({
+            'numOfBugs': 1,
+            'speed': self.bug_speed,
+            'bugTypes': self.bug_types,
+            'rewardBugs': self.reward_bugs,
+            'movementType': self.movement_type,
+            'timeBetweenBugs': self.time_between_bugs,
+            'isStopOnReward': self.is_always_reward,
+            'isLogTrajectory': True,
+            'isAntiClockWise': self.is_anticlockwise
+        })
 
     @property
     def trial_summary(self):
@@ -178,44 +220,21 @@ class Experiment:
 
         return log
 
-    def sleep(self, duration):
-        """Sleep while checking for experiment end"""
-        t0 = time.time()
-        while time.time() - t0 < duration:
-            if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
-                raise EndExperimentException()
-            time.sleep(2)
+    @staticmethod
+    def log(msg):
+        print(msg)
+        mqtt_client.publish_event(config.experiment_topic, msg)
 
     def trial_log(self, msg):
         self.log(f'>> Trial {self.current_trial} {msg}')
 
-    def hide_bugs(self):
-        mqtt_client.publish_command('hide_bugs')
-        self.trial_log('bugs stopped')
-
-    def terminate_pool(self):
-        self.threads_event.clear()
-        self.pool.terminate()
-        self.pool.join()
-
-    @property
-    def bug_options(self):
-        return json.dumps({
-            'numOfBugs': 1,
-            'speed': self.bug_speed,
-            'bugTypes': self.bug_types,
-            'rewardBugs': self.reward_bugs,
-            'movementType': self.movement_type,
-            'timeBetweenBugs': self.time_between_bugs,
-            'isStopOnReward': self.is_always_reward,
-            'isLogTrajectory': True,
-            'isAntiClockWise': self.is_anticlockwise
-        })
-
     @property
     def experiment_duration(self):
-        return round((self.num_trials * (self.trial_duration + 2 * config.extra_time_recording)
-                + (self.num_trials - 1) * self.iti) * 1.5)
+        return round((self.num_trials * self.overall_trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
+
+    @property
+    def overall_trial_duration(self):
+        return self.trial_duration + 2 * self.extra_time_recording
 
     @property
     def experiment_path(self):
@@ -235,7 +254,7 @@ class Experiment:
 
 
 class EndExperimentException(Exception):
-    pass
+    """End Experiment"""
 
 
 def config_string():

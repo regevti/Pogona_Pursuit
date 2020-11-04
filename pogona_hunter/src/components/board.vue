@@ -265,7 +265,6 @@ export default {
         if (this.$refs.bugChild.length === 0) {
           if (this.isStopOnReward && isRewardBug) {
             this.clearBoard()
-            this.$mqtt.publish('event/command/end_trial', '')
           } else {
             const startNewGameTimeout = setTimeout(() => {
               this.initBoard()

@@ -1,6 +1,5 @@
 import json
-from logger import save_to_csv, handle_hit, end_trial, end_experiment, reward, led_light
-from cache import RedisCache
+from logger import save_to_csv, handle_hit, end_bugs_wait, end_experiment, reward, led_light
 import paho.mqtt.client as mqtt
 import config
 
@@ -8,7 +7,6 @@ import config
 class MQTTClient:
     def __init__(self):
         self.client = mqtt.Client()
-        self.cache = RedisCache()
 
     def loop(self):
         self.client.on_connect = self.on_connect
@@ -33,8 +31,8 @@ class MQTTClient:
         elif msg.topic == config.subscription_topics['end_experiment']:
             end_experiment.delay()
 
-        elif msg.topic == config.subscription_topics['end_trial']:
-            end_trial.delay()
+        elif msg.topic == config.subscription_topics['end_bugs_wait']:
+            end_bugs_wait.delay()
 
         elif msg.topic.startswith(config.log_topic_prefix):
             topic = msg.topic.replace(config.log_topic_prefix, '')

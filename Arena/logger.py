@@ -12,6 +12,8 @@ import paho.mqtt.client as mqtt
 
 
 mqtt = mqtt.Client()
+if config.is_debug_mode and config.is_use_parport:
+    config.redis_host = 'cache'
 cache = RedisCache()
 logger = get_task_logger(__name__)
 h = logging.StreamHandler(sys.stdout)
@@ -42,26 +44,24 @@ app = Celery('logger', broker=f'redis://{config.redis_host}:6379/0')
 @app.task
 def handle_hit(payload):
     if is_always_reward() and payload.get('is_hit') and payload.get('is_reward_bug'):
-        cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, False)  # stop trial
+        end_bugs_wait()
         return reward()
 
 
 @app.task
 def end_experiment():
-    if cache.get(CacheColumns.EXPERIMENT_TRIAL_ON):
-        end_trial()
+    cache.delete(CacheColumns.BUGS_ON)
+    cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
+    cache.delete(CacheColumns.EXPERIMENT_TRIAL_PATH)
+    cache.delete(CacheColumns.ALWAYS_REWARD)
     cache.delete(CacheColumns.EXPERIMENT_NAME)
     cache.delete(CacheColumns.EXPERIMENT_PATH)
     log('>> experiment finished\n')
-    if is_always_reward:
-        cache.delete(CacheColumns.ALWAYS_REWARD)
 
 
 @app.task
-def end_trial():
-    cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
-    if parport:
-        parport.led_lighting('off')
+def end_bugs_wait():
+    cache.delete(CacheColumns.BUGS_ON)
 
 
 @app.task
