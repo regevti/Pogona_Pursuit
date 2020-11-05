@@ -28,3 +28,5 @@ yolo_fn_frames
 yolo_eval_labels
 experiment_plots
 
+darknet
+libdarknet.so
