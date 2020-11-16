@@ -54,6 +54,16 @@
                     </div>
                 </div>
                 <div class="form-group row pr-3">
+                    <label for="experimentTypeSelect" class="col col-form-label">Experiment Type</label>
+                    <div class="col">
+                        <select id="experimentTypeSelect" class="form-control col">
+                            {% for experiment_type in experiment_types %}
+                            <option value="{{experiment_type}}">{{experiment_type}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group row pr-3 bugs-options">
                     <label for="bugTypeSelect" class="col col-form-label">Bug Type</label>
                     <div class="col">
                         <select id="bugTypeSelect" class="form-control col" multiple="multiple" style="display: none;">
@@ -63,7 +73,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="form-group row pr-3" id="rewardBugDiv" style="display: none">
+                <div class="form-group row pr-3 bugs-options" id="rewardBugDiv" style="display: none">
                     <label for="rewardBugSelect" class="col col-form-label">Reward Bug</label>
                     <div class="col">
                         <select id="rewardBugSelect" class="form-control col" multiple="multiple"
@@ -71,7 +81,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="form-group row pr-3">
+                <div class="form-group row pr-3 bugs-options">
                     <label for="rewardTypeSelect" class="col col-form-label">Reward Type</label>
                     <div class="col">
                         <select id="rewardTypeSelect" class="form-control col">
@@ -81,7 +91,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="form-group row pr-3">
+                <div class="form-group row pr-3 bugs-options">
                     <label for="movementTypeSelect" class="col col-form-label">Movement Type</label>
                     <div class="col">
                         <select id="movementTypeSelect" class="form-control col">
@@ -91,22 +101,32 @@
                         </select>
                     </div>
                 </div>
-                <div class="form-group row pr-3" id="isAntiClockWiseDiv" style="display: none;">
+                <div class="form-group row pr-3 bugs-options" id="isAntiClockWiseDiv" style="display: none;">
                     <label for="isAntiClockWise" class="col col-form-label">Anticlockwise Circle</label>
                     <div class="col-sm-5">
                         <input id="isAntiClockWise" type="checkbox" class="form-control-sm">
                     </div>
                 </div>
-                <div class="form-group row pr-3">
+                <div class="form-group row pr-3 bugs-options">
                     <label for="bugSpeed" class="col col-form-label">Bug Speed:</label>
                     <div class="col-sm-5">
                         <input type="number" class="form-control" id="bugSpeed" value="2" required>
                     </div>
                 </div>
-                <div class="form-group row pr-3">
+                <div class="form-group row pr-3 bugs-options">
                     <label for="timeBetweenBugs" class="col col-form-label">Time Between Bugs [sec]:</label>
                     <div class="col-sm-5">
                         <input type="number" class="form-control" id="timeBetweenBugs" value="2" required>
+                    </div>
+                </div>
+                <div class="form-group row pr-3 media-options" style="display: none">
+                    <label for="media-url" class="col col-form-label">Media File:</label>
+                    <div class="col">
+                        <select id="media-url" class="form-control col">
+                            {% for mediaFile in media_files %}
+                            <option value="{{mediaFile}}">{{mediaFile}}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                 </div>
                 <div class="row">
@@ -263,17 +283,32 @@
         $rewardBugDiv.show()
       }
     })
+
+    let $isAntiClockWiseDiv = $("#isAntiClockWiseDiv")
     $("#movementTypeSelect").change(function () {
-      let isAntiClockWiseDiv = $("#isAntiClockWiseDiv")
       if ($("#movementTypeSelect").val() === 'circle') {
-        isAntiClockWiseDiv.show()
+        $isAntiClockWiseDiv.show()
       } else {
-        isAntiClockWiseDiv.hide()
+        $isAntiClockWiseDiv.hide()
       }
     })
+
+    $("#experimentTypeSelect").change(function () {
+      if (isMediaExperiment()) {
+        $(".media-options").show()
+        $(".bugs-options").hide()
+      } else {
+        $(".bugs-options").show()
+        $rewardBugDiv.hide()
+        $isAntiClockWiseDiv.hide()
+        $(".media-options").hide()
+      }
+    })
+
     $.get('/get_experiment', function (data) {
       $("#currentExperimentName").text(data)
     })
+
     $("#stream").click(function () {
       $.post('/set_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
         $("#selectStreamCamera").prop("disabled", true);
@@ -298,24 +333,35 @@
     });
     $("#experiment_form").submit(function (event) {
       event.preventDefault();
-      let bugTypes = $("#bugTypeSelect").val().join(',')
-      let rewardBugs = $("#rewardBugSelect").val()
-      let params = {
+      params = {
         name: $("#experimentName").val(),
         animal_id: $("#animalId").val(),
         cameras: getCheckedCameras(),
         trial_duration: Number($("#experimentTrialDuration").val()),
         num_trials: Number($("#experimentNumTrials").val()),
         iti: Number($("#experimentITI").val()),
-        reward_type: $("#rewardTypeSelect").val(),
-        is_use_predictions: $("#use_predictions").is(":checked"),
-        bug_types: bugTypes,
-        reward_bugs: rewardBugs ? rewardBugs.join(',') : bugTypes,
-        bug_speed: Number($("#bugSpeed").val()),
-        movement_type: $("#movementTypeSelect").val(),
-        time_between_bugs: Number($("#timeBetweenBugs").val()),
-        is_anticlockwise: $("#isAntiClockWise").is(":checked")
+        experiment_type: $("#experimentTypeSelect").val()
       }
+      let extraParams = {}
+      if (isMediaExperiment()) {
+        extraParams = {
+            media_url: $("#media-url").val()
+        }
+      } else {
+        let bugTypes = $("#bugTypeSelect").val().join(',')
+        let rewardBugs = $("#rewardBugSelect").val()
+        extraParams = {
+            reward_type: $("#rewardTypeSelect").val(),
+            is_use_predictions: $("#use_predictions").is(":checked"),
+            bug_types: bugTypes,
+            reward_bugs: rewardBugs ? rewardBugs.join(',') : bugTypes,
+            bug_speed: Number($("#bugSpeed").val()),
+            movement_type: $("#movementTypeSelect").val(),
+            time_between_bugs: Number($("#timeBetweenBugs").val()),
+            is_anticlockwise: $("#isAntiClockWise").is(":checked")
+        }
+      }
+      Object.assign(params, extraParams)
       $.ajax({
         url: "/start_experiment",
         type: "POST",
@@ -357,6 +403,7 @@
         $("#record-output").text(data)
       })
     })
+
     const AcquireStopWithValue = ['num_frames', 'record_time'];
     $("#acquireStopSelect").change(function (e) {
       let isValued = AcquireStopWithValue.indexOf($("#acquireStopSelect").val()) !== -1;
@@ -452,6 +499,10 @@
 
     ///////////////////////////////////////////////////////////////////////
     // Functions
+
+    function isMediaExperiment() {
+      return $("#experimentTypeSelect").val() === 'media'
+    }
 
     function getCheckedCameras() {
       let a = []

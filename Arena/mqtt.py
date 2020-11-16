@@ -1,5 +1,5 @@
 import json
-from logger import save_to_csv, handle_hit, end_bugs_wait, end_experiment, reward, led_light
+from logger import save_to_csv, handle_hit, end_app_wait, end_experiment, reward, led_light
 import paho.mqtt.client as mqtt
 import config
 
@@ -31,8 +31,8 @@ class MQTTClient:
         elif msg.topic == config.subscription_topics['end_experiment']:
             end_experiment.delay()
 
-        elif msg.topic == config.subscription_topics['end_bugs_wait']:
-            end_bugs_wait.delay()
+        elif msg.topic == config.subscription_topics['end_app_wait']:
+            end_app_wait.delay()
 
         elif msg.topic.startswith(config.log_topic_prefix):
             topic = msg.topic.replace(config.log_topic_prefix, '')

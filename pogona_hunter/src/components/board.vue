@@ -1,110 +1,61 @@
 <template>
   <div class="board-canvas-wrapper" oncontextmenu="return false;">
-    <audio ref="audio1"><source src="@/assets/sounds/2.mp3" type="audio/mpeg"></audio>
-    <p style="float: right">SCORE: {{ $store.state.score }}</p>
-    <Slide style="z-index: 20;">
-      <div>
-        <form id='game-configuration' v-on:change="initBoard">
-          <h1>Pogona Hunter</h1>
-          <div class="row">
-            <label for="bugType">Bug Type:</label>
-            <select id="bugType" v-model="bugTypes">
-              <option v-for="option in Object.keys(bugTypeOptions)" v-bind:value="option"
-                      v-bind:key="option">
-                {{ bugTypeOptions[option].text }}
-              </option>
-            </select>
-          </div>
-          <div class="row">
-            <label for="movementType">Movement Type:</label>
-            <select id="movementType" v-model="movementType">
-              <option v-for="option in movementTypeOptions" v-bind:value="option"
-                      v-bind:key="option">
-                {{ option }}
-              </option>
-            </select>
-          </div>
-          <div class="row">
-            <label for="numOfBugs">Number of Bugs: </label>
-            <input v-model.number="numOfBugs" id="numOfBugs" type="number" style="width: 2em">
-          </div>
-          <div class="row">
-            <label for="canvasHeight">Canvas Height: </label>
-            <input v-model.number="canvasParams.height" id="canvasHeight" type="number" style="width: 4em">
-          </div>
-          <div class="row">
-            <label for="time-in-edge">Time In Edge: </label>
-            <input v-model.number="timeInEdge" id="time-in-edge" type="number" style="width: 4em">
-          </div>
-          <div class="row">
-            <label for="time-between-bugs">Time Between Bugs: </label>
-            <input v-model.number="timeBetweenBugs" id="time-between-bugs" type="number"
-                   style="width: 4em">
-          </div>
-          <div class="row">
-            <label for="blood-duration">Blood Duration: </label>
-            <input v-model.number="bloodDuration" id="blood-duration" type="number" style="width: 4em">
-          </div>
-          <div class="row">
-            <label for="radius-min">Radius Range: </label>
-            <input v-model.number="currentBugOptions.radiusRange.min" id="radius-min" type="number"
-                   style="width: 3em">
-            <input v-model.number="currentBugOptions.radiusRange.max" id="radius-max" type="number"
-                   style="width: 3em">
-          </div>
-          <div class="row">
-            <label for="speed">Speed: </label>
-            <input v-model.number="currentBugOptions.speed" id="speed" type="number"
-                   style="width: 3em">
-          </div>
-          <p>Written by Reggev Eyal</p>
-        </form>
-      </div>
-    </Slide>
-    <!--        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"-->
-    <!--                v-on:touchstart="setCanvasTouch($event)" style="z-index: 10;">-->
-    <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
-            v-on:mousedown="setCanvasClick($event)" style="z-index: 10;"
-            v-on:click.right="changeTrajectory($event)">
-      <bug v-for="(value, index) in bugsProps"
-           :key="index"
-           :x0="value.x"
-           :y0="value.y"
-           :radius="value.radius"
-           :bugTypes="bugTypes"
-           :timeInEdge="timeInEdge"
-           :speed="currentBugOptions.speed"
-           :movementType="movementType"
-           :isAntiClockWise="isAntiClockWise"
-           ref="bugChild">
-      </bug>
-    </canvas>
+    <div id="bugs-board" v-if="!isMedia">
+      <audio ref="audio1"><source src="@/assets/sounds/2.mp3" type="audio/mpeg"></audio>
+      <p style="float: right">SCORE: {{ $store.state.score }}</p>
+      <slide-menu v-on:init="initBoard"
+                  v-bind:bugSettings="bugsSettings"
+                  v-bind:configOptions="configOptions"
+                  v-bind:canvasParams="canvasParams">
+      </slide-menu>
+      <!--        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"-->
+      <!--                v-on:touchstart="setCanvasTouch($event)" style="z-index: 10;">-->
+      <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
+              v-on:mousedown="setCanvasClick($event)" style="z-index: 10;"
+              v-on:click.right="changeTrajectory($event)">
+        <bug v-for="(value, index) in bugsProps"
+             :key="index"
+             :x0="value.x"
+             :y0="value.y"
+             :bugsSettings="bugsSettings"
+             ref="bugChild">
+        </bug>
+      </canvas>
+    </div>
+    <media v-if="isMedia" :url="mediaUrl"></media>
   </div>
 </template>
 
 <script>
 import bug from './bug'
 import {distance, randomRange} from '@/js/helpers'
-import {Slide} from 'vue-burger-menu'
+import {handlePrediction, showPogona} from '../js/predictions'
+import SlideMenu from './slideMenu'
+import media from './media'
 
 export default {
   name: 'board',
-  components: {bug, Slide},
+  components: {SlideMenu, bug, media},
   data() {
     return {
+      configOptions: require('@/config.json'),
       bugsProps: [],
-      bugTypeOptions: require('@/config.json')['bugTypes'],
-      bugTypes: 'cockroach',
-      rewardBugs: ['cockroach'],
-      movementTypeOptions: require('@/config.json')['movementTypes'],
-      movementType: 'line',
-      numOfBugs: 0,
-      isStopOnReward: false,
+      bugsSettings: {
+        numOfBugs: 0,
+        bugTypes: ['cockroach'],
+        rewardBugs: 'cockroach',
+        movementType: 'line',
+        speed: 0, // if 0 config default for bug will be used
+        radiusSize: 0, // if 0 config default for bug will be used
+        isStopOnReward: false,
+        isAntiClockWise: false,
+        timeBetweenBugs: 2000,
+        bloodDuration: 2000,
+        timeInEdge: 2000
+      },
+      mediaUrl: '',
+      isMedia: false,
       isHandlingTouch: false,
-      isAntiClockWise: false,
-      timeBetweenBugs: 2000,
-      bloodDuration: 2000,
-      timeInEdge: 2000,
       trajectoryLog: [],
       canvasParams: {
         width: window.innerWidth - 20,
@@ -129,52 +80,31 @@ export default {
     'event/command/init_bugs'(options) {
       options = JSON.parse(options)
       console.log(options)
-      this.numOfBugs = Number(options.numOfBugs) ? Number(options.numOfBugs) : 1
-      this.bugTypes = options.bugTypes ? options.bugTypes : this.bugTypes
-      this.rewardBugs = options.rewardBugs ? options.rewardBugs : this.bugTypes
-      this.isStopOnReward = options.isStopOnReward ? Boolean(options.isStopOnReward) : false
-      this.movementType = options.movementType ? options.movementType : this.movementType
-      this.timeBetweenBugs = options.timeBetweenBugs !== undefined ? Number(options.timeBetweenBugs) * 1000 : this.timeBetweenBugs
-      this.currentBugOptions.speed = options.speed ? Number(options.speed) : this.currentBugOptions.speed
-      this.isAntiClockWise = options.isAntiClockWise !== undefined ? options.isAntiClockWise : false
-      let isLogTrajectory = options.isLogTrajectory ? Boolean(options.isLogTrajectory) : false
+      Object.assign(this.bugsSettings, options)
       this.$store.commit('reset_score')
-      this.initBoard(isLogTrajectory)
+      this.initBoard(!!options['isLogTrajectory'])
+    },
+    'event/command/hide_media'() {
+      this.isMedia = false
+    },
+    'event/command/init_media'(options) {
+      options = JSON.parse(options)
+      this.clearBoard()
+      this.mediaUrl = options.url
+      console.log(this.mediaUrl)
+      this.isMedia = true
     },
     'event/command/show_pogona'(numFrames) {
-      numFrames = Number(numFrames)
-      const image = new Image(60, 45)
-      image.onload = drawImageActualSize
-      image.src = '/static/pogona0.jpg'
-      let that = this
-
-      function drawImageActualSize() {
-        let canvasOriginalHeight = that.canvas.height
-        that.canvas.height = this.naturalHeight
-        that.ctx.drawImage(this, that.canvas.width / 4, 0)
-        if (numFrames > 0) {
-          let t = setTimeout(() => {
-            that.ctx.clearRect(0, 0, that.canvas.width, that.canvas.height)
-            that.canvas.height = canvasOriginalHeight
-            clearTimeout(t)
-          }, 1000 * numFrames / 60) // for 2 frames
-        }
-      }
+      showPogona(this.canvas, numFrames)
     },
     'event/log/prediction'(options) {
-      options = JSON.parse(options)
-      console.log(`Prediction detected coords: ${options.hit_point}, time2hit:${options.time2hit}`)
-      this.ctx.fillRect(this.canvasParams.width / 2, this.canvasParams.height / 2, 300, 200)
-      let t = setTimeout(() => {
-        this.ctx.clearRect(0, 0, this.canvasParams.width, this.canvasParams.height)
-        clearTimeout(t)
-      }, 500)
+      handlePrediction(options, this.ctx, this.canvasParams)
     }
   },
   computed: {
     currentBugOptions: function () {
-      let bugType = Array.isArray(this.bugTypes) ? this.bugTypes[0] : this.bugTypes
-      return this.bugTypeOptions[bugType]
+      let bugType = Array.isArray(this.bugsSettings.bugTypes) ? this.bugsSettings.bugTypes[0] : this.bugsSettings.bugTypes
+      return this.configOptions.bugTypes[bugType]
     }
   },
   methods: {
@@ -186,14 +116,14 @@ export default {
       if (isLogTrajectory) {
         this.startLogTrajectory()
       }
-      this.spawnBugs(this.numOfBugs)
+      this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
         console.log('start animation...')
         this.animate()
       })
     },
     clearBoard() {
-      this.numOfBugs = 0
+      this.bugsSettings.numOfBugs = 0
       if (this.animationHandler) {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
@@ -233,8 +163,8 @@ export default {
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let isHit = false
         let bug = this.$refs.bugChild[i]
-        let isRewardBug = this.rewardBugs.includes(bug.currentBugType)
-        if (distance(x, y, bug.x, bug.y) <= bug.radius / 1.5) {
+        let isRewardBug = this.bugsSettings.rewardBugs.includes(bug.currentBugType)
+        if (bug.isHit(x, y)) {
           this.destruct(i, x, y, isRewardBug)
           isHit = true
         }
@@ -263,36 +193,34 @@ export default {
       const bloodTimeout = setTimeout(() => {
         this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
         if (this.$refs.bugChild.length === 0) {
-          if (this.isStopOnReward && isRewardBug) {
+          if (this.bugsSettings.isStopOnReward && isRewardBug) {
             this.clearBoard()
           } else {
             const startNewGameTimeout = setTimeout(() => {
               this.initBoard()
               clearTimeout(startNewGameTimeout)
-            }, this.timeBetweenBugs)
+            }, this.bugsSettings.timeBetweenBugs)
           }
         }
         clearTimeout(bloodTimeout)
-      }, this.bloodDuration)
+      }, this.bugsSettings.bloodDuration)
     },
     spawnBugs(noOfBugs) {
-      const radius = randomRange(this.currentBugOptions.radiusRange.min, this.currentBugOptions.radiusRange.max)
+      const minDistance = 100
       for (let i = 0; i < noOfBugs; i++) {
-        let x = randomRange(radius, this.canvas.width - radius)
-        let y = randomRange(radius, this.canvas.height - radius)
+        let x = randomRange(0, this.canvas.width)
+        let y = randomRange(0, this.canvas.height)
         let properties = {
           x: x,
           y: y,
-          radius: radius,
-          bugId: `${this.bugTypes}${i}`
+          bugId: `${this.bugsSettings.bugTypes}${i}`
         }
-
         if (i !== 0) {
           for (let j = 0; j < i; j++) {
             let d = distance(x, y, this.bugsProps[j].x, this.bugsProps[j].y)
-            if (d <= radius + this.bugsProps[j].radius) {
-              x = randomRange(radius, this.canvas.width - radius)
-              y = randomRange(radius, this.canvas.height - radius)
+            if (d <= minDistance) {
+              x = randomRange(0, this.canvas.width)
+              y = randomRange(0, this.canvas.height)
               j = -1
             }
           }
@@ -327,7 +255,7 @@ export default {
     }
   }
 }
-</script>s
+</script>
 
 <style scoped>
 

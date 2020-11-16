@@ -1,9 +1,10 @@
-from flask import Flask, render_template, Response, request, make_response, send_file, stream_with_context
+from flask import Flask, render_template, Response, request, send_from_directory
 import PySpin
 import cv2
 import json
 import os
 import config
+from pathlib import Path
 from utils import titlize, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTPublisher
@@ -24,7 +25,8 @@ def index():
         app_config = json.load(f)
     return render_template('index.html', cameras=config.camera_names.keys(), exposure=config.exposure_time,
                            config=app_config, acquire_stop={k: titlize(k) for k in config.acquire_stop_options.keys()},
-                           reward_types=config.reward_types)
+                           reward_types=config.reward_types, experiment_types=config.experiment_types,
+                           media_files=list_media())
 
 
 @app.route('/explore')
@@ -148,6 +150,19 @@ def init_bugs():
 def hide_bugs():
     mqtt_client.publish_event('event/command/hide_bugs', '')
     return Response('ok')
+
+
+def list_media():
+    media_files = []
+    for f in Path(config.static_files_dir).glob('*'):
+        if f.suffix in ['.png', '.jpg', '.jpeg', '.bmp', '.avi', '.mp4', '.mpg']:
+            media_files.append(f.name)
+    return media_files
+
+
+@app.route('/media/<filename>')
+def send_media(filename):
+    return send_from_directory(config.static_files_dir, filename)
 
 
 class VideoStream:

@@ -11,10 +11,18 @@ is_use_parport = env.bool('IS_USE_PARPORT', False)
 experiments_dir = env('EXPERIMENTS_DIR', "experiments")
 explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', experiments_dir)
 extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
+experiment_types = [
+    'bugs',
+    'media'
+]
 reward_types = [
     'always',
     'end_trial'
 ]
+
+# API
+static_files_dir = env('STATIC_FILES_DIR', 'static')
+management_url = env('MANAGEMENT_URL', 'http://localhost:5000')
 
 # Cache (Redis)
 redis_host = env('REDIS_HOST', 'cache')
@@ -32,7 +40,7 @@ logger_files = {
 subscription_topics = {
     'reward': 'event/command/reward',
     'led_light': 'event/command/led_light',
-    'end_bugs_wait': 'event/command/end_bugs_wait',
+    'end_app_wait': 'event/command/end_app_wait',
     'end_experiment': 'event/command/end_experiment',
     'touch': 'event/log/touch',
     'hit': 'event/log/hit',

@@ -53,6 +53,7 @@
   },
   "movementTypes": [
     "line",
-    "circle"
+    "circle",
+    "low_horizontal"
   ]
 }

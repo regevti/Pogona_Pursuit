@@ -44,13 +44,13 @@ app = Celery('logger', broker=f'redis://{config.redis_host}:6379/0')
 @app.task
 def handle_hit(payload):
     if is_always_reward() and payload.get('is_hit') and payload.get('is_reward_bug'):
-        end_bugs_wait()
+        end_app_wait()
         return reward()
 
 
 @app.task
 def end_experiment():
-    cache.delete(CacheColumns.BUGS_ON)
+    cache.delete(CacheColumns.APP_ON)
     cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
     cache.delete(CacheColumns.EXPERIMENT_TRIAL_PATH)
     cache.delete(CacheColumns.ALWAYS_REWARD)
@@ -60,8 +60,8 @@ def end_experiment():
 
 
 @app.task
-def end_bugs_wait():
-    cache.delete(CacheColumns.BUGS_ON)
+def end_app_wait():
+    cache.delete(CacheColumns.APP_ON)
 
 
 @app.task

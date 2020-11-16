@@ -17,26 +17,33 @@ from mqtt import MQTTPublisher
 from utils import datetime_string, mkdir, turn_display_on, turn_display_off, Serializer
 
 mqtt_client = MQTTPublisher()
+BUGS_EXPERIMENT_FIELDS = ['bug_speed', 'movement_type', 'is_use_predictions', 'time_between_bugs', 'reward_type',
+                          'reward_bugs', 'is_anticlockwise', 'bug_types']
 
 
 @dataclass
 class Experiment:
     name: str
     animal_id: str
-    bug_types: list
     cameras: str
     cache: RedisCache = field(default_factory=RedisCache, repr=False)
+    bug_types: list = field(default_factory=list)
     trial_duration: int = 60
     num_trials: int = 1
     iti: int = 10
+    experiment_type: str = 'bugs'
+
     bug_speed: int = None
     movement_type: str = None
     is_use_predictions: bool = False
     time_between_bugs: int = None
-    extra_time_recording: int = config.extra_time_recording
     reward_type: str = 'end_trial'
     reward_bugs: list = None
     is_anticlockwise: bool = False
+
+    media_url: str = ''
+
+    extra_time_recording: int = config.extra_time_recording
     current_trial: int = field(default=1, repr=False)
     pool: ThreadPool = field(default=None, repr=False)
     threads_event: Event = field(default_factory=Event, repr=False)
@@ -55,6 +62,8 @@ class Experiment:
         for obj in experiment_arguments():
             if obj in ['self', 'cache', 'pool', 'current_trial', 'threads_event']:
                 continue
+            if self.is_media_experiment and obj in BUGS_EXPERIMENT_FIELDS:
+                continue
             value = getattr(self, obj)
             if isinstance(value, list):
                 value = ','.join(value)
@@ -67,7 +76,7 @@ class Experiment:
         mkdir(self.experiment_path)
         self.save_experiment_log()
         self.init_experiment_cache()
-        mqtt_client.publish_command('hide_bugs')
+        self.clear_app_content()
         for i in range(self.num_trials):
             try:
                 self.current_trial = i + 1
@@ -75,7 +84,7 @@ class Experiment:
                     self.wait(self.iti)
                 self.run_trial()
             except EndExperimentException:
-                self.hide_bugs()
+                self.clear_app_content()
                 self.end_trial()
                 self.log('>> experiment was stopped externally')
                 return str(self)
@@ -92,10 +101,10 @@ class Experiment:
         self.pool = self.start_threads()
         self.wait(self.extra_time_recording)
 
-        self.start_bugs()
-        self.wait(self.trial_duration, check_bugs_on=True)
+        self.start_app()
+        self.wait(self.trial_duration, check_app_on=True)
 
-        self.hide_bugs()
+        self.end_app()
         self.wait(self.extra_time_recording)
         self.end_trial()
 
@@ -162,24 +171,34 @@ class Experiment:
         self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
         self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_PATH)
 
-    def start_bugs(self):
-        mqtt_client.publish_command('init_bugs', self.bug_options)
-        self.cache.set(CacheColumns.BUGS_ON, True)
-        self.trial_log('bugs initiated')
+    def start_app(self):
+        if self.is_media_experiment:
+            mqtt_client.publish_command('init_media', self.media_options)
+        else:
+            mqtt_client.publish_command('init_bugs', self.bug_options)
 
-    def hide_bugs(self):
-        mqtt_client.publish_command('hide_bugs')
-        mqtt_client.publish_command('end_bugs_wait')
-        self.trial_log('bugs stopped')
+        self.cache.set(CacheColumns.APP_ON, True)
+        self.trial_log(f'{self.experiment_type} initiated')
+
+    def end_app(self):
+        self.clear_app_content()
+        mqtt_client.publish_command('end_app_wait')
+        self.trial_log(f'{self.experiment_type} stopped')
         turn_display_off()
 
-    def wait(self, duration, check_bugs_on=False):
+    def clear_app_content(self):
+        if self.is_media_experiment:
+            mqtt_client.publish_command('hide_media')
+        else:
+            mqtt_client.publish_command('hide_bugs')
+
+    def wait(self, duration, check_app_on=False):
         """Sleep while checking for experiment end"""
         t0 = time.time()
         while time.time() - t0 < duration:
             if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
                 raise EndExperimentException()
-            if check_bugs_on and not self.cache.get(CacheColumns.BUGS_ON):
+            if check_app_on and not self.cache.get(CacheColumns.APP_ON):
                 self.trial_log('Reward Bug catch')
                 return
             time.sleep(2)
@@ -202,6 +221,12 @@ class Experiment:
             'isStopOnReward': self.is_always_reward,
             'isLogTrajectory': True,
             'isAntiClockWise': self.is_anticlockwise
+        })
+
+    @property
+    def media_options(self):
+        return json.dumps({
+            'url': f'{config.management_url}/media/{self.media_url}'
         })
 
     @property
@@ -253,6 +278,10 @@ class Experiment:
     @property
     def videos_path(self):
         return f'{self.trial_path}/videos'
+
+    @property
+    def is_media_experiment(self):
+        return self.experiment_type == 'media'
 
     @property
     def is_always_reward(self):

@@ -11,7 +11,8 @@ export default {
     return {
       bugTypeOptions: require('@/config.json')['bugTypes'],
       bugImages: [],
-      currentBugType: '',
+      currentBugType: undefined,
+      currentRadiusSize: undefined,
       imgSrc: '',
       mass: 1
     }
@@ -19,16 +20,17 @@ export default {
   props: {
     x0: Number,
     y0: Number,
-    radius: Number,
-    bugTypes: Array[String],
-    timeInEdge: Number,
-    speed: Number,
-    movementType: String,
-    isAntiClockWise: Boolean
+    bugsSettings: Object
   },
   computed: {
     isMoveInCircles: function () {
-      return this.movementType === 'circle'
+      return this.bugsSettings.movementType === 'circle'
+    },
+    isRandomLine: function () {
+      return this.bugsSettings.movementType === 'line'
+    },
+    isLowHorizontal: function () {
+      return this.bugsSettings.movementType === 'low_horizontal'
     },
     numImagesPerBug: function () {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
@@ -38,6 +40,12 @@ export default {
     },
     stepsPerImage: function () {
       return this.bugTypeOptions[this.currentBugType].stepsPerImage
+    },
+    currentSpeed: function () {
+      if (this.bugsSettings && this.bugsSettings.speed) {
+        return this.bugsSettings.speed
+      }
+      return this.bugTypeOptions[this.currentBugType].speed
     }
   },
   mounted() {
@@ -45,41 +53,32 @@ export default {
     this.ctx = this.canvas.getContext('2d')
     this.isOutEdged = false
     this.isDead = false
-    this.dx = plusOrMinus() * this.speed
-    this.dy = plusOrMinus() * this.speed
-    this.initBug(this.x0, this.y0, this.dx, this.dy)
+    if (!Array.isArray(this.bugsSettings.bugTypes)) {
+      this.bugsSettings.bugTypes = [this.bugsSettings.bugTypes]
+    }
+    if (this.isMoveInCircles) {
+      this.r0 = [this.canvas.width / 2, this.canvas.height]
+      this.r = Math.min(this.canvas.width / 2, this.canvas.height) * 0.75
+    }
+    this.initBug(this.x0, this.y0, plusOrMinus(), plusOrMinus())
   },
   methods: {
-    getImageSrc(fileName) {
-      return require('@/assets' + fileName)
-    },
-    getDeadImage() {
-      let img = new Image()
-      img.src = this.getImageSrc(`/${this.currentBugType}_dead.png`)
-      return img
-    },
-    getNextBugType() {
-      if (!Array.isArray(this.bugTypes) || this.bugTypes.length === 1) {
-        this.currentBugType = this.bugTypes[0]
-        return
-      }
-      console.log(this.bugTypes)
-      let nextBugOptions = this.bugTypes.filter(bug => bug !== this.currentBugType)
-      let nextIndex = randomRange(0, nextBugOptions.length)
-      this.currentBugType = nextBugOptions[nextIndex]
-    },
-    initBug(x, y, dx, dy) {
-      if (this.isMoveInCircles) {
-        this.r0 = [this.canvas.width / 2, this.canvas.height]
-        this.r = Math.min(this.canvas.width / 2, this.canvas.height) * 0.75
-      }
-      this.x = x
-      this.y = y
-      this.dx = dx
-      this.dy = dy
-      this.step = 0
-      this.theta = Math.PI
+    initBug(x, y, directionX, directionY) {
       this.getNextBugType()
+      if (this.isLowHorizontal) {
+        this.x = this.canvas.width
+        this.y = this.canvas.height - 80
+        this.dx = -1 * this.currentSpeed
+        this.dy = 0
+      } else if (this.isRandomLine) {
+        this.x = x
+        this.y = y
+        this.dx = Math.sign(directionX) * this.currentSpeed * Math.sqrt(2)
+        this.dy = Math.sign(directionY) * this.currentSpeed * Math.sqrt(2)
+      }
+      this.step = 0
+      this.theta = Math.PI - Math.PI / 10
+      this.currentRadiusSize = this.getRadiusSize()
     },
     move(particles) {
       if (this.isDead || this.isStatic || this.isOutEdged) {
@@ -88,8 +87,8 @@ export default {
       }
       this.edgeDetection()
       if (this.isMoveInCircles) {
-        this.theta += Math.abs(this.dx) * Math.sqrt(2) / this.r
-        this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.isAntiClockWise ? -1 : 1)
+        this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
+        this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.bugsSettings.isAntiClockWise ? -1 : 1)
         this.y = this.r0[1] + this.r * Math.sin(this.theta)
       } else {
         // move in straight lines
@@ -101,7 +100,7 @@ export default {
       for (let i = 0; i < particles.length; i++) {
         if (this === particles[i]) continue
 
-        if (distance(this.x, this.y, particles[i].x, particles[i].y) <= this.radius + particles[i].radius) {
+        if (distance(this.x, this.y, particles[i].x, particles[i].y) <= this.currentRadiusSize + particles[i].currentRadiusSize) {
           this.collisionEffect(particles[i])
         }
       }
@@ -124,9 +123,9 @@ export default {
         this.ctx.setTransform(1, 0, 0, 1, this.x, this.y)
         this.ctx.rotate(this.getAngleRadians())
         // drawImage(image, dx, dy, dWidth, dHeight)
-        this.ctx.drawImage(bugImage, -this.radius / 2, -this.radius / 2, this.radius, this.radius)
+        this.ctx.drawImage(bugImage, -this.currentRadiusSize / 2, -this.currentRadiusSize / 2, this.currentRadiusSize, this.currentRadiusSize)
         this.ctx.setTransform(1, 0, 0, 1, 0, 0)
-        // this.ctx.arc(this.x, this.y, this.radius / 1.5, 0, 2 * Math.PI, false)
+        // this.ctx.arc(this.x, this.y, this.currentRadiusSize / 1.5, 0, 2 * Math.PI, false)
         // this.ctx.fillStyle = 'rgba(255,0,0,0.3)'
         // this.ctx.fill()
       } catch (e) {
@@ -135,16 +134,38 @@ export default {
     },
     edgeTimeout(dx, dy) {
       this.isOutEdged = true
-      let x = this.xEdge()
-      let y = this.yEdge()
       const initAfterEdgeTimeout = setTimeout(() => {
-        this.initBug(x, y, dx, dy)
+        this.initBug(this.xEdge(), this.yEdge(), dx, dy)
         const outEdgeTimeout = setTimeout(() => {
           this.isOutEdged = false
           clearTimeout(outEdgeTimeout)
         }, 50)
         clearTimeout(initAfterEdgeTimeout)
-      }, this.timeInEdge)
+      }, this.bugsSettings.timeInEdge)
+    },
+    getImageSrc(fileName) {
+      return require('@/assets' + fileName)
+    },
+    getDeadImage() {
+      let img = new Image()
+      img.src = this.getImageSrc(`/${this.currentBugType}_dead.png`)
+      return img
+    },
+    getNextBugType() {
+      if (this.bugsSettings.bugTypes.length === 1) {
+        this.currentBugType = this.bugsSettings.bugTypes[0]
+        return
+      }
+      let nextBugOptions = this.bugsSettings.bugTypes.filter(bug => bug !== this.currentBugType)
+      let nextIndex = randomRange(0, nextBugOptions.length)
+      this.currentBugType = nextBugOptions[nextIndex]
+    },
+    getRadiusSize() {
+      if (this.bugsSettings.radiusSize) {
+        return this.bugsSettings.radiusSize
+      }
+      let currentBugOptions = this.bugTypeOptions[this.currentBugType]
+      return randomRange(currentBugOptions.radiusRange.min, currentBugOptions.radiusRange.max)
     },
     xEdge() {
       if (this.isMoveInCircles) {
@@ -169,7 +190,7 @@ export default {
       if (this.isOutEdged) {
         return
       }
-      const margin = this.radius
+      const margin = this.currentRadiusSize
       if (this.x >= this.canvas.width + margin || this.x <= -margin) {
         this.edgeTimeout(-this.dx, this.dy)
       } else if (this.y >= this.canvas.height + margin || this.y <= -margin) {
@@ -178,6 +199,9 @@ export default {
     },
     isInsideBoard() {
       return this.x > 0 && this.x < this.canvas.width && this.y > 0 && this.y < this.canvas.height
+    },
+    isHit(x, y) {
+      return distance(x, y, this.x, this.y) <= this.currentRadiusSize / 1.5
     },
     escape(xe, ye) {
       let dist = distance(this.x, this.y, xe, ye)
@@ -194,7 +218,7 @@ export default {
     },
     getAngleRadians() {
       if (this.isMoveInCircles) {
-        return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + (this.isAntiClockWise ? 0 : Math.PI)
+        return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + (this.bugsSettings.isAntiClockWise ? 0 : Math.PI)
       }
       return Math.atan2(this.dy, this.dx) + Math.PI / 2
     },
