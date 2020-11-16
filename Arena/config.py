@@ -22,7 +22,7 @@ reward_types = [
 
 # API
 static_files_dir = env('STATIC_FILES_DIR', 'static')
-management_url = env('MANAGEMENT_URL', 'http://localhost:5000')
+management_url = env('MANAGEMENT_URL', 'http://localhost:3351')
 
 # Cache (Redis)
 redis_host = env('REDIS_HOST', 'cache')
