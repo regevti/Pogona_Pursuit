@@ -9,6 +9,7 @@ TARGET = '/media/sil2/regev/Pogona_Pursuit/Arena/experiments'
 CACHE_FILE = Path(f'{CRON_DIR}/sil2_cache.txt')
 TMP_DIR = '/tmp/experiments'
 logger = logging.getLogger(__file__)
+logger.setLevel(logging.DEBUG)
 fh = logging.FileHandler(f'{CRON_DIR}/output.log')
 fh.setFormatter(logging.Formatter(f'%(asctime)s - %(message)s'))
 logger.addHandler(fh)
@@ -32,15 +33,16 @@ def add_to_cache(exp_dir):
 def main(origin, target):
     logger.info('Start backup of experiments')
     cached = load_cache()
+    subprocess.run(['mkdir', '-p', TMP_DIR])
     experiments = Path(origin).glob('*')
     for exp_dir in experiments:
         try:
-            if not re.match(r'\w+_\d{8}T\d{6}', exp_dir.name) or exp_dir.name in cached:
+            if not re.match(r'\w+_\d{8}T\d{6}', exp_dir.name) or exp_dir.name in cached or \
+                    Path(f'{target}/{exp_dir.name}').exists():
                 continue
 
             tmp_exp = f'{TMP_DIR}/{exp_dir.name}'
-            subprocess.run(['mkdir', '-p', tmp_exp])
-            subprocess.run(['cp', '-r', exp_dir.as_posix(), tmp_exp])
+            subprocess.run(['cp', '-r', exp_dir.as_posix(), TMP_DIR])
             for video_path in Path(tmp_exp).glob('**/*.avi'):
                 try:
                     vid_tmp = video_path.absolute().as_posix()
@@ -51,7 +53,7 @@ def main(origin, target):
                     logger.error(f'Error converting video: {video_path.name}')
 
             subprocess.run(['cp', '-r', tmp_exp, target])
-            add_to_cache(exp_dir.name)
+            add_to_cache(exp_dir.name + '\n')
             logger.info(f'{exp_dir.name} successfully copied to sil2')
             break
 
