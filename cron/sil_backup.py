@@ -39,6 +39,7 @@ def main(origin, target):
                 continue
 
             tmp_exp = f'{TMP_DIR}/{exp_dir.name}'
+            subprocess.run(['mkdir', '-p', tmp_exp])
             subprocess.run(['cp', '-r', exp_dir.as_posix(), tmp_exp])
             for video_path in Path(tmp_exp).glob('**/*.avi'):
                 try:
@@ -52,6 +53,7 @@ def main(origin, target):
             subprocess.run(['cp', '-r', tmp_exp, target])
             add_to_cache(exp_dir.name)
             logger.info(f'{exp_dir.name} successfully copied to sil2')
+            break
 
         except Exception as exc:
             logger.error(f'Error with {exp_dir}; {exc}')
