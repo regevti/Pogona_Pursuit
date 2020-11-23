@@ -55,7 +55,6 @@ def main(origin, target):
             subprocess.run(['cp', '-r', tmp_exp, target])
             add_to_cache(exp_dir.name + '\n')
             logger.info(f'{exp_dir.name} successfully copied to sil2')
-            break
 
         except Exception as exc:
             logger.error(f'Error with {exp_dir}; {exc}')
