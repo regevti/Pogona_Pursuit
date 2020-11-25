@@ -15,16 +15,20 @@ export default {
   },
   computed: {
     videoType() {
-      if (this.url.endsWith('.avi')) {
+      let url = this.url.toLowerCase()
+      if (url.endsWith('.avi')) {
         return 'video/avi'
-      } else if (this.url.endsWith('.mp4')) {
+      } else if (url.endsWith('.mov')) {
+        return 'video/mov'
+      } else if (url.endsWith('.mp4')) {
         return 'video/mp4'
       }
     }
   },
   methods: {
     isVideoFile() {
-      return this.url.endsWith('.avi') || this.url.endsWith('.mp4')
+      let url = this.url.toLowerCase()
+      return url.endsWith('.avi') || url.endsWith('.mp4') || url.endsWith('.mov')
     }
   }
 }
