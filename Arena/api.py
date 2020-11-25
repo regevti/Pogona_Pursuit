@@ -155,7 +155,7 @@ def hide_bugs():
 def list_media():
     media_files = []
     for f in Path(config.static_files_dir).glob('*'):
-        if f.suffix in ['.png', '.jpg', '.jpeg', '.bmp', '.avi', '.mp4', '.mpg']:
+        if f.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.avi', '.mp4', '.mpg', '.mov']:
             media_files.append(f.name)
     return media_files
 
