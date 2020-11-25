@@ -46,8 +46,9 @@ def main(origin, target):
             for video_path in Path(tmp_exp).glob('**/*.avi'):
                 try:
                     vid_tmp = video_path.absolute().as_posix()
-                    subprocess.run(['ffmpeg', '-i', vid_tmp, '-vcodec', 'libx265',
-                                    '-crf', '28', vid_tmp.replace('.avi', '.mp4')])
+                    subprocess.run(['ffmpeg', '-i', vid_tmp, '-c:v', 'libx265',
+                                    '-preset', 'fast', '-crf', '28', '-tag:v', 'hvc1',
+                                    '-c:a', 'eac3', '-b:a', '224k', vid_tmp.replace('.avi', '.mp4')])
                     subprocess.run(['rm', '-f', vid_tmp])
                 except Exception as exc:
                     logger.error(f'Error converting video: {video_path.name}')
