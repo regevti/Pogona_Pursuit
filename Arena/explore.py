@@ -29,14 +29,17 @@ class ExperimentAnalyzer:
         res_df = []
         print(f'experiments folder: {config.explore_experiment_dir}')
         for exp_path in Path(config.explore_experiment_dir).glob('*'):
-            info_path = exp_path / 'experiment.log'
-            if not info_path.exists() or not self.is_in_date_range(exp_path):
-                continue
-            info = self.get_experiment_info(info_path)
-            if not self.is_match_conditions(info):
-                continue
-            trial_data = self.get_trials_data(exp_path, info)
-            res_df.append(trial_data)
+            try:
+                info_path = exp_path / 'experiment.log'
+                if not info_path.exists() or not self.is_in_date_range(exp_path):
+                    continue
+                info = self.get_experiment_info(info_path)
+                if not self.is_match_conditions(info):
+                    continue
+                trial_data = self.get_trials_data(exp_path, info)
+                res_df.append(trial_data)
+            except Exception as exc:
+                print(f'Error loading {exp_path.name}; {exc}')
 
         if len(res_df) > 0:
             res_df = pd.concat(res_df)
