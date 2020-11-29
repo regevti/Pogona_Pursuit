@@ -17,7 +17,7 @@
 </template>
 
 <script>
-import FrameVideo from 'vue-frame-video'
+import FrameVideo from './frameVideo'
 export default {
   name: 'media',
   components: {
