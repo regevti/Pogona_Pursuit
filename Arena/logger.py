@@ -81,7 +81,7 @@ def led_light(state):
 @app.task
 def save_to_csv(topic, payload):
     try:
-        if topic != 'trajectory':
+        if topic not in ['trajectory', 'video_frames']:
             payload = [payload]
         df = pd.DataFrame(payload)
         if topic in ['trajectory', 'touch', 'video_frames']:
