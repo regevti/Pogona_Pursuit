@@ -1,43 +1,66 @@
 <template>
   <div id="wrapper">
     <img v-if="!isVideoFile()" :src="url" alt=""/>
-    <video v-if="isVideoFile()" autoplay loop>
-      <source :src="url" :type="videoType">
-    </video>
+    <FrameVideo v-if="isVideoFile()"
+        id="frame-video"
+        ref="videoElement"
+        :src="url"
+        :autoplay="autoplay"
+        :muted="muted"
+        @frameupdate="onFrameUpdate"
+        @ended="onEnded"
+    />
+<!--    <video v-if="isVideoFile()" autoplay loop>-->
+<!--      <source :src="url" :type="videoType">-->
+<!--    </video>-->
   </div>
 </template>
 
 <script>
+import FrameVideo from 'vue-frame-video'
 export default {
   name: 'media',
+  components: {
+    FrameVideo
+  },
   props: {
     url: String
   },
-  computed: {
-    videoType() {
-      let url = this.url.toLowerCase()
-      if (url.endsWith('.avi')) {
-        return 'video/avi'
-      } else if (url.endsWith('.mov')) {
-        return 'video/mov'
-      } else if (url.endsWith('.mp4')) {
-        return 'video/mp4'
-      }
+  data() {
+    return {
+      frameId: 1,
+      framesLog: [],
+      autoplay: 'autoplay',
+      muted: true
     }
   },
+  mounted() {
+    let video = this.$refs.videoElement.getVideoElement()
+    video.setAttribute('loop', 'true')
+  },
   methods: {
+    onFrameUpdate() {
+      this.framesLog.push({
+        time: Date.now(),
+        frame: this.frameId
+      })
+      this.frameId++
+    },
+    onEnded() {
+      this.frameId = 1
+    },
     isVideoFile() {
       let url = this.url.toLowerCase()
-      return url.endsWith('.avi') || url.endsWith('.mp4') || url.endsWith('.mov')
+      return url.endsWith('.avi') || url.endsWith('.mp4')
     }
   }
 }
 </script>
 
-<style scoped>
-#wrapper {
+<style>
+#frame-video, div {
   position: absolute;
-  top: 0;
+  /*top: 0;*/
   bottom: 0;
   width: 100%;
   height: 100%;
@@ -49,7 +72,7 @@ export default {
   height: 100%;
 }
 
-#wrapper, video {
+video {
   /* Make video to at least 100% wide and tall */
   min-width: 100%;
   min-height: 100%;

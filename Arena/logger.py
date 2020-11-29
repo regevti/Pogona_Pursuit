@@ -84,7 +84,7 @@ def save_to_csv(topic, payload):
         if topic != 'trajectory':
             payload = [payload]
         df = pd.DataFrame(payload)
-        if topic in ['trajectory', 'touch']:
+        if topic in ['trajectory', 'touch', 'video_frames']:
             try:
                 df['time'] = pd.to_datetime(df['time'], unit='ms').dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem')
             except Exception as exc:

@@ -22,7 +22,7 @@
         </bug>
       </canvas>
     </div>
-    <media v-if="isMedia" :url="mediaUrl"></media>
+    <media v-if="isMedia" :url="mediaUrl" ref="mediaElement"></media>
   </div>
 </template>
 
@@ -85,7 +85,10 @@ export default {
       this.initBoard(!!options['isLogTrajectory'])
     },
     'event/command/hide_media'() {
-      this.isMedia = false
+      if (this.isMedia) {
+        this.$mqtt.publish('event/log/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
+        this.isMedia = false
+      }
     },
     'event/command/init_media'(options) {
       options = JSON.parse(options)

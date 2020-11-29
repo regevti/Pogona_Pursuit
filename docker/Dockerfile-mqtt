@@ -12,4 +12,3 @@ RUN pip install -r base.txt
 RUN mkdir -p /var/log/supervisor
 
 CMD ["/usr/bin/supervisord"]
-

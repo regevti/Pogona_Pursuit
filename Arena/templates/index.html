@@ -15,250 +15,20 @@
 </head>
 
 <body>
-
 <div class="row">
     <div class="col">
         <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0.5em">Pogona Pursuit</h1>
         <div class="row" id="controls-panel">
-            <form class="col-md-5" id="experiment_form">
-                <h3>Start Experiment</h3>
-                <div class="form-group row pr-3">
-                    <label for="experimentName" class="col col-form-label">Experiment Name</label>
-                    <div class="col-sm-7">
-                        <input type="text" class="form-control" id="experimentName" value="{{experiment_name}}"
-                               required>
-                    </div>
-                </div>
-                <div class="form-group row pr-3">
-                    <label for="animalId" class="col col-form-label">Pogona ID</label>
-                    <div class="col-sm-5">
-                        <input type="text" class="form-control" id="animalId" required>
-                    </div>
-                </div>
-                <div class="form-group row pr-3">
-                    <label for="experimentNumTrials" class="col col-form-label">Number of Trials</label>
-                    <div class="col-sm-5">
-                        <input type="number" class="form-control" id="experimentNumTrials" required>
-                    </div>
-                </div>
-                <div class="form-group row pr-3">
-                    <label for="experimentTrialDuration" class="col col-form-label">Trial Duration [sec]</label>
-                    <div class="col-sm-5">
-                        <input type="number" class="form-control" id="experimentTrialDuration" value="90" required>
-                    </div>
-                </div>
-                <div class="form-group row pr-3">
-                    <label for="experimentITI" class="col col-form-label">Inter Trial Interval [sec]</label>
-                    <div class="col-sm-5">
-                        <input type="number" class="form-control" id="experimentITI" value="300" required>
-                    </div>
-                </div>
-                <div class="form-group row pr-3">
-                    <label for="experimentTypeSelect" class="col col-form-label">Experiment Type</label>
-                    <div class="col">
-                        <select id="experimentTypeSelect" class="form-control col">
-                            {% for experiment_type in experiment_types %}
-                            <option value="{{experiment_type}}">{{experiment_type}}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group row pr-3 bugs-options">
-                    <label for="bugTypeSelect" class="col col-form-label">Bug Type</label>
-                    <div class="col">
-                        <select id="bugTypeSelect" class="form-control col" multiple="multiple" style="display: none;">
-                            {% for bugType in config.get('bugTypes', {}).keys() %}
-                            <option value="{{bugType}}">{{bugType}}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group row pr-3 bugs-options" id="rewardBugDiv" style="display: none">
-                    <label for="rewardBugSelect" class="col col-form-label">Reward Bug</label>
-                    <div class="col">
-                        <select id="rewardBugSelect" class="form-control col" multiple="multiple"
-                                style="display: none;">
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group row pr-3 bugs-options">
-                    <label for="rewardTypeSelect" class="col col-form-label">Reward Type</label>
-                    <div class="col">
-                        <select id="rewardTypeSelect" class="form-control col">
-                            {% for reward_type in reward_types %}
-                            <option value="{{reward_type}}">{{reward_type}}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group row pr-3 bugs-options">
-                    <label for="movementTypeSelect" class="col col-form-label">Movement Type</label>
-                    <div class="col">
-                        <select id="movementTypeSelect" class="form-control col">
-                            {% for movementType in config.get('movementTypes', []) %}
-                            <option value="{{movementType}}">{{movementType}}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group row pr-3 bugs-options" id="isAntiClockWiseDiv" style="display: none;">
-                    <label for="isAntiClockWise" class="col col-form-label">Anticlockwise Circle</label>
-                    <div class="col-sm-5">
-                        <input id="isAntiClockWise" type="checkbox" class="form-control-sm">
-                    </div>
-                </div>
-                <div class="form-group row pr-3 bugs-options">
-                    <label for="bugSpeed" class="col col-form-label">Bug Speed:</label>
-                    <div class="col-sm-5">
-                        <input type="number" class="form-control" id="bugSpeed" value="2" required>
-                    </div>
-                </div>
-                <div class="form-group row pr-3 bugs-options">
-                    <label for="timeBetweenBugs" class="col col-form-label">Time Between Bugs [sec]:</label>
-                    <div class="col-sm-5">
-                        <input type="number" class="form-control" id="timeBetweenBugs" value="2" required>
-                    </div>
-                </div>
-                <div class="form-group row pr-3 media-options" style="display: none">
-                    <label for="media-url" class="col col-form-label">Media File:</label>
-                    <div class="col">
-                        <select id="media-url" class="form-control col">
-                            {% for mediaFile in media_files %}
-                            <option value="{{mediaFile}}">{{mediaFile}}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col">
-                        <button type="submit" class="btn btn-primary mr-2">Start</button>
-                        <button id="stopExperiment" type="button" class="btn btn-outline-danger">Stop Experiment
-                        </button>
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="row"><b>Current Experiment Name:</b></div>
-                    <div class="row" id="currentExperimentName"></div>
-                </div>
-            </form>
-            <div class="col-md-4">
-                <div class="row">
-                    <form class="col">
-                        <h3>Cameras</h3>
-                        {% for cam in cameras %}
-                        <div class="row ml-4" id="cams-checkboxes">
-                            <input class="form-check-input" type="checkbox" value="{{cam}}" id="camera-{{cam}}"
-                                   checked>
-                            <label class="form-check-label" for="camera-{{cam}}">{{cam}}</label>
-                        </div>
-                        {% endfor %}
-                        <div class="row ml-4 mt-3">
-                            <input class="form-check-input" type="checkbox" id="use_predictions">
-                            <label class="form-check-label" for="use_predictions">Use Predictions</label>
-                        </div>
-                    </form>
-                </div>
-                <div class="row mt-3">
-                    <form class="col" id="record_form">
-                        <h3>Record</h3>
-                        <div class="form-group row">
-                            <label for="exposure" class="col col-form-label">Exposure Time</label>
-                            <div class="col-sm-5">
-                                <input type="number" class="form-control" id="exposure" value="{{exposure}}" required>
-                            </div>
-                        </div>
-                        <div class="form-group row">
-                            <label for="videoOutputPrefix" class="col col-form-label">Folder Prefix</label>
-                            <div class="col-sm-7">
-                                <input type="text" class="form-control" id="videoOutputPrefix">
-                            </div>
-                        </div>
-                        <h7 class="label">Acquire Stop</h7>
-                        <div class="form-group row">
-                            <div class="col">
-                                <select id="acquireStopSelect" class="form-control col">
-                                    {% for val, label in acquire_stop.items() %}
-                                    <option value="{{val}}">{{label}}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <input id="acquireStopValue" class="col-sm-4 ml-1" type="int" class="form-control"
-                                   placeholder="Value" required>
-                        </div>
-                        <div class="form-group row">
-                            <div class="col">
-                                <button type="submit" class="btn btn-primary mr-2">Run</button>
-                                <button id="stopRecord" type="button" class="btn btn-outline-danger mr-4">Stop Record
-                                </button>
-                                <button id="camerasInfo" type="button" class="btn btn-outline-info">Info</button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            <div class="col-md-3" id="events_column">
-                <h3 style="text-align: center; margin-bottom: 1em">Events</h3>
-                <div class="row mb-2">
-                    <button id="init_bugs" class="btn btn-lg btn-primary mx-auto">Start Bugs</button>
-                </div>
-                <div class="row mb-2">
-                    <button id="hide_bugs" class="btn btn-lg btn-primary mx-auto">Hide Bugs</button>
-                </div>
-                <div class="row mb-2">
-                    <button id="calibrate" class="btn btn-lg btn-primary mx-auto">Calibrate</button>
-                </div>
-                <div class="row mb-2">
-                    <button id="reward" class="btn btn-lg btn-primary mx-auto">Reward</button>
-                </div>
-                <div class="row mb-1" id="leds-div">
-                    <h4 class="col-sm-3 m-auto mr-3">LED:</h4>
-                    <div class="col-sm-3 mr-2">
-                        <button id="led_light_on" class="btn btn-lg btn-primary">ON</button>
-                    </div>
-                    <div class="col-sm-3">
-                        <button id="led_light_off" class="btn btn-lg btn-outline-danger">OFF</button>
-                    </div>
-                </div>
-                <div class="row mb-1" id="display-div">
-                    <h4 class="col-sm-3 m-auto">Display:</h4>
-                    <div class="col-sm-3 mr-2">
-                        <button id="display_on" class="btn btn-lg btn-primary">ON</button>
-                    </div>
-                    <div class="col-sm-3">
-                        <button id="display_off" class="btn btn-lg btn-outline-danger">OFF</button>
-                    </div>
-                </div>
-                <div class="row mt-3">
-                    <a id="explore-link" class="btn btn-lg btn-info mx-auto" href="/explore">Explore</a>
-                </div>
-
-            </div>
+            {% include "management/start_experiment.html" %}
+            {% include "management/cameras_record.html" %}
+            {% include "management/events.html" %}
         </div>
         <pre class="row" id="record-output"></pre>
     </div>
-
     <div class="col">
-        <div class="row">
-            <img id="stream_img" src="{{ url_for('static', filename='video_placeholder.jpg') }}"
-                 width="640" height="420" class="mx-auto" style="z-index: 10">
-        </div>
-        <div class="row mt-4">
-            <div class="col text-center">
-                <select id="selectStreamCamera" class="form-control col-sm-3 mx-auto mb-2">
-                    {% for cam in cameras %}
-                    <option value="{{cam}}">{{cam}}</option>
-                    {% endfor %}
-                </select>
-                <button id="stream" class="btn btn-lg btn-primary mr-2">Stream</button>
-                <button id="stopStream" class="btn btn-lg btn-outline-danger">Stop Stream</button>
-            </div>
-        </div>
+        {% include "management/stream.html" %}
     </div>
-
-    <div id="footer">
-        <img src="{{ url_for('static', filename='pogona_white_background.jpg') }}" alt="">
-        <h4>Written by Reggev Eyal</h4>
-    </div>
+    {% include "management/footer.html" %}
 </div>
 
 </body>
@@ -285,11 +55,18 @@
     })
 
     let $isAntiClockWiseDiv = $("#isAntiClockWiseDiv")
+    let $targetDrift = $("#targetDrift")
     $("#movementTypeSelect").change(function () {
-      if ($("#movementTypeSelect").val() === 'circle') {
+      let movementType = $("#movementTypeSelect").val()
+      if (movementType === 'circle') {
         $isAntiClockWiseDiv.show()
       } else {
         $isAntiClockWiseDiv.hide()
+      }
+      if (movementType === 'random walk + drift') {
+        $targetDrift.show()
+      } else {
+        $targetDrift.hide()
       }
     })
 
@@ -358,7 +135,8 @@
             bug_speed: Number($("#bugSpeed").val()),
             movement_type: $("#movementTypeSelect").val(),
             time_between_bugs: Number($("#timeBetweenBugs").val()),
-            is_anticlockwise: $("#isAntiClockWise").is(":checked")
+            is_anticlockwise: $("#isAntiClockWise").is(":checked"),
+            target_drift: $("#targetDriftSelect").val()
         }
       }
       Object.assign(params, extraParams)
@@ -431,7 +209,8 @@
           rewardBugs: $("#rewardBugSelect").val() ? $("#rewardBugSelect").val() : $("#bugTypeSelect").val(),
           movementType: $("#movementTypeSelect").val(),
           timeBetweenBugs: Number($("#timeBetweenBugs").val()),
-          isAntiClockWise: $("#isAntiClockWise").is(":checked")
+          isAntiClockWise: $("#isAntiClockWise").is(":checked"),
+          targetDrift: $("#targetDriftSelect").val()
         }),
         contentType: "application/json",
         complete: function (res) {

@@ -35,7 +35,8 @@ logger_files = {
     'touch': 'screen_touches.csv',
     'prediction': 'predictions.csv',
     'trajectory': 'bug_trajectory.csv',
-    'temperature': 'temperature.csv'
+    'temperature': 'temperature.csv',
+    'video_frames': 'video_frames.csv'
 }
 subscription_topics = {
     'reward': 'event/command/reward',
@@ -46,7 +47,8 @@ subscription_topics = {
     'hit': 'event/log/hit',
     'prediction': 'event/log/prediction',
     'trajectory': 'event/log/trajectory',
-    'temperature': 'event/log/temperature'
+    'temperature': 'event/log/temperature',
+    'video_frames': 'event/log/video_frames'
 }
 
 # Arena

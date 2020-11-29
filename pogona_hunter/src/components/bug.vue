@@ -3,18 +3,21 @@
 </template>
 
 <script>
-import {distance, plusOrMinus, randomRange} from '@/js/helpers'
+import {distance, plusOrMinus, randBM, randomRange} from '@/js/helpers'
 
 export default {
   name: 'bug',
   data() {
     return {
       bugTypeOptions: require('@/config.json')['bugTypes'],
+      targetDriftsOptions: require('@/config.json')['targetDrifts'],
       bugImages: [],
       currentBugType: undefined,
       currentRadiusSize: undefined,
       imgSrc: '',
-      mass: 1
+      mass: 1,
+      randomNoise: 0,
+      frameCounter: 0
     }
   },
   props: {
@@ -26,11 +29,11 @@ export default {
     isMoveInCircles: function () {
       return this.bugsSettings.movementType === 'circle'
     },
-    isRandomLine: function () {
-      return this.bugsSettings.movementType === 'line'
+    isStraightLine: function () {
+      return this.bugsSettings.movementType === 'random walk'
     },
-    isLowHorizontal: function () {
-      return this.bugsSettings.movementType === 'low_horizontal'
+    isDrift: function () {
+      return this.bugsSettings.movementType === 'random walk + drift'
     },
     numImagesPerBug: function () {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
@@ -59,24 +62,22 @@ export default {
     if (this.isMoveInCircles) {
       this.r0 = [this.canvas.width / 2, this.canvas.height]
       this.r = Math.min(this.canvas.width / 2, this.canvas.height) * 0.75
+    } else if (this.isDrift) {
+        this.initTargetDrift()
     }
-    this.initBug(this.x0, this.y0, plusOrMinus(), plusOrMinus())
+    this.startRandomEdgePoint()
+    this.initBug(this.x, this.y)
   },
   methods: {
-    initBug(x, y, directionX, directionY) {
+    initBug(x, y) {
+      this.frameCounter = 0
       this.getNextBugType()
-      if (this.isLowHorizontal) {
-        this.x = this.canvas.width
-        this.y = this.canvas.height - 80
-        this.dx = -1 * this.currentSpeed
-        this.dy = 0
-      } else if (this.isRandomLine) {
-        this.x = x
-        this.y = y
-        this.dx = Math.sign(directionX) * this.currentSpeed * Math.sqrt(2)
-        this.dy = Math.sign(directionY) * this.currentSpeed * Math.sqrt(2)
+      if (!this.isMoveInCircles) {
+        this.startRandomEdgePoint()
+        this.initSpeedDirections()
       }
       this.step = 0
+      this.randomNoiseCount = 0
       this.theta = Math.PI - Math.PI / 10
       this.currentRadiusSize = this.getRadiusSize()
     },
@@ -85,13 +86,26 @@ export default {
         this.draw()
         return
       }
+      this.frameCounter++
       this.edgeDetection()
       if (this.isMoveInCircles) {
+        // Circular Movement
         this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
         this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.bugsSettings.isAntiClockWise ? -1 : 1)
         this.y = this.r0[1] + this.r * Math.sin(this.theta)
       } else {
-        // move in straight lines
+        // Random walk
+        let sigma = 0.4
+        let drift = 0.005
+        let randNoise = this.getRandomNoise()
+        if (this.isDrift && this.frameCounter > 100) {
+          // apply drift only if configured and only after 100 frames of animation
+          this.dx = drift * (this.xTarget - this.x) + sigma * randNoise
+          this.dy = drift * (this.yTarget - this.y) + sigma * randNoise
+        } else {
+          this.dx = this.vx + sigma * randNoise
+          this.dy = this.vy + sigma * randNoise
+        }
         this.x += this.dx
         this.y += this.dy
       }
@@ -104,6 +118,14 @@ export default {
           this.collisionEffect(particles[i])
         }
       }
+    },
+    getRandomNoise() {
+      if (this.randomNoiseCount > 20) {
+        this.randomNoiseCount = 0
+        this.randomNoise = randBM()
+      }
+      this.randomNoiseCount++
+      return this.randomNoise
     },
     draw() {
       this.ctx.beginPath()
@@ -135,13 +157,28 @@ export default {
     edgeTimeout(dx, dy) {
       this.isOutEdged = true
       const initAfterEdgeTimeout = setTimeout(() => {
-        this.initBug(this.xEdge(), this.yEdge(), dx, dy)
+        this.initBug(this.xEdge(), this.yEdge())
         const outEdgeTimeout = setTimeout(() => {
           this.isOutEdged = false
           clearTimeout(outEdgeTimeout)
         }, 50)
         clearTimeout(initAfterEdgeTimeout)
       }, this.bugsSettings.timeInEdge)
+    },
+    edgeDetection() {
+      if (this.isOutEdged) {
+        return
+      }
+      if (this.isDrift && distance(this.x, this.xTarget, this.y, this.yTarget) < this.currentRadiusSize) {
+        this.edgeTimeout(-this.dx, this.dy)
+        return
+      }
+      const margin = this.currentRadiusSize / 2
+      if (this.x >= this.canvas.width + margin || this.x <= -margin) {
+        this.edgeTimeout(-this.dx, this.dy)
+      } else if (this.y >= this.canvas.height + margin || this.y <= -margin) {
+        this.edgeTimeout(this.dx, -this.dy)
+      }
     },
     getImageSrc(fileName) {
       return require('@/assets' + fileName)
@@ -186,16 +223,46 @@ export default {
       }
       return this.y
     },
-    edgeDetection() {
-      if (this.isOutEdged) {
-        return
+    startRandomEdgePoint() {
+      let rand = Math.random()
+      if (rand < 0.25) {
+        this.x = 0
+        this.y = randomRange(0, this.canvas.height)
+      } else if (rand >= 0.25 && rand < 0.5) {
+        this.x = this.canvas.width
+        this.y = randomRange(0, this.canvas.height)
+      } else if (rand >= 0.5 && rand < 0.75) {
+        this.x = randomRange(0, this.canvas.width)
+        this.y = 0
+      } else {
+        this.x = randomRange(0, this.canvas.width)
+        this.y = this.canvas.height
       }
-      const margin = this.currentRadiusSize
-      if (this.x >= this.canvas.width + margin || this.x <= -margin) {
-        this.edgeTimeout(-this.dx, this.dy)
-      } else if (this.y >= this.canvas.height + margin || this.y <= -margin) {
-        this.edgeTimeout(this.dx, -this.dy)
+    },
+    initSpeedDirections() {
+      let v = this.currentSpeed * Math.sqrt(2)
+      if (this.y < this.canvas.height && this.y > 0) {
+        this.vx = this.x <= 0 ? v : -v
+        this.vy = plusOrMinus() * v
+      } else {
+        this.vx = plusOrMinus() * v
+        this.vy = this.y <= 0 ? v : -v
       }
+    },
+    initTargetDrift() {
+      let targetOptions = this.targetDriftsOptions[this.bugsSettings.targetDrift]
+      let xt = targetOptions.xTarget
+      let yt = targetOptions.yTarget
+      if (typeof xt === 'string') {
+        xt = xt.split('+')
+        xt = this.canvas[xt[0]] + Number(xt[1])
+      }
+      this.xTarget = xt
+      if (typeof yt === 'string') {
+        yt = yt.split('+')
+        yt = this.canvas[yt[0]] + Number(yt[1])
+      }
+      this.yTarget = yt
     },
     isInsideBoard() {
       return this.x > 0 && this.x < this.canvas.width && this.y > 0 && this.y < this.canvas.height

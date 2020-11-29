@@ -18,7 +18,7 @@ from utils import datetime_string, mkdir, turn_display_on, turn_display_off, Ser
 
 mqtt_client = MQTTPublisher()
 BUGS_EXPERIMENT_FIELDS = ['bug_speed', 'movement_type', 'is_use_predictions', 'time_between_bugs', 'reward_type',
-                          'reward_bugs', 'is_anticlockwise', 'bug_types']
+                          'reward_bugs', 'is_anticlockwise', 'bug_types', 'target_drift']
 
 
 @dataclass
@@ -40,6 +40,7 @@ class Experiment:
     reward_type: str = 'end_trial'
     reward_bugs: list = None
     is_anticlockwise: bool = False
+    target_drift: str = ''
 
     media_url: str = ''
 
@@ -220,7 +221,8 @@ class Experiment:
             'timeBetweenBugs': self.time_between_bugs,
             'isStopOnReward': self.is_always_reward,
             'isLogTrajectory': True,
-            'isAntiClockWise': self.is_anticlockwise
+            'isAntiClockWise': self.is_anticlockwise,
+            'targetDrift': self.target_drift
         })
 
     @property

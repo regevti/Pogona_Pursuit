@@ -1,0 +1,131 @@
+<form class="col-md-5" id="experiment_form">
+    <h3>Start Experiment</h3>
+    <div class="form-group row pr-3">
+        <label for="experimentName" class="col col-form-label">Experiment Name</label>
+        <div class="col-sm-7">
+            <input type="text" class="form-control" id="experimentName" value="{{experiment_name}}"
+                   required>
+        </div>
+    </div>
+    <div class="form-group row pr-3">
+        <label for="animalId" class="col col-form-label">Pogona ID</label>
+        <div class="col-sm-5">
+            <input type="text" class="form-control" id="animalId" required>
+        </div>
+    </div>
+    <div class="form-group row pr-3">
+        <label for="experimentNumTrials" class="col col-form-label">Number of Trials</label>
+        <div class="col-sm-5">
+            <input type="number" class="form-control" id="experimentNumTrials" required>
+        </div>
+    </div>
+    <div class="form-group row pr-3">
+        <label for="experimentTrialDuration" class="col col-form-label">Trial Duration [sec]</label>
+        <div class="col-sm-5">
+            <input type="number" class="form-control" id="experimentTrialDuration" value="90" required>
+        </div>
+    </div>
+    <div class="form-group row pr-3">
+        <label for="experimentITI" class="col col-form-label">Inter Trial Interval [sec]</label>
+        <div class="col-sm-5">
+            <input type="number" class="form-control" id="experimentITI" value="300" required>
+        </div>
+    </div>
+    <div class="form-group row pr-3">
+        <label for="experimentTypeSelect" class="col col-form-label">Experiment Type</label>
+        <div class="col">
+            <select id="experimentTypeSelect" class="form-control col">
+                {% for experiment_type in experiment_types %}
+                <option value="{{experiment_type}}">{{experiment_type}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options">
+        <label for="bugTypeSelect" class="col col-form-label">Bug Type</label>
+        <div class="col">
+            <select id="bugTypeSelect" class="form-control col" multiple="multiple" style="display: none;">
+                {% for bugType in config.get('bugTypes', {}).keys() %}
+                <option value="{{bugType}}">{{bugType}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options" id="rewardBugDiv" style="display: none">
+        <label for="rewardBugSelect" class="col col-form-label">Reward Bug</label>
+        <div class="col">
+            <select id="rewardBugSelect" class="form-control col" multiple="multiple"
+                    style="display: none;">
+            </select>
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options">
+        <label for="rewardTypeSelect" class="col col-form-label">Reward Type</label>
+        <div class="col">
+            <select id="rewardTypeSelect" class="form-control col">
+                {% for reward_type in reward_types %}
+                <option value="{{reward_type}}">{{reward_type}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options">
+        <label for="movementTypeSelect" class="col col-form-label">Movement Type</label>
+        <div class="col">
+            <select id="movementTypeSelect" class="form-control col">
+                {% for movementType in config.get('movementTypes', []) %}
+                    <option value="{{movementType}}">{{movementType}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options" id="targetDrift" style="display: none;">
+        <label for="targetDriftSelect" class="col col-form-label">Target Drift</label>
+        <div class="col">
+            <select id="targetDriftSelect" class="form-control col">
+                {% for targetDrift in config.get('targetDrifts', []) %}
+                    <option value="{{targetDrift}}">{{targetDrift}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options" id="isAntiClockWiseDiv" style="display: none;">
+        <label for="isAntiClockWise" class="col col-form-label">Anticlockwise Circle</label>
+        <div class="col-sm-5">
+            <input id="isAntiClockWise" type="checkbox" class="form-control-sm">
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options">
+        <label for="bugSpeed" class="col col-form-label">Bug Speed:</label>
+        <div class="col-sm-5">
+            <input type="number" class="form-control" id="bugSpeed" value="2" required>
+        </div>
+    </div>
+    <div class="form-group row pr-3 bugs-options">
+        <label for="timeBetweenBugs" class="col col-form-label">Time Between Bugs [sec]:</label>
+        <div class="col-sm-5">
+            <input type="number" class="form-control" id="timeBetweenBugs" value="2" required>
+        </div>
+    </div>
+    <div class="form-group row pr-3 media-options" style="display: none">
+        <label for="media-url" class="col col-form-label">Media File:</label>
+        <div class="col">
+            <select id="media-url" class="form-control col">
+                {% for mediaFile in media_files %}
+                <option value="{{mediaFile}}">{{mediaFile}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <button type="submit" class="btn btn-primary mr-2">Start</button>
+            <button id="stopExperiment" type="button" class="btn btn-outline-danger">Stop Experiment
+            </button>
+        </div>
+    </div>
+    <div class="col">
+        <div class="row"><b>Current Experiment Name:</b></div>
+        <div class="row" id="currentExperimentName"></div>
+    </div>
+</form>

@@ -16,7 +16,7 @@
       "speed": 1,
       "radiusRange": {
         "min": 220,
-        "max": 240
+        "max": 230
       },
       "stepsPerImage": 10
     },
@@ -36,7 +36,7 @@
       "speed": 3,
       "radiusRange": {
         "min": 150,
-        "max": 180
+        "max": 170
       },
       "stepsPerImage": 4
     },
@@ -46,14 +46,24 @@
       "speed": 3,
       "radiusRange": {
         "min": 150,
-        "max": 180
+        "max": 160
       },
       "stepsPerImage": 3
     }
   },
   "movementTypes": [
-    "line",
-    "circle",
-    "low_horizontal"
-  ]
+    "random walk",
+    "random walk + drift",
+    "circle"
+  ],
+  "targetDrifts": {
+    "leftBottom": {
+      "xTarget": -300,
+      "yTarget": "height+20"
+    },
+    "rightBottom": {
+      "xTarget": "width+300",
+      "yTarget": "height+20"
+    }
+  }
 }
