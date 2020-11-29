@@ -158,11 +158,11 @@ export default {
       this.handleTouchEvent(event.x, event.y)
     },
     handleTouchEvent(x, y) {
+      console.log(x, y)
       if (this.isHandlingTouch || !this.$refs.bugChild) { return }
       this.isHandlingTouch = true
       x -= this.canvas.offsetLeft
       y -= this.canvas.offsetTop
-      console.log(x, y)
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let isHit = false
         let bug = this.$refs.bugChild[i]
