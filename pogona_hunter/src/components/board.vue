@@ -11,7 +11,7 @@
       <!--        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"-->
       <!--                v-on:touchstart="setCanvasTouch($event)" style="z-index: 10;">-->
       <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
-              v-on:pointerdown="setCanvasClick($event)" style="z-index: 10;"
+              v-on:mousedown="setCanvasClick($event)" style="z-index: 100;"
               v-on:click.right="changeTrajectory($event)">
         <bug v-for="(value, index) in bugsProps"
              :key="index"
