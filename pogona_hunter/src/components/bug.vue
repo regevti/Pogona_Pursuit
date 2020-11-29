@@ -65,7 +65,6 @@ export default {
     } else if (this.isDrift) {
         this.initTargetDrift()
     }
-    this.startRandomEdgePoint()
     this.initBug(this.x, this.y)
   },
   methods: {
@@ -78,7 +77,7 @@ export default {
       }
       this.step = 0
       this.randomNoiseCount = 0
-      this.theta = Math.PI - Math.PI / 10
+      this.theta = Math.PI - Math.PI / 20
       this.currentRadiusSize = this.getRadiusSize()
     },
     move(particles) {
