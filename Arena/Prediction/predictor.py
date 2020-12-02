@@ -12,6 +12,11 @@ from Prediction.detector import nearest_detection, xyxy_to_centroid
 from Prediction import calibration as calib
 from Prediction import detector
 import numpy as np
+import pandas as pd
+import logging
+import config
+
+_det = detector.Detector_v4(conf_thres=0.8)
 
 
 class HitPredictor:
@@ -43,6 +48,8 @@ class HitPredictor:
         history_size=512,
         prediction_y_threshold=0,
         y_thresh_above=False,
+        dir_path='',
+        logger=None
     ):
         """
         Initialize HitPredictor.
@@ -63,9 +70,11 @@ class HitPredictor:
             )
 
         self.trajectory_predictor = trajectory_predictor
-        self.detector = detector
+        self.detector = detector if detector is not None else _det
         self.prediction_y_threshold = prediction_y_threshold
         self.y_thresh_above = y_thresh_above
+        self.dir_path = dir_path
+        self.logger = logger or logging.getLogger(__file__)
 
         self.reset(history_size=history_size)
 
@@ -211,6 +220,18 @@ class HitPredictor:
         self.history[:] = np.nan
         self.forecasts = []
 
+    def save_predictions(self):
+        pd.Series(self.forecasts).to_csv(self.predictions_path)
+        pd.DataFrame(self.history).to_csv(self.predictor_history_path)
+
+    @property
+    def predictions_path(self):
+        return f'{self.dir_path}/forecasts.csv'
+
+    @property
+    def predictor_history_path(self):
+        return f'{self.dir_path}/predictor_history.csv'
+
 
 class TrajectoryPredictor:
     """
@@ -289,6 +310,5 @@ class TrajectoryPredictor:
         return forecast
 
 
-def gen_hit_predictor():
-    det = detector.Detector_v4(conf_thres=0.8)
-    return HitPredictor(None)
+def gen_hit_predictor(logger, dir_path):
+    return HitPredictor(None, logger=logger, dir_path=dir_path)

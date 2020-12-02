@@ -63,12 +63,12 @@ def stop_experiment():
 def calibrate():
     """Calibrate camera"""
     try:
-        from arena import _models
+        from Prediction import calibration
     except ImportError:
-        return Response('Unable to locate HitPredictor')
-    pred = _models[config.predictor_model].hit_pred
+        return Response('Unable to locate calibration module')
+
     img = capture_image('realtime')
-    h, h_im, error = pred.calibrate(img)
+    h, h_im, error = calibration.calibrate(img)
     if error:
         return Response(error)
     return Response('Calibration completed')
