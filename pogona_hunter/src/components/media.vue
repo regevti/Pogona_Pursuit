@@ -2,17 +2,16 @@
   <div id="wrapper">
     <img v-if="!isVideoFile()" :src="url" alt=""/>
     <FrameVideo v-if="isVideoFile()"
-        id="frame-video"
-        ref="videoElement"
-        :src="url"
-        :autoplay="autoplay"
-        :muted="muted"
-        @frameupdate="onFrameUpdate"
-        @ended="onEnded"
-    />
-<!--    <video v-if="isVideoFile()" autoplay loop>-->
-<!--      <source :src="url" :type="videoType">-->
-<!--    </video>-->
+          id="frame-video"
+          ref="videoElement"
+          :src="url"
+          :autoplay="autoplay"
+          :muted="muted"
+          @frameupdate="onFrameUpdate"
+      />
+    <canvas id="canvas" v-bind:height="canvasHeight" v-bind:width="canvasWidth"
+              v-on:mousedown="handleTouchEvent($event)" style="z-index: 10;">
+    </canvas>
   </div>
 </template>
 
@@ -31,27 +30,41 @@ export default {
       frameId: 1,
       framesLog: [],
       autoplay: 'autoplay',
-      muted: true
+      muted: true,
+      canvasWidth: window.innerWidth,
+      canvasHeight: window.innerHeight
     }
   },
   mounted() {
+    this.canvas = document.getElementById('canvas')
     let video = this.$refs.videoElement.getVideoElement()
     video.setAttribute('loop', 'true')
   },
   methods: {
-    onFrameUpdate() {
+    onFrameUpdate(event) {
+      if (event.SMPTE === '00:00:00:00') {
+        this.frameId = 1
+      }
       this.framesLog.push({
         time: Date.now(),
         frame: this.frameId
       })
       this.frameId++
     },
-    onEnded() {
-      this.frameId = 1
-    },
     isVideoFile() {
       let url = this.url.toLowerCase()
       return url.endsWith('.avi') || url.endsWith('.mp4')
+    },
+    handleTouchEvent(event) {
+      let x = event.x - this.canvas.offsetLeft
+      let y = event.y - this.canvas.offsetTop
+      console.log(x, y)
+      this.$mqtt.publish('event/log/touch', JSON.stringify({
+          time: Date.now(),
+          x: x,
+          y: y,
+          frame_id: this.frameId
+        }))
     }
   }
 }
@@ -86,5 +99,14 @@ video {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+canvas {
+  padding: 0;
+  top: 0;
+  /*margin: 20px auto 0;*/
+  display: block;
+  background: #e8eaf6;
+  /*position: absolute;*/
+  bottom: 10px;
 }
 </style>

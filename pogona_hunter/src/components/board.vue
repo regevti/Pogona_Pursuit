@@ -58,7 +58,7 @@ export default {
       isHandlingTouch: false,
       trajectoryLog: [],
       canvasParams: {
-        width: window.innerWidth - 20,
+        width: window.innerWidth,
         height: Math.round(window.innerHeight / 1.5)
       }
     }
@@ -268,7 +268,7 @@ canvas {
   display: block;
   background: #e8eaf6;
   position: absolute;
-  bottom: 10px;
+  bottom: 0;
 }
 
 </style>

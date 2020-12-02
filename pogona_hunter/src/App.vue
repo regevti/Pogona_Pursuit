@@ -25,6 +25,9 @@
         /*margin-top: 60px;*/
     }
 
+    body {
+      margin: 0;
+    }
     .bm-item-list {
         margin-left: 0;
     }
