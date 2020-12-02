@@ -20,9 +20,9 @@ functions use this transformation upon frames or coordinates data.
 
 import numpy as np
 import cv2 as cv
-import glob
 import json
-import os
+from datetime import datetime
+from pathlib import Path
 
 # Undistortion code from:
 #   https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_calib3d/py_calibration/py_calibration.html
@@ -61,14 +61,14 @@ ARUCO_CORNER = 0
 
 ARUCO_DICT = cv.aruco.Dictionary_get(cv.aruco.DICT_4X4_50)
 
-HOMOGRAPHIES_FOLDER = 'calibration'
+HOMOGRAPHIES_DIR = Path("calibration")
 
 
 class CalibrationException(Exception):
     pass
 
 
-def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
+def get_distortion_matrix(chkr_im_path: Path, rows=6, cols=9):
     """
     Finds the undistortion matrix of the lens based on multiple images
     with checkerboard. It's possible to implement this function using Aruco markers as well.
@@ -90,12 +90,12 @@ def get_distortion_matrix(chkr_im_path, rows=6, cols=9):
     objpoints = []  # 3d point in real world space
     imgpoints = []  # 2d points in image plane.
 
-    images = glob.glob(chkr_im_path)
+    image_paths = list(chkr_im_path.iterdir())
 
     # drawings = []
     # imgs = []
-    for fname in images:
-        img = cv.imread(fname)
+    for fname in image_paths:
+        img = cv.imread(str(fname))
         shape = img.shape
         # imgs.append(img)
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
@@ -162,7 +162,7 @@ def undistort_image(img, mapping, roi=None):
     # crop the image
     if roi:
         x, y, w, h = roi
-        dst = dst[y: y + h, x: x + w]
+        dst = dst[y : y + h, x : x + w]
 
     return dst
 
@@ -183,13 +183,7 @@ def undistort_point(p, newcameramtx, dist=DIST):
 
 
 def undistort_data(
-        data,
-        width,
-        height,
-        cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2")),
-        mtx=MTX,
-        dist=DIST,
-        alpha=0
+    data, width, height, cols=(("x1", "y1"), ("x2", "y2")), mtx=MTX, dist=DIST, alpha=0,
 ):
     """
     Undistorts a bulk of data. assumes location data in (cent_x, cent_y, x1, y1, x2, y2) format
@@ -230,6 +224,7 @@ def undistort_data(
 # https://mecaruco2.readthedocs.io/en/latest/notebooks_rst/Aruco/aruco_basics.html
 # https://docs.opencv.org/trunk/d5/dae/tutorial_aruco_detection.html
 
+
 def get_point_aruco(ids_array, corners_list, aruco_dict_index):
     """
     :param ids_array: numpy 2d (unsqueezed) array of indices for Aruco markers
@@ -243,10 +238,26 @@ def get_point_aruco(ids_array, corners_list, aruco_dict_index):
     return corner[ARUCO_CORNER]
 
 
-def find_arena_homography(
-        cal_img,
-        screen_x_res=1920,
-        aruco_dict=ARUCO_DICT):
+def get_homography_from_points(points, screen_x_res=1920):
+    """
+    Calculates the arena homography matrix from a list of 4 points.
+
+    :param points: A list of 4 points - [bottom-right, bottom-left, top-right, top-left]
+    :param screen_x_res: Width of the screen in pixels.
+
+    :return: Arena homography matrix.
+    """
+    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
+    dst_p = np.array(
+        [[0, 0], [screen_x_res, 0], [0, arena_h_pixels], [screen_x_res, arena_h_pixels]]
+    )
+    src_p = np.vstack(points).astype(np.float64)
+
+    homography, _ = cv.findHomography(src_p, dst_p)
+    return homography
+
+
+def find_arena_homography(cal_img, screen_x_res=1920, aruco_dict=ARUCO_DICT):
     """
     Calculate the homography matrix to map from camera coordinates to a coordinate system relative to the touch screen.
     Assumes cal_img contains 4 visually clear Aruco patterns, which are the first 4 indices in the pattern list.
@@ -260,14 +271,19 @@ def find_arena_homography(
 
     gray = cv.cvtColor(cal_img, cv.COLOR_BGR2GRAY)
     parameters = cv.aruco.DetectorParameters_create()
-    corners, ids, rejected_img_points = cv.aruco.detectMarkers(gray,
-                                                               aruco_dict,
-                                                               parameters=parameters)
+    corners, ids, rejected_img_points = cv.aruco.detectMarkers(
+        gray, aruco_dict, parameters=parameters
+    )
     frame_markers = cv.aruco.drawDetectedMarkers(cal_img.copy(), corners, ids)
 
     # if less (or strictly more) than 4 Aruco markers found, return error
     if len(corners) != 4:
-        return None, frame_markers, "Could not find 4 Aruco patterns in the image."
+        return (
+            None,
+            None,
+            frame_markers,
+            "Could not find 4 Aruco patterns in the image.",
+        )
 
     p_bottom_r = get_point_aruco(ids, corners, ARUCO_BOTTOM_RIGHT)
     p_bottom_l = get_point_aruco(ids, corners, ARUCO_BOTTOM_LEFT)
@@ -277,22 +293,40 @@ def find_arena_homography(
     # Draw the rectangle formed by the corners
     thickness = 5
     color = (0, 255, 0)  # green
-    cv.line(frame_markers, pt1=tuple(p_bottom_r), pt2=tuple(p_bottom_l), color=color, thickness=thickness)
-    cv.line(frame_markers, pt1=tuple(p_bottom_r), pt2=tuple(p_top_r), color=color, thickness=thickness)
-    cv.line(frame_markers, pt1=tuple(p_bottom_l), pt2=tuple(p_top_l), color=color, thickness=thickness)
-    cv.line(frame_markers, pt1=tuple(p_top_r), pt2=tuple(p_top_l), color=color, thickness=thickness)
+    cv.line(
+        frame_markers,
+        pt1=tuple(p_bottom_r),
+        pt2=tuple(p_bottom_l),
+        color=color,
+        thickness=thickness,
+    )
+    cv.line(
+        frame_markers,
+        pt1=tuple(p_bottom_r),
+        pt2=tuple(p_top_r),
+        color=color,
+        thickness=thickness,
+    )
+    cv.line(
+        frame_markers,
+        pt1=tuple(p_bottom_l),
+        pt2=tuple(p_top_l),
+        color=color,
+        thickness=thickness,
+    )
+    cv.line(
+        frame_markers,
+        pt1=tuple(p_top_r),
+        pt2=tuple(p_top_l),
+        color=color,
+        thickness=thickness,
+    )
 
-    # create source and destination point arrays for homography function
-    arena_h_pixels = screen_x_res * (ARENA_H_CM / ARENA_W_CM)
-    dst_p = np.array([[0, 0],
-                      [screen_x_res, 0],
-                      [0, arena_h_pixels],
-                      [screen_x_res, arena_h_pixels]])
-    src_p = np.vstack([p_bottom_r, p_bottom_l, p_top_r, p_top_l]).astype(np.float64)
+    points = [p_bottom_r, p_bottom_l, p_top_r, p_top_l]
 
-    homography, _ = cv.findHomography(src_p, dst_p)
+    homography = get_homography_from_points(points, screen_x_res)
 
-    return homography, frame_markers, None
+    return homography, points, frame_markers, None
 
 
 def transform_point(p, h):
@@ -319,7 +353,7 @@ def transform_image(img, h, screen_x_res=1920):
     return cv.warpPerspective(img, h, img_shape)
 
 
-def transform_data(data, h, cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2"))):
+def transform_data(data, h, cols=(("x1", "y1"), ("x2", "y2"))):
     """
     Computes the transformed coordinates of undistorted 2D data by matrix multiplication
 
@@ -334,19 +368,25 @@ def transform_data(data, h, cols=(("cent_x", "cent_y"), ("x1", "y1"), ("x2", "y2
         x = xy[0]
         y = xy[1]
 
-        ret_df[[x, y]] = cv.perspectiveTransform(data[[x, y]].values.reshape(-1, 1, 2), h).squeeze()
+        ret_df[[x, y]] = cv.perspectiveTransform(
+            data[[x, y]].values.reshape(-1, 1, 2), h
+        ).squeeze()
+
+        # copy NaN values to the new dataframe
+        nan_rows = np.isnan(data[x]) | np.isnan(data[y])
+        ret_df.loc[nan_rows, [x, y]] = [np.nan, np.nan]
 
     return ret_df
 
 
-def get_last_homography(homographies_folder=HOMOGRAPHIES_FOLDER):
+def get_last_homography(homographies_dir: Path = HOMOGRAPHIES_DIR):
     """
     Get the latest homography from the homographies folder according to date. Called by the HitPredictor
 
     :param homographies_folder: path to the homographies files
     :return: numpy 3x3 homography matrix, source width and height (ints)
     """
-    homographies_files = glob.glob(os.path.join(homographies_folder, 'homog_*'))
+    homographies_files = list(homographies_dir.glob("homog_*.json"))
 
     if len(homographies_files) == 0:
         #  No homographies found
@@ -354,13 +394,45 @@ def get_last_homography(homographies_folder=HOMOGRAPHIES_FOLDER):
 
     # TODO: maybe extract date objects and sort by date (maybe easier with pandas)
     sorted_homographies_files = sorted(homographies_files)
-    last_homogprahy_file = sorted_homographies_files[-1]
+    last_homography_file = sorted_homographies_files[-1]
 
-    with open(last_homogprahy_file, 'r') as fp:
+    with open(last_homography_file, "r") as fp:
         homog_dict = json.load(fp)
 
-    homography = np.array(homog_dict['homography'])
-    width = homog_dict['width']
-    height = homog_dict['height']
+    homography = np.array(homog_dict["homography"])
+    width = homog_dict["width"]
+    height = homog_dict["height"]
 
     return homography, width, height
+
+
+def save_homography(
+    h, points, cal_img, date, cam_width, cam_height, homographies_dir=HOMOGRAPHIES_DIR
+):
+    date = date.strftime("%Y%m%d-%H%M%S")
+    json_path = homographies_dir / ("homog_" + date + ".json")
+    img_path = homographies_dir / ("homog_" + date + ".jpg")
+
+    d = {
+        "homography": h.tolist(),
+        "width": cam_width,
+        "height": cam_height,
+        "points": list(map(lambda p: p.tolist(), points)),
+    }
+
+    with open(json_path, "w") as fp:
+        json.dump(d, fp)
+
+    cv.imwrite(str(img_path), cal_img)
+
+
+def calibrate(cal_img):
+    cam_width, cam_height = cal_img.shape[1], cal_img.shape[0]
+    mapping, _, _ = get_undistort_mapping(cam_width, cam_height)
+    cal_img_ud = undistort_image(cal_img, mapping)
+    h, ps, h_im, error = find_arena_homography(cal_img_ud)
+
+    if error is None:
+        save_homography(h, ps, cal_img, datetime.now(), cam_width, cam_height)
+
+    return h, ps, h_im, error

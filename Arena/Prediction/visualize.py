@@ -419,6 +419,71 @@ def offline_trajectory_visualizer(
     return fn
 
 
+def offline_touch_visualizer(
+    touches,
+    hits,
+    touch_xs,
+    hit_color=(0, 255, 0),
+    touch_color=(0, 0, 255),
+    touch_pos_color=(255, 0, 255),
+    touch_radius=16,
+    max_alpha=0.5,
+    duration=30,
+):
+    last_touch = None
+    last_touch_x = None
+    is_hit = False
+
+    def fn(orig_frame, write_frame, frame_counter):
+        nonlocal last_touch, is_hit, last_touch_x
+
+        if touches[frame_counter]:
+            last_touch = frame_counter
+            is_hit = hits[frame_counter]
+            last_touch_x = int(touch_xs[frame_counter])
+
+        if last_touch is not None:
+            cur_duration = frame_counter - last_touch
+            if cur_duration > duration:
+                last_touch = None
+                last_touch_x = None
+                is_hit = False
+                return
+
+            alpha = max_alpha * (1 - cur_duration / duration)
+            color = hit_color if is_hit else touch_color
+            overlay = write_frame.copy()
+            cv.rectangle(
+                overlay, (0, 0), (overlay.shape[1], overlay.shape[0]), color, -1
+            )
+
+            cv.addWeighted(overlay, alpha, write_frame, 1 - alpha, 0, write_frame)
+
+            if touch_xs is not None and last_touch_x is not None:
+                tx = last_touch_x
+                cv.rectangle(
+                    write_frame,
+                    (tx - touch_radius, 0),
+                    (tx + touch_radius, 2 * touch_radius),
+                    touch_pos_color,
+                    -1,
+                )
+
+    return fn
+
+
+def offline_bug_visualizer(bug_x, color=(255, 0, 0), radius=16):
+    def fn(orig_frame, write_frame, frame_counter):
+        x = bug_x[frame_counter]
+        if not np.isnan(x):
+            x = int(x)
+            cv.rectangle(
+                write_frame, (x - radius, 0), (x + radius, 2 * radius), color, -1
+            )
+
+    return fn
+
+
 def visualize_prediction(
     predictor,
     write_frame,
@@ -589,7 +654,7 @@ def process_video(
     :param frame_rate: the framerate of the processed video or None to use the original framerate.
     :param resize_to_width: when not None, the output is resized after processing each frame.
     """
-    vcap = cv.VideoCapture(video_path)
+    vcap = cv.VideoCapture(str(video_path))
 
     if start_frame != 0:
         vcap.set(cv.CAP_PROP_POS_FRAMES, start_frame)
@@ -623,7 +688,7 @@ def process_video(
                 rheight = write_frame.shape[0]
 
             videowriter = cv.VideoWriter(
-                output_path,
+                str(output_path),
                 cv.VideoWriter_fourcc(*"mp4v"),
                 frame_rate,
                 (rwidth, rheight),
@@ -648,13 +713,13 @@ def process_video(
 def get_vid_frames(vid_path, start, num, correction_fn=None):
     """
     Return a consecutive list of frames from a video file.
-    
+
     :param vid_path: Path of the video file.
     :param start: The first frame to retrieve.
     :param num: The number of frames to retrieve.
     :param correction_fn: A lens and homography correction function to apply to each frame.
     """
-    vcap = cv.VideoCapture(vid_path)
+    vcap = cv.VideoCapture(str(vid_path))
     vcap.set(cv.CAP_PROP_POS_FRAMES, start)
     frames = []
     for i in range(num):

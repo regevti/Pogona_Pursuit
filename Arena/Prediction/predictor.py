@@ -93,14 +93,7 @@ class HitPredictor:
 
         if error is None:
             self.homography = h
-            date = datetime.now().strftime("%Y%m%d-%H%M%S")
-            json_name = os.path.join(
-                calib.HOMOGRAPHIES_FOLDER, "homog_" + date + ".json"
-            )
-            d = {"homography": h.tolist(), "width": cam_width, "height": cam_height}
-
-            with open(json_name, "w") as fp:
-                json.dump(d, fp)
+            calib.save_homography(h, datetime.now())
 
         return h, h_im, error
 
