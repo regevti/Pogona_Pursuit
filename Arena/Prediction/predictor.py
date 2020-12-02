@@ -10,10 +10,8 @@ TrajectoryPredictor - An abstract trajectory predictor class. This class receive
 
 from Prediction.detector import nearest_detection, xyxy_to_centroid
 from Prediction import calibration as calib
+from Prediction import detector
 import numpy as np
-from datetime import datetime
-import json
-import os
 
 
 class HitPredictor:
@@ -60,7 +58,6 @@ class HitPredictor:
         # look for last homography in some folder and load it. maybe also save dims
         self.homography, cam_width, cam_height = calib.get_last_homography()
         if self.homography is not None:
-            # in this case one must call the calibrate() method
             _, _, self.camera_matrix = calib.get_undistort_mapping(
                 cam_width, cam_height
             )
@@ -71,31 +68,6 @@ class HitPredictor:
         self.y_thresh_above = y_thresh_above
 
         self.reset(history_size=history_size)
-
-    def calibrate(self, cal_img):
-        """
-        Finds the homography matrix from markers in the image. If found, saves the homography to file for
-        later use, stores the new homography matrix in the homography attribute, and returns the matrix with
-        a marked image to the caller.
-
-        :param cal_img: numpy opencv image to extract homography from.
-        :return: (homography, marked_image, error) where
-                 homography - The homography matrix or None in case of error
-                 marked_image - cal_img with several markings that can help with debugging
-                 error - An error string or None when successful.
-        """
-        cam_width, cam_height = cal_img.shape[1], cal_img.shape[0]
-        mapping, _, self.camera_matrix = calib.get_undistort_mapping(
-            cam_width, cam_height
-        )
-        cal_img = calib.undistort_image(cal_img, mapping)
-        h, h_im, error = calib.find_arena_homography(cal_img)
-
-        if error is None:
-            self.homography = h
-            calib.save_homography(h, datetime.now())
-
-        return h, h_im, error
 
     def handle_frame(self, frame):
         """
@@ -312,3 +284,8 @@ class TrajectoryPredictor:
             self.last_forecast_age = 0
 
         return forecast
+
+
+def gen_hit_predictor():
+    det = detector.Detector_v4(conf_thres=0.8)
+    return HitPredictor(None)
