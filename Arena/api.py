@@ -9,7 +9,6 @@ from utils import titlize, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTPublisher
 from experiment import Experiment
-from explore import ExperimentAnalyzer
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info
 
 app = Flask(__name__)
