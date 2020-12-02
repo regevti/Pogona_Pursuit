@@ -1,21 +1,20 @@
-from flask import Flask, render_template, Response, request, make_response, send_file, stream_with_context
-from dotenv import load_dotenv
+from flask import Flask, render_template, Response, request, send_from_directory
 import PySpin
 import cv2
 import json
 import os
-load_dotenv()
-
-from utils import titlize, get_predictor_model
+import config
+from pathlib import Path
+from utils import titlize, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
-from mqtt import MQTTClient, SUBSCRIPTION_TOPICS
-from experiment import Experiment, REWARD_TYPES
-from arena import SpinCamera, record, capture_image, filter_cameras, display_info, \
-    CAMERA_NAMES, EXPOSURE_TIME, ACQUIRE_STOP_OPTIONS
+from mqtt import MQTTPublisher
+from experiment import Experiment
+from explore import ExperimentAnalyzer
+from arena import SpinCamera, record, capture_image, filter_cameras, display_info
 
 app = Flask(__name__)
 cache = RedisCache()
-mqtt_client = MQTTClient()
+mqtt_client = MQTTPublisher()
 
 
 @app.route('/')
@@ -23,28 +22,27 @@ def index():
     """Video streaming ."""
     print(f'current dir: {os.getcwd()}')
     with open('../pogona_hunter/src/config.json', 'r') as f:
-        config = json.load(f)
-    return render_template('index.html', cameras=CAMERA_NAMES.keys(), exposure=EXPOSURE_TIME, config=config,
-                           acquire_stop={k: titlize(k) for k in ACQUIRE_STOP_OPTIONS.keys()}, reward_types=REWARD_TYPES)
-
+        app_config = json.load(f)
+    return render_template('index.html', cameras=config.camera_names.keys(), exposure=config.exposure_time,
+                           config=app_config, acquire_stop={k: titlize(k) for k in config.acquire_stop_options.keys()},
+                           reward_types=config.reward_types, experiment_types=config.experiment_types,
+                           media_files=list_media())
 
 @app.route('/record', methods=['POST'])
 def record_video():
     """Record video"""
     if request.method == 'POST':
         data = request.json
-        data['cache'] = cache
+        data.update({'cache': cache})
         return Response(record(**data))
 
 
 @app.route('/start_experiment', methods=['POST'])
 def start_experiment():
     """Set Experiment Name"""
-    if request.method == 'POST':
-        data = request.json
-        data['cache'] = cache
-        e = Experiment(**data)
-        return Response(stream_with_context(e.start()))
+    data = request.json
+    e = Experiment(**data)
+    return Response(e.start())
 
 
 @app.route('/get_experiment')
@@ -55,9 +53,9 @@ def get_experiment():
 @app.route('/stop_experiment')
 def stop_experiment():
     experiment_name = cache.get(CacheColumns.EXPERIMENT_NAME)
+    mqtt_client.publish_command('end_experiment')
     if experiment_name:
-        cache.delete(CacheColumns.EXPERIMENT_NAME)
-        return Response(f'Experiment: {experiment_name} was stopped')
+        return Response(f'ending experiment {experiment_name}...')
     return Response('No available experiment')
 
 
@@ -68,7 +66,7 @@ def calibrate():
         from arena import _models
     except ImportError:
         return Response('Unable to locate HitPredictor')
-    pred = _models[get_predictor_model()].hit_pred
+    pred = _models[config.predictor_model].hit_pred
     img = capture_image('realtime')
     h, h_im, error = pred.calibrate(img)
     if error:
@@ -79,14 +77,23 @@ def calibrate():
 @app.route('/reward')
 def reward():
     """Activate Feeder"""
-    mqtt_client.publish_event(SUBSCRIPTION_TOPICS['reward'], '')
+    mqtt_client.publish_event(config.subscription_topics['reward'], '')
     return Response('ok')
 
 
 @app.route('/led_light/<state>')
 def led_light(state):
-    mqtt_client.publish_event(SUBSCRIPTION_TOPICS['led_light'], state)
+    mqtt_client.publish_event(config.subscription_topics['led_light'], state)
     return Response('ok')
+
+
+@app.route('/display/<state>')
+def display(state):
+    if state == 'off':
+        stdout = turn_display_off()
+    else:
+        stdout = turn_display_on()
+    return Response(stdout)
 
 
 @app.route('/cameras_info')
@@ -116,9 +123,10 @@ def set_stream_camera():
         return Response(request.form['camera'])
 
 
-@app.route('/init_bugs')
+@app.route('/init_bugs', methods=['POST'])
 def init_bugs():
-    mqtt_client.publish_event('event/command/init_bugs', 1)
+    if request.method == 'POST':
+        mqtt_client.publish_event('event/command/init_bugs', request.data.decode())
     return Response('ok')
 
 
@@ -128,8 +136,21 @@ def hide_bugs():
     return Response('ok')
 
 
+def list_media():
+    media_files = []
+    for f in Path(config.static_files_dir).glob('*'):
+        if f.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.avi', '.mp4', '.mpg', '.mov']:
+            media_files.append(f.name)
+    return media_files
+
+
+@app.route('/media/<filename>')
+def send_media(filename):
+    return send_from_directory(config.static_files_dir, filename)
+
+
 class VideoStream:
-    def __init__(self, exposure_time=EXPOSURE_TIME):
+    def __init__(self, exposure_time=config.exposure_time):
         self.system = PySpin.System.GetInstance()
         self.cam_list = self.system.GetCameras()
         filter_cameras(self.cam_list, cache.get(CacheColumns.STREAM_CAMERA))
@@ -139,8 +160,6 @@ class VideoStream:
 
         self.sc = SpinCamera(self.cam_list[0])
         self.sc.begin_acquisition(exposure_time)
-        # self.serializer = Serializer()
-        # self.serializer.start_acquisition()
 
     def get_frame(self):
         image_result = self.sc.cam.GetNextImage()
@@ -151,8 +170,6 @@ class VideoStream:
         self.cam_list.Clear()
         del self.sc
         # self.system.ReleaseInstance()
-        if getattr(self, 'serializer', None):
-            self.serializer.stop_acquisition()
 
     def __del__(self):
         self.clear()

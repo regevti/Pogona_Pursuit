@@ -14,6 +14,7 @@ services:
     volumes:
     - ../Arena:/arena
     - ../pogona_hunter:/pogona_hunter
+    - /tmp/.X11-unix:/tmp/.X11-unix:ro
     restart: always
     runtime: nvidia
     command: "flask run --host=0.0.0.0"
@@ -34,8 +35,9 @@ services:
     depends_on:
       - mqtt
     restart: always
-    volumes:
-    - ../pogona_hunter:/app
+    command: "http-server dist"
+#    volumes:
+#    - ../pogona_hunter:/app
     ports:
      - 8080:8080
 
@@ -48,23 +50,44 @@ services:
       - mqtt
       - cache
     restart: always
-    command: 'python mqtt.py'
+    command: 'celery -A logger worker --loglevel=INFO'
     devices:
-      - /dev/parport0
+      - ${PARPORT_DEVICE-/dev/parport0}
     volumes:
       - ../Arena:/logger
     environment:
       - PYTHONUNBUFFERED=1
+      - IS_USE_PARPORT=1
+
+  explore:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-explore
+    container_name: explore
+    command: 'flask run --host=0.0.0.0'
+    ports:
+      - 3352:5000
+    volumes:
+      - ../Arena:/explore
+      - ${EXPLORE_DIR-../Arena/experiments}:/explore/experiments
+    environment:
+      - PYTHONUNBUFFERED=1
+      - EXPLORE_EXPERIMENT_DIR=/explore/experiments
+      - FLASK_APP=explore.py
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
 
   mqtt:
-    image: eclipse-mosquitto:1.6
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-mqtt
     restart: always
     container_name: mqtt
+    environment:
+      - PYTHONUNBUFFERED=1
     ports:
       - 1883:1883
       - 0.0.0.0:9001:9001
-    volumes:
-      - ../mosquitto/:/mosquitto/config/
 
   cache:
     image: redis

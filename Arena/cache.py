@@ -1,6 +1,5 @@
 import redis
-import os
-REDIS_HOST = os.environ.get('REDIS_HOST', 'cache')
+import config
 EXPERIMENTS_TIMEOUT = 60 * 60
 
 
@@ -17,6 +16,7 @@ class CacheColumns:
     EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, EXPERIMENTS_TIMEOUT)
     EXPERIMENT_TRIAL_PATH = Column('EXPERIMENT_TRIAL_PATH', str, EXPERIMENTS_TIMEOUT)
     EXPERIMENT_TRIAL_ON = Column('EXPERIMENT_TRIAL_ON', bool, EXPERIMENTS_TIMEOUT)
+    APP_ON = Column('APP_ON', bool, EXPERIMENTS_TIMEOUT)
     ALWAYS_REWARD = Column('ALWAYS_REWARD', bool, EXPERIMENTS_TIMEOUT)
     STREAM_CAMERA = Column('STREAM_CAMERA', str, 60)
     MANUAL_RECORD_STOP = Column('MANUAL_RECORD_STOP', bool, 5)
@@ -24,7 +24,7 @@ class CacheColumns:
 
 class RedisCache:
     def __init__(self):
-        self._redis = redis.Redis(host=REDIS_HOST, port=6379, db=0)
+        self._redis = redis.Redis(host=config.redis_host, port=6379, db=0)
 
     def get(self, cache_column: Column):
         res = self._redis.get(cache_column.name)

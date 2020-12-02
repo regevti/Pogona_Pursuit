@@ -1,0 +1,15 @@
+<div class="row">
+    <img id="stream_img" src="{{ url_for('static', filename='video_placeholder.jpg') }}"
+         width="640" height="420" class="mx-auto" style="z-index: 10">
+</div>
+<div class="row mt-4">
+    <div class="col text-center">
+        <select id="selectStreamCamera" class="form-control col-sm-3 mx-auto mb-2">
+            {% for cam in cameras %}
+            <option value="{{cam}}">{{cam}}</option>
+            {% endfor %}
+        </select>
+        <button id="stream" class="btn btn-lg btn-primary mr-2">Stream</button>
+        <button id="stopStream" class="btn btn-lg btn-outline-danger">Stop Stream</button>
+    </div>
+</div>

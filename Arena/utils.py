@@ -1,9 +1,42 @@
-import os
 import logging
+import serial
+import time
 from pathlib import Path
 import numpy as np
+import asyncio
 from io import StringIO
 from datetime import datetime
+from subprocess import Popen, PIPE
+
+
+def run_command(cmd):
+    """Execute shell command"""
+    process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    if stderr:
+        print(f'Error running cmd: "{cmd}"; {stderr}')
+    yield stdout
+
+
+DISPLAY_CMD = 'DISPLAY=":0" xrandr --output HDMI-0 --{}'
+
+
+def turn_display_on():
+    return run_command(DISPLAY_CMD.format('auto'))
+
+
+def turn_display_off():
+    return run_command(DISPLAY_CMD.format('off'))
+
+
+def async_call_later(seconds, callback):
+    async def schedule():
+        await asyncio.sleep(seconds)
+        if asyncio.iscoroutinefunction(callback):
+            await callback()
+        else:
+            callback()
+    asyncio.ensure_future(schedule())
 
 
 def get_log_stream():
@@ -44,18 +77,6 @@ def get_logger(device_id: str, dir_path: str, log_stream=None) -> logging.Logger
     return logger
 
 
-def is_debug_mode():
-    return os.environ.get('DEBUG', False)
-
-
-def is_predictor_experiment():
-    return os.environ.get('PREDICTOR_EXPERIMENT', False)
-
-
-def get_predictor_model():
-    return os.environ.get('PREDICTOR_MODEL', 'lstm')
-
-
 def calculate_fps(frame_times):
     diffs = [j - i for i, j in zip(frame_times[:-1], frame_times[1:])]
     fps = 1 / np.mean(diffs)
@@ -68,9 +89,42 @@ def mkdir(path):
     return path
 
 
-def get_datetime_string():
+def datetime_string():
     return datetime.now().strftime('%Y%m%dT%H%M%S')
 
 
 def titlize(s: str):
     return s.replace('_', ' ').title()
+
+
+def to_integer(x):
+    try:
+        return int(x)
+    except Exception:
+        return x
+
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
+SERIAL_PORT_TEMP = '/dev/ttyACM1'
+SERIAL_BAUD = 9600
+
+
+class Serializer:
+    """Serializer for connecting the TTL Arduino"""
+    def __init__(self, port=SERIAL_PORT_TEMP, baud=SERIAL_BAUD):
+        self.ser = serial.Serial(port, baud, timeout=1)
+        time.sleep(0.5)
+
+    def read_line(self):
+        return self.ser.read_until()
+
+    def start_acquisition(self):
+        self.ser.write(b'H')
+
+    def stop_acquisition(self):
+        self.ser.write(b'L')

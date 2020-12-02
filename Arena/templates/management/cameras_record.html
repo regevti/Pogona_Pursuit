@@ -1,0 +1,55 @@
+<div class="col-md-4">
+    <div class="row">
+        <form class="col">
+            <h3>Cameras</h3>
+            {% for cam in cameras %}
+            <div class="row ml-4" id="cams-checkboxes">
+                <input class="form-check-input" type="checkbox" value="{{cam}}" id="camera-{{cam}}"
+                       checked>
+                <label class="form-check-label" for="camera-{{cam}}">{{cam}}</label>
+            </div>
+            {% endfor %}
+            <div class="row ml-4 mt-3">
+                <input class="form-check-input" type="checkbox" id="use_predictions">
+                <label class="form-check-label" for="use_predictions">Use Predictions</label>
+            </div>
+        </form>
+    </div>
+    <div class="row mt-3">
+        <form class="col" id="record_form">
+            <h3>Record</h3>
+            <div class="form-group row">
+                <label for="exposure" class="col col-form-label">Exposure Time</label>
+                <div class="col-sm-5">
+                    <input type="number" class="form-control" id="exposure" value="{{exposure}}" required>
+                </div>
+            </div>
+            <div class="form-group row">
+                <label for="videoOutputPrefix" class="col col-form-label">Folder Prefix</label>
+                <div class="col-sm-7">
+                    <input type="text" class="form-control" id="videoOutputPrefix">
+                </div>
+            </div>
+            <h7 class="label">Acquire Stop</h7>
+            <div class="form-group row">
+                <div class="col">
+                    <select id="acquireStopSelect" class="form-control col">
+                        {% for val, label in acquire_stop.items() %}
+                        <option value="{{val}}">{{label}}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <input id="acquireStopValue" class="col-sm-4 ml-1" type="int" class="form-control"
+                       placeholder="Value" required>
+            </div>
+            <div class="form-group row">
+                <div class="col">
+                    <button type="submit" class="btn btn-primary mr-2">Run</button>
+                    <button id="stopRecord" type="button" class="btn btn-outline-danger mr-4">Stop Record
+                    </button>
+                    <button id="camerasInfo" type="button" class="btn btn-outline-info">Info</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
