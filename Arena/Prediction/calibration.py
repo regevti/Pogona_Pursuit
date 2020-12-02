@@ -409,6 +409,7 @@ def get_last_homography(homographies_dir: Path = HOMOGRAPHIES_DIR):
 def save_homography(
     h, points, cal_img, date, cam_width, cam_height, homographies_dir=HOMOGRAPHIES_DIR
 ):
+    Path(homographies_dir).mkdir(exist_ok=True)
     date = date.strftime("%Y%m%d-%H%M%S")
     json_path = homographies_dir / ("homog_" + date + ".json")
     img_path = homographies_dir / ("homog_" + date + ".jpg")
