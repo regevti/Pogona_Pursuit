@@ -3,7 +3,7 @@
 # jupyterlab
 torch==1.6
 torchvision==0.7.0
-filterpy==1.4.5
+# filterpy==1.4.5
 # opencv-contrib-python==4.4.0.42
 # # opencv-python==4.4
 # pillow==5.4.1
