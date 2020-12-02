@@ -28,22 +28,6 @@ def index():
                            reward_types=config.reward_types, experiment_types=config.experiment_types,
                            media_files=list_media())
 
-
-@app.route('/explore')
-def explore():
-    return render_template('explore.html')
-
-
-@app.route('/experiment_results', methods=['POST'])
-def experiment_results():
-    data = request.json
-    ea = ExperimentAnalyzer(**data)
-    df = ea.get_experiments()
-    if len(df) < 1:
-        return Response('No experiments found')
-    return Response(df.to_html(classes='table-responsive'))
-
-
 @app.route('/record', methods=['POST'])
 def record_video():
     """Record video"""

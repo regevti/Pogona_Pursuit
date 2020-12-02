@@ -90,6 +90,9 @@
         },
         success: function (data) {
           $("#results-div").html(data)
+        },
+        error: function (data) {
+          $("#results-div").html(data.responseText)
         }
       })
   })

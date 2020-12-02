@@ -59,6 +59,24 @@ services:
       - PYTHONUNBUFFERED=1
       - IS_USE_PARPORT=1
 
+  explore:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-explore
+    container_name: explore
+    command: 'flask run --host=0.0.0.0'
+    ports:
+      - 3352:5000
+    volumes:
+      - ../Arena:/explore
+      - ${EXPLORE_DIR-../Arena/experiments}:/explore/experiments
+    environment:
+      - PYTHONUNBUFFERED=1
+      - EXPLORE_EXPERIMENT_DIR=/explore/experiments
+      - FLASK_APP=explore.py
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+
   mqtt:
     build:
       context: ..

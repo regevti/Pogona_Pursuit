@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from flask import Flask, render_template, Response, request
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,23 @@ from dateutil import parser as date_parser
 
 import config
 from utils import to_integer
+
+app = Flask(__name__)
+
+
+@app.route('/')
+def explore():
+    return render_template('explore.html')
+
+
+@app.route('/experiment_results', methods=['POST'])
+def experiment_results():
+    data = request.json
+    ea = ExperimentAnalyzer(**data)
+    df = ea.get_experiments()
+    if len(df) < 1:
+        return Response('No experiments found')
+    return Response(df.to_html(classes='table-responsive'))
 
 
 @dataclass
