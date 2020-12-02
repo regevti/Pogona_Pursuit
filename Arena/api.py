@@ -68,7 +68,7 @@ def calibrate():
         return Response('Unable to locate calibration module')
 
     img = capture_image('realtime')
-    h, h_im, error = calibration.calibrate(img)
+    h, _, h_im, error = calibration.calibrate(img)
     if error:
         return Response(error)
     return Response('Calibration completed')
