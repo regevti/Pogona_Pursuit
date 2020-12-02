@@ -1,8 +1,8 @@
 # numpy==1.18.4
 # pandas==1.1
 # jupyterlab
-torch==1.6
-torchvision==0.7.0
+# torch==1.6
+# torchvision==0.7.0
 # filterpy==1.4.5
 # opencv-contrib-python==4.4.0.42
 # # opencv-python==4.4
