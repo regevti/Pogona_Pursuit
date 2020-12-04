@@ -1,10 +1,12 @@
 FROM nablascom/cuda-pytorch
 
+USER root
+
 ENV TZ=Asia/Jerusalem
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install deeplabcut==2.1.8.2
-RUN pip install deeplabcut-live==0.0.2
-RUN pip uninstall tensorflow
-RUN pip install tensorflow-gpu==1.13.1
+COPY ./requirements .
+RUN pip install -r pose.txt
 
+RUN pip uninstall -y tensorflow
+RUN pip install tensorflow-gpu==1.13.1
