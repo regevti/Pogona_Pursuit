@@ -78,6 +78,16 @@ services:
       - LC_ALL=C.UTF-8
       - LANG=C.UTF-8
 
+  pose:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-pose
+    container_name: pose
+    image: pose
+    volumes:
+    - ${EXPLORE_DIR-../Arena/experiments}:/data/experiments
+    runtime: nvidia
+
   mqtt:
     build:
       context: ..
