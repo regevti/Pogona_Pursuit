@@ -1,4 +1,0 @@
--r base.txt
-
-deeplabcut-live==0.0.2
-tensorflow-gpu==1.13.1
