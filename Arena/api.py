@@ -9,7 +9,6 @@ from utils import titlize, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTPublisher
 from experiment import Experiment
-from explore import ExperimentAnalyzer
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info
 
 app = Flask(__name__)
@@ -63,12 +62,16 @@ def stop_experiment():
 def calibrate():
     """Calibrate camera"""
     try:
-        from arena import _models
+        from Prediction import calibration
     except ImportError:
-        return Response('Unable to locate HitPredictor')
-    pred = _models[config.predictor_model].hit_pred
+        return Response('Unable to locate calibration module')
+
     img = capture_image('realtime')
-    h, h_im, error = pred.calibrate(img)
+    try:
+        h, _, h_im, error = calibration.calibrate(img)
+    except Exception as exc:
+        error = str(exc)
+
     if error:
         return Response(error)
     return Response('Calibration completed')

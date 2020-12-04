@@ -18,6 +18,16 @@ stats/
 *.p
 *.jpg
 *.jpeg
+*.png
+std*.txt
+
 
 Archive/
 Arena/calibration/*
+yolo_eval_frames
+yolo_fn_frames
+yolo_eval_labels
+experiment_plots
+
+Arena/Prediction/Yolo4/darknet
+Arena/Prediction/Yolo4/libdarknet.so

@@ -20,28 +20,7 @@ from utils import get_logger, calculate_fps, mkdir, get_log_stream, datetime_str
 IS_PREDICTOR_READY = False
 if not config.is_disable_predictor:
     try:
-        from Prediction import predictor, detector, seq2seq_predict
-
-        _detector = detector.Detector_v4(conf_thres=config.detector_thresh)
-
-        class PredictModel:
-            def __init__(self, weigths, traj_model):
-                self.weights = weigths
-                self.traj_model = traj_model
-                self.input_len = 20
-                self.forecast_horizon = 20
-                self.seq2seq_predictor = seq2seq_predict.Seq2SeqPredictor(model=self.traj_model,
-                                                                          weights_path=self.weights,
-                                                                          input_len=self.input_len,
-                                                                          forecast_horizon=self.forecast_horizon)
-                self.hit_pred = predictor.HitPredictor(trajectory_predictor=self.seq2seq_predictor, detector=_detector)
-
-        _models = {
-            'gru': PredictModel('Prediction/traj_models/model_20_20_h64_b64_l1_EncDec_6_best.pth', seq2seq_predict.GRUEncDec()),
-            'lstm': PredictModel('Prediction/traj_models/model_20_20_h64_b128_l1_lstmDense_feeding_51_best.pth',
-                                 seq2seq_predict.LSTMdense(output_seq_size=20, hidden_size=64, LSTM_layers=1,
-                                                           embedding_size=16))
-        }
+        from Prediction import predictor
         IS_PREDICTOR_READY = True
     except Exception as exc:
         print(f'Error loading detector: {exc}')
@@ -71,7 +50,7 @@ class SpinCamera:
         if self.is_realtime_mode:
             self.logger.info('Working in realtime mode')
             self.predictor_experiment_ids = []
-            self.predictor = _models[config.predictor_model].hit_pred
+            self.predictor = predictor.gen_hit_predictor(self.logger, dir_path)
             self.mqtt_client = MQTTPublisher()
 
     def begin_acquisition(self, exposure):
@@ -149,7 +128,8 @@ class SpinCamera:
             mean_fps, std_fps = self.analyze_timestamps(frame_times)
             self.logger.debug(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
             self.logger.debug(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
-            self.save_predictions()
+            if self.is_realtime_mode:
+                self.predictor.save_predictions()
 
         self.cam.EndAcquisition()  # End acquisition
         if self.video_out:
@@ -257,13 +237,6 @@ class SpinCamera:
 
         return mean_fps, std_fps
 
-    def save_predictions(self):
-        if not self.is_realtime_mode:
-            return
-
-        pd.Series(self.predictor.forecasts).to_csv(self.predictions_path)
-        pd.DataFrame(self.predictor.history).to_csv(self.predictor_history_path)
-
     def info(self) -> list:
         """Get All camera values of INFO_FIELDS and return as a list"""
         nan_string = 'x'
@@ -314,14 +287,6 @@ class SpinCamera:
     def timestamp_path(self):
         mkdir(f'{self.dir_path}/timestamps')
         return f'{self.dir_path}/timestamps/{self.device_id}.csv'
-
-    @property
-    def predictions_path(self):
-        return f'{self.dir_path}/forecasts.csv'
-
-    @property
-    def predictor_history_path(self):
-        return f'{self.dir_path}/predictor_history.csv'
 
     @property
     def device_id(self):

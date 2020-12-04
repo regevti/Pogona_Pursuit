@@ -15,6 +15,7 @@ services:
     - ../Arena:/arena
     - ../pogona_hunter:/pogona_hunter
     - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    - ${MEDIA_DIR-/tmp}:/arena/media
     restart: always
     runtime: nvidia
     command: "flask run --host=0.0.0.0"
