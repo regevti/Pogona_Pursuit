@@ -83,7 +83,8 @@ class Loader:
             raise Exception(f'Error parsing video path: {exc}')
 
     def get_video_path(self) -> Path:
-        regex = rf'{self.camera}_\d{8}T\d{6}.(avi|mp4)'
+        assert isinstance(self.camera, str), 'no camera name provided or bad type'
+        regex = self.camera + r'_\d{8}T\d{6}.(avi|mp4)'
         videos = [v for v in (self.trial_path / 'videos').glob('*') if re.match(regex, v.name)]
         if not videos:
             raise Exception('cannot find video')
@@ -119,15 +120,12 @@ def closest_index(series, x):
 def get_experiments(*args, **kwargs):
     """Get experiment using explore"""
     df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
-    if len(df) == 0:
-        print('No experiment found')
-        return
     loaders = []
     for experiment, trial in df.index:
         try:
-            ld = Loader(experiment, trial, 'realtime')
+            ld = Loader(experiment, int(trial), 'realtime')
             loaders.append(ld)
         except Exception as exc:
-            continue
-    print(f'Num loaders: {len(loaders)}')
+            print(f'Error loading {experiment} trial{trial}; {exc}')
+    print(f'num loaders: {len(loaders)}')
     return loaders
