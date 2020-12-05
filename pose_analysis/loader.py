@@ -30,9 +30,11 @@ class Loader:
         self.hits_df = self.get_hits()
         self.traj_df = self.get_bug_trajectory()
 
-    def get_hits(self):
+    def get_hits(self, hits_only=False):
         df = pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
-        return df.query('is_hit == 1')
+        if hits_only:
+            df = df.query('is_hit == 1')
+        return df
 
     def get_bug_trajectory(self):
         try:
