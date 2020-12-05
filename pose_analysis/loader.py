@@ -128,5 +128,6 @@ def get_experiments(*args, **kwargs):
             ld = Loader(experiment, trial, 'realtime')
             loaders.append(ld)
         except Exception as exc:
-            print(f'Error loading {experiment} trial{trial}; {exc}')
+            continue
+    print(f'Num loaders: {len(loaders)}')
     return loaders
