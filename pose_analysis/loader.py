@@ -2,6 +2,10 @@ import re
 from pathlib import Path
 import pandas as pd
 
+import sys
+sys.path += ['../Arena']
+from explore import ExperimentAnalyzer
+
 ROOT_DIR = '/data'
 EXPERIMENTS_DIR = ROOT_DIR + '/Pogona_Pursuit/Arena/experiments'
 CAMERAS = {
@@ -15,10 +19,12 @@ CAMERAS = {
 class Loader:
     def __init__(self, experiment_name=None, trial_id=None, camera=None, video_path=None):
         if video_path:
+            video_path = Path(video_path)
             experiment_name, trial_id, camera = self.parse_video_path(video_path)
         self.experiment_name = experiment_name
         self.trial_id = trial_id
         self.camera = camera
+        self.video_path = video_path or self.get_video_path()
 
         self.frames_ts = self.get_frames_timestamps()
         self.hits_df = self.get_hits()
@@ -60,9 +66,9 @@ class Loader:
         assert self.timestamps_path.exists(), 'no timestamps file'
 
     @staticmethod
-    def parse_video_path(video_path):
+    def parse_video_path(video_path: Path):
+        assert video_path.exists(), f'provided video path: {video_path} does not exist'
         try:
-            video_path = Path(video_path)
             experiment_name = video_path.parts[-4]
             trial_id = int(video_path.parts[-3].split('trial')[1])
             camera = None
@@ -76,6 +82,15 @@ class Loader:
         except Exception as exc:
             raise Exception(f'Error parsing video path: {exc}')
 
+    def get_video_path(self) -> Path:
+        regex = rf'{self.camera}_\d{8}T\d{6}.(avi|mp4)'
+        videos = [v for v in (self.trial_path / 'videos').glob('*') if re.match(regex, v.name)]
+        if not videos:
+            raise Exception('cannot find video')
+        elif len(videos) > 1:
+            raise Exception('found more than one video')
+        return videos[0]
+
     @property
     def experiment_path(self):
         return EXPERIMENTS_DIR / Path(self.experiment_name)
@@ -83,16 +98,6 @@ class Loader:
     @property
     def trial_path(self):
         return self.experiment_path / f'trial{self.trial_id}'
-
-    @property
-    def video_path(self) -> Path:
-        regex = f'{self.camera}_\d{8}T\d{6}.(avi|mp4)'
-        videos = [v for v in (self.trial_path / 'videos').glob('*') if re.match(regex, v.name)]
-        if not videos:
-            raise Exception('cannot find video')
-        elif len(videos) > 1:
-            raise Exception('found more than one video')
-        return videos[0]
 
     @property
     def bug_traj_path(self):
@@ -109,3 +114,15 @@ class Loader:
 
 def closest_index(series, x):
     return (series - x).abs().argsort()[0]
+
+
+def get_experiments(**kwargs):
+    df = ExperimentAnalyzer(**kwargs).get_experiments()
+    loaders = []
+    for experiment, trial in df.index:
+        try:
+            ld = Loader(experiment, trial, 'realtime')
+            loaders.append(ld)
+        except Exception as exc:
+            print(f'Error loading {experiment} trial{trial}; {exc}')
+    return loaders
