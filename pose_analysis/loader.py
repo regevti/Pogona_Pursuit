@@ -119,7 +119,7 @@ def closest_index(series, x):
 def get_experiments(*args, **kwargs):
     """Get experiment using explore"""
     df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
-    if not df:
+    if len(df) == 0:
         print('No experiment found')
         return
     loaders = []
