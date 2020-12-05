@@ -12,17 +12,15 @@ NUM_FRAMES_BACK = 60 * 5
 
 
 class StrikesAnalyzer:
-    def __init__(self, experiment_name, trial_id, camera):
-        self.experiment_name = experiment_name
-        self.trial_id = trial_id
-        self.camera = camera
-        self.loader = Loader(experiment_name, trial_id, camera)
+    def __init__(self, loader: Loader = None, experiment_name=None, trial_id=None, camera=None):
+        self.loader = loader or Loader(experiment_name, trial_id, camera)
         self.pose_analyzer = Analyzer(self.loader.video_path)
         self.xfs = []
 
     def get_strikes_pose(self, n_frames_back=None):
         """Run pose estimation on hits frames"""
         n_frames_back = n_frames_back or NUM_FRAMES_BACK
+
         def first_frame(frame_id):
             return frame_id - n_frames_back if frame_id >= n_frames_back else 0
 
