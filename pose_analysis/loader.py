@@ -116,8 +116,8 @@ def closest_index(series, x):
     return (series - x).abs().argsort()[0]
 
 
-def get_experiments(**kwargs):
-    df = ExperimentAnalyzer(**kwargs).get_experiments()
+def get_experiments(*args, **kwargs):
+    df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
     loaders = []
     for experiment, trial in df.index:
         try:
