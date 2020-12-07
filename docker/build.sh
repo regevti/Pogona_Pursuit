@@ -13,17 +13,17 @@ if [[ ! "${SERVICES[@]}" =~ "$1" ]]; then
 fi
 
 git_version=`git describe --tags`
-re='^v[0-9]+\.[0-9]+$'
-if ! [[ $git_version =~ $re ]] ; then
-   echo "error: bad git version: $git_version" >&2; exit 1
-fi
+# re='^v[0-9]+\.[0-9]+$'
+# if ! [[ $git_version =~ $re ]] ; then
+#    echo "error: bad git version: $git_version" >&2; exit 1
+# fi
 
-last_octet=`grep -oE "'"$service"'_tag=v[0-9\.]+" .env | cut -d= -f2 | cut -d. -f3`
-new_version=`echo "$git_version.$(($last_octet+1))"`
-echo "new_version=$new_version"
-sed -E 's/('"$service"'_tag=)v[0-9\.]+/\1'"$new_version"'/' .env > .env
+# last_octet=`grep -oE "'"$service"'_tag=v[0-9\.]+" .env | cut -d= -f2 | cut -d. -f3`
+# new_version=`echo "$git_version.$(($last_octet+1))"`
+echo "new_version=$git_version"
+sed -E 's/('"$service"'_tag=)\S+/\1'"$git_version"'/' .env > .env
 
 dc build $service
 dc up -d $service
 
-echo "$(date) - $service - $new_version" >> ./deployments.log
+echo "$(date) - $service - $git_version" >> ./deployments.log
