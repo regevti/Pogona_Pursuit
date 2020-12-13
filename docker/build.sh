@@ -21,9 +21,9 @@ git_version=`git describe --tags`
 # last_octet=`grep -oE "'"$service"'_tag=v[0-9\.]+" .env | cut -d= -f2 | cut -d. -f3`
 # new_version=`echo "$git_version.$(($last_octet+1))"`
 echo "new_version=$git_version"
-sed -E 's/('"$service"'_tag=)\S+/\1'"$git_version"'/' .env > .env
+sed -i -E 's/('"$service"'_tag=)\S+/\1'"$git_version"'/' .env
 
-dc build $service
-dc up -d $service
+docker-compose build $service
+docker-compose up -d $service
 
 echo "$(date) - $service - $git_version" >> ./deployments.log
