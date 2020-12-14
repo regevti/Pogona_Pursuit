@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import cv2
 import yaml
+from tqdm.auto import tqdm
 from dlclive import DLCLive, Processor
 from loader import Loader
 
@@ -35,9 +36,9 @@ class Analyzer:
             frames.sort()
         cap = cv2.VideoCapture(self.video_path.as_posix())
         res = []
-        frame_id = 0
+        num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         print(f'start pose estimation for {self.loader.experiment_name} trial{self.loader.trial_id}')
-        while cap.isOpened():
+        for frame_id in tqdm(range(num_frames)):
             ret, frame = cap.read()
             if frames and frame_id not in frames:
                 continue
@@ -50,7 +51,8 @@ class Analyzer:
                     fps = cap.get(cv2.CAP_PROP_FPS)
                     h, w = frame.shape[:2]
                     fourcc = cv2.VideoWriter_fourcc(*'X264')
-                    self.video_out = cv2.VideoWriter(self.output_video_path, fourcc, fps, (w, h))
+                    print(f'Saving analyzed video to: {self.output_video_path}')
+                    self.video_out = cv2.VideoWriter(self.output_video_path, fourcc, fps, (w, h), False)
 
                 if is_save_frames:
                     self.saved_frames[frame_id] = frame
@@ -58,7 +60,6 @@ class Analyzer:
                 self.write_frame(frame, frame_id)
 
                 res.append(self.create_pred_df(pred, frame_id))
-            frame_id += 1
             if not ret or (frames and frame_id > frames[-1]):
                 break
 
@@ -115,7 +116,7 @@ class Analyzer:
     def output_video_path(self):
         output_dir = self.video_path.parent / self.model_name
         output_dir.mkdir(exist_ok=True)
-        return output_dir / f'{self.loader.camera}.mp4'
+        return (output_dir / f'{self.loader.camera}.mp4').as_posix()
 
     @property
     def model_name(self):

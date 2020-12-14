@@ -43,7 +43,7 @@ class Loader:
             raise Exception(f'Error loading bug trajectory; {exc}')
 
     def get_frames_timestamps(self):
-        return pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0']
+        return pd.to_datetime(pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0'])
 
     def get_hits_frames(self):
         """return the frame ids for screen strikes"""
