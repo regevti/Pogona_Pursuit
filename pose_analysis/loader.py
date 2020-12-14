@@ -17,7 +17,8 @@ CAMERAS = {
 
 
 class Loader:
-    def __init__(self, experiment_name=None, trial_id=None, camera=None, video_path=None):
+    def __init__(self, experiment_name=None, trial_id=None, camera=None, video_path=None, experiment_dir=None):
+        self.experiment_dir = experiment_dir or EXPERIMENTS_DIR
         if video_path:
             video_path = Path(video_path)
             experiment_name, trial_id, camera = self.parse_video_path(video_path)
@@ -42,7 +43,7 @@ class Loader:
         except Exception as exc:
             raise Exception(f'Error loading bug trajectory; {exc}')
 
-    def get_frames_timestamps(self):
+    def get_frames_timestamps(self) -> pd.Series:
         return pd.to_datetime(pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0'])
 
     def get_hits_frames(self):
@@ -105,7 +106,7 @@ class Loader:
 
     @property
     def experiment_path(self):
-        return EXPERIMENTS_DIR / Path(self.experiment_name)
+        return self.experiment_dir / Path(self.experiment_name)
 
     @property
     def trial_path(self):
@@ -137,7 +138,7 @@ def get_experiments(*args, **kwargs):
     loaders = []
     for experiment, trial in df.index:
         try:
-            ld = Loader(experiment, int(trial), 'realtime')
+            ld = Loader(experiment, int(trial), 'realtime', kwargs.get('experiment_dir'))
             loaders.append(ld)
         except Exception as exc:
             continue
