@@ -49,15 +49,22 @@ class Loader:
         """return the frame ids for screen strikes"""
         frames = []
         for hit_ts in self.hits_df['time'].dt.tz_convert('utc').dt.tz_localize(None):
-            frames.append(closest_index(self.frames_ts, hit_ts))
+            cidx = closest_index(self.frames_ts, hit_ts)
+            if cidx is None:
+                print('unable to find frame for hit')
+                frames.append(cidx)
         return frames
 
     def get_bug_position_at_time(self, t) -> pd.DataFrame:
-        return self.traj_df.loc[closest_index(self.traj_df['time'], t), ['x', 'y']]
+        cidx = closest_index(self.traj_df['time'], t)
+        if cidx is not None:
+            return self.traj_df.loc[cidx, ['x', 'y']]
 
     def bug_data_for_frame(self, frame_id: int) -> pd.DataFrame:
         frame_time = self.frames_ts[frame_id]
-        return self.traj_df.loc[closest_index(self.traj_df['time'], frame_time), :]
+        cidx = closest_index(self.traj_df['time'], frame_time)
+        if cidx is not None:
+            return self.traj_df.loc[cidx, :]
 
     def validate(self):
         assert self.experiment_path.exists(), 'experiment dir not exist'
@@ -115,8 +122,11 @@ class Loader:
         return self.trial_path / 'videos' / 'timestamps' / f'{CAMERAS[self.camera]}.csv'
 
 
-def closest_index(series, x):
-    return (series - x).abs().argsort()[0]
+def closest_index(series, x, min_dist=0.020):
+    diffs = (series - x).abs().dt.total_seconds()
+    d = diffs[diffs <= min_dist]
+    if len(d) > 0:
+        return d.argsort().reset_index(drop=True)[0]
 
 
 def get_experiments(*args, **kwargs):
