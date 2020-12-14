@@ -138,10 +138,10 @@ def get_experiments(*args, **kwargs):
     loaders = []
     for experiment, trial in df.index:
         try:
-            ld = Loader(experiment, int(trial), 'realtime', kwargs.get('experiment_dir'))
+            ld = Loader(experiment, int(trial), 'realtime', experiment_dir=kwargs.get('experiment_dir'))
             loaders.append(ld)
         except Exception as exc:
+            print(f'Error loading {experiment} trial{trial}; {exc}')
             continue
-            # print(f'Error loading {experiment} trial{trial}; {exc}')
     print(f'num loaders: {len(loaders)}')
     return loaders
