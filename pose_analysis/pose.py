@@ -43,7 +43,7 @@ class Analyzer:
                 self.compress_video()
             if self.output_video_path.with_suffix('.mp4').exists() and self.output_csv_path.exists():
                 print(f'video and csv already exist in {self.output_dir}')
-                return pd.read_csv(self.output_csv_path, index_col=0)
+                return pd.read_csv(self.output_csv_path, index_col=0, header=[0, 1])
 
         cap = cv2.VideoCapture(self.video_path.as_posix())
         res = []
