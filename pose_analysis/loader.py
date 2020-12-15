@@ -26,7 +26,8 @@ class Loader:
         self.trial_id = trial_id
         self.camera = camera
         self.video_path = video_path or self.get_video_path()
-
+        self.validate()
+        
         self.frames_ts = self.get_frames_timestamps()
         self.hits_df = self.get_hits()
         self.traj_df = self.get_bug_trajectory()
@@ -106,7 +107,7 @@ class Loader:
         return videos[0]
 
     def get_experiment_info(self):
-        return ExperimentAnalyzer.get_experiment_info(self.experiment_path)
+        return ExperimentAnalyzer.get_experiment_info(self.experiment_path / 'experiment.log')
 
     @property
     def experiment_path(self):

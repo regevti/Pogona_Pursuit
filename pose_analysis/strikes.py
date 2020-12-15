@@ -17,14 +17,17 @@ class StrikesAnalyzer:
         self.pose_df = Analyzer(self.loader.video_path).run_pose()
         self.xfs = []
 
-    def get_strikes_pose(self, n_frames_back=None):
+    def get_strikes_pose(self, n_frames_back=None, n_frames_forward=10):
         """Run pose estimation on hits frames"""
         n_frames_back = n_frames_back or NUM_FRAMES_BACK
 
         def first_frame(frame_id):
             return frame_id - n_frames_back if frame_id >= n_frames_back else 0
-
-        frames_groups = [list(range(first_frame(f), f + 1)) for f in self.loader.get_hits_frames()]
+        
+        def last_frame(frame_id):
+            return frame_id + n_frames_forward if frame_id < len(self.pose_df) - n_frames_forward else self.pose_df.index[-1]
+        
+        frames_groups = [list(range(first_frame(f), last_frame(f))) for f in self.loader.get_hits_frames()]
         return self.get_pose_estimation(frames_groups)
 
     def get_pose_estimation(self, frames: list):
