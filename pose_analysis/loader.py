@@ -125,11 +125,11 @@ class Loader:
         return self.trial_path / 'videos' / 'timestamps' / f'{CAMERAS[self.camera]}.csv'
 
 
-def closest_index(series, x, min_dist=0.020):
+def closest_index(series, x, min_dist=0.050):
     diffs = (series - x).abs().dt.total_seconds()
     d = diffs[diffs <= min_dist]
     if len(d) > 0:
-        return d.argsort().reset_index(drop=True)[0]
+        return d.index[d.argmin()]
 
 
 def get_experiments(*args, **kwargs):
