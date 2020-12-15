@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import cv2
 import yaml
+import subprocess
+import shutil
 from tqdm.auto import tqdm
 from dlclive import DLCLive, Processor
 from matplotlib.colors import TABLEAU_COLORS
@@ -14,6 +16,7 @@ EXPORTED_MODEL_PATH = DLC_PATH + '/exported-models/DLC_pogona_pursuit_resnet_50_
 PROBABILITY_THRESH = 0.85
 BODY_PARTS = ['nose', 'left_ear', 'right_ear']
 COLORS = list(TABLEAU_COLORS.values())
+
 
 class Analyzer:
     def __init__(self, video_path):
@@ -35,6 +38,13 @@ class Analyzer:
         """
         if frames:
             frames.sort()
+        if not frames:
+            if self.output_video_path.exists():
+                self.compress_video()
+            if self.output_video_path.with_suffix('.mp4').exists() and self.output_csv_path.exists():
+                print(f'video and csv already exist in {self.output_dir}')
+                return pd.read_csv(self.output_csv_path)
+
         cap = cv2.VideoCapture(self.video_path.as_posix())
         res = []
         num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -120,6 +130,18 @@ class Analyzer:
         s.sort_index(axis=1, level=0, inplace=True)
         return s
 
+    def compress_video(self):
+        """Run H265 compression on pose video and remove the input pose avi file"""
+        try:
+            print(f'start H265 compression for {self.output_video_path}')
+            vid_tmp = self.output_video_path.absolute().as_posix()
+            subprocess.run(['ffmpeg', '-i', vid_tmp, '-c:v', 'libx265',
+                            '-preset', 'fast', '-crf', '28', '-tag:v', 'hvc1',
+                            '-c:a', 'eac3', '-b:a', '224k', vid_tmp.replace('.avi', '.mp4')])
+            subprocess.run(['rm', '-f', vid_tmp])
+        except Exception as exc:
+            print(f'Error compressing video: {exc}')
+
     def validate_video(self):
         assert self.video_path.exists(), f'video {self.video_path.name} does not exist'
         assert self.video_path.suffix in ['.avi', '.mp4'], f'suffix {self.video_path.suffix} not supported'
@@ -132,11 +154,19 @@ class Analyzer:
         pass
 
     @property
-    def output_video_path(self):
+    def output_dir(self):
         output_dir = self.video_path.parent / self.model_name
         if not output_dir.exists():
             output_dir.mkdir(exist_ok=True, parents=True)
-        return (output_dir / f'{self.loader.camera}.avi')
+        return output_dir
+
+    @property
+    def output_csv_path(self):
+        return self.output_dir / f'{self.loader.camera}.csv'
+
+    @property
+    def output_video_path(self):
+        return self.output_dir / f'{self.loader.camera}.avi'
 
     @property
     def model_name(self):
