@@ -105,6 +105,9 @@ class Loader:
             raise Exception('found more than one video')
         return videos[0]
 
+    def get_experiment_info(self):
+        return ExperimentAnalyzer.get_experiment_info(self.experiment_path)
+
     @property
     def experiment_path(self):
         return self.experiment_dir / Path(self.experiment_name)
