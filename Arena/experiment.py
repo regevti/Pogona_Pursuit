@@ -17,8 +17,6 @@ from mqtt import MQTTPublisher
 from utils import datetime_string, mkdir, turn_display_on, turn_display_off, Serializer
 
 mqtt_client = MQTTPublisher()
-BUGS_EXPERIMENT_FIELDS = ['bug_speed', 'movement_type', 'is_use_predictions', 'time_between_bugs', 'reward_type',
-                          'reward_bugs', 'is_anticlockwise', 'bug_types', 'target_drift']
 
 
 @dataclass
@@ -26,31 +24,98 @@ class Experiment:
     name: str
     animal_id: str
     cameras: str
-    cache: RedisCache = field(default_factory=RedisCache, repr=False)
-    bug_types: list = field(default_factory=list)
-    trial_duration: int = 60
-    num_trials: int = 1
-    iti: int = 10
-    experiment_type: str = 'bugs'
-
-    bug_speed: int = None
-    movement_type: str = None
+    blocks: list = field(default_factory=list, repr=False)
+    time_between_blocks: int = config.time_between_blocks
     is_use_predictions: bool = False
-    time_between_bugs: int = None
-    reward_type: str = 'end_trial'
-    reward_bugs: list = None
-    is_anticlockwise: bool = False
-    target_drift: str = ''
-
-    media_url: str = ''
-
-    extra_time_recording: int = config.extra_time_recording
-    current_trial: int = field(default=1, repr=False)
-    pool: ThreadPool = field(default=None, repr=False)
-    threads_event: Event = field(default_factory=Event, repr=False)
+    cache: RedisCache = field(default_factory=RedisCache, repr=False)
 
     def __post_init__(self):
         self.name = f'{self.name}_{datetime_string()}'
+        self.blocks = [Block(i + 1, self.cameras, self.cache, self.experiment_path, **kwargs)
+                       for i, kwargs in enumerate(self.blocks)]
+
+    def __str__(self):
+        output = ''
+        for obj in get_arguments(self):
+            if obj in ['self', 'blocks', 'cache']:
+                continue
+            value = getattr(self, obj)
+            if isinstance(value, list):
+                value = ','.join(value)
+            output += f'{obj}: {value}\n'
+
+        for block in self.blocks:
+            output += str(block)
+
+        return output
+
+    def start(self):
+        """Main Function for starting an experiment"""
+        log(f'>> Experiment {self.name} started\n')
+        mkdir(self.experiment_path)
+        self.save_experiment_log()
+        self.init_experiment_cache()
+
+        for i, block in enumerate(self.blocks):
+            if i > 0:
+                time.sleep(self.time_between_blocks)
+            block.start()
+
+        time.sleep(3)
+        mqtt_client.publish_command('end_experiment')
+        return str(self)
+
+    def save(self, data):
+        """Save experiment arguments"""
+
+
+    def save_experiment_log(self):
+        with open(f'{self.experiment_path}/experiment.log', 'w') as f:
+            f.write(str(self))
+        with open(f'{self.experiment_path}/config.log', 'w') as f:
+            f.write(config_string())
+
+    def init_experiment_cache(self):
+        self.cache.set(CacheColumns.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
+        self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
+
+    @property
+    def experiment_path(self):
+        return f'{config.experiments_dir}/{self.name}'
+
+    @property
+    def experiment_duration(self):
+        return sum(b.block_duration for b in self.blocks) + self.time_between_blocks * (len(self.blocks) - 1)
+
+
+@dataclass
+class Block:
+    block_id: int
+    cameras: str
+    cache: RedisCache
+    experiment_path: str
+
+    num_trials: int = 1
+    trial_duration: int = 60
+    iti: int = 10
+    block_type: str = 'bugs'
+    bug_types: list = field(default_factory=list)
+    bug_speed: int = None
+    movement_type: str = None
+    reward_type: str = 'always'
+    reward_bugs: list = None
+    is_anticlockwise: bool = False
+    target_drift: str = ''
+    time_between_bugs: int = None
+    media_url: str = ''
+    is_use_predictions: bool = False
+
+    current_trial: int = field(default=1, repr=False)
+    pool: ThreadPool = field(default=None, repr=False)
+    threads_event: Event = field(default_factory=Event, repr=False)
+    extra_time_recording: int = config.extra_time_recording
+
+    def __post_init__(self):
         if isinstance(self.bug_types, str):
             self.bug_types = self.bug_types.split(',')
         if self.reward_bugs and isinstance(self.reward_bugs, str):
@@ -59,24 +124,22 @@ class Experiment:
             self.reward_bugs = self.bug_types
 
     def __str__(self):
-        output = ''
-        for obj in experiment_arguments():
-            if obj in ['self', 'cache', 'pool', 'current_trial', 'threads_event']:
-                continue
-            if self.is_media_experiment and obj in BUGS_EXPERIMENT_FIELDS:
+        output = f'\nBlock #{self.block_id}:\n'
+        for obj in get_arguments(self):
+            if obj in ['self', 'cache', 'pool', 'current_trial', 'threads_event', 'is_use_predictions', 'block_id',
+                       'cameras', 'experiment_path']:
                 continue
             value = getattr(self, obj)
             if isinstance(value, list):
                 value = ','.join(value)
             output += f'{obj}: {value}\n'
+
         return output
 
     def start(self):
-        """Main Function for starting an experiment"""
-        self.log(f'>> Experiment {self.name} started\n')
-        mkdir(self.experiment_path)
-        self.save_experiment_log()
-        self.init_experiment_cache()
+        log(f'>> Block #{self.block_id} started')
+        if self.is_always_reward:
+            self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.block_duration)
         self.clear_app_content()
         for i in range(self.num_trials):
             try:
@@ -87,14 +150,10 @@ class Experiment:
             except EndExperimentException:
                 self.clear_app_content()
                 self.end_trial()
-                self.log('>> experiment was stopped externally')
+                log('>> experiment was stopped externally')
                 return str(self)
 
-            self.log(self.trial_summary)
-
-        time.sleep(3)
-        mqtt_client.publish_command('end_experiment')
-        return str(self)
+            log(self.trial_summary)
 
     def run_trial(self):
         """Run trial flow"""
@@ -146,18 +205,6 @@ class Experiment:
 
         return pool
 
-    def save_experiment_log(self):
-        with open(f'{self.experiment_path}/experiment.log', 'w') as f:
-            f.write(str(self))
-        with open(f'{self.experiment_path}/config.log', 'w') as f:
-            f.write(config_string())
-
-    def init_experiment_cache(self):
-        self.cache.set(CacheColumns.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
-        self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
-        if self.is_always_reward:
-            self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.experiment_duration)
-
     def init_trial(self):
         mkdir(self.trial_path)
         turn_display_on()
@@ -179,12 +226,12 @@ class Experiment:
             mqtt_client.publish_command('init_bugs', self.bug_options)
 
         self.cache.set(CacheColumns.APP_ON, True)
-        self.trial_log(f'{self.experiment_type} initiated')
+        self.trial_log(f'{self.block_type} initiated')
 
     def end_app(self):
         self.clear_app_content()
         mqtt_client.publish_command('end_app_wait')
-        self.trial_log(f'{self.experiment_type} stopped')
+        self.trial_log(f'{self.block_type} stopped')
         turn_display_off()
 
     def clear_app_content(self):
@@ -211,6 +258,15 @@ class Experiment:
         self.pool.join()
 
     @property
+    def media_options(self):
+        return json.dumps({
+            'url': f'{config.management_url}/media/{self.media_url}'
+        })
+
+    def trial_log(self, msg):
+        log(f'>> Trial {self.current_trial} {msg}')
+
+    @property
     def bug_options(self):
         return json.dumps({
             'numOfBugs': 1,
@@ -226,52 +282,42 @@ class Experiment:
         })
 
     @property
-    def media_options(self):
-        return json.dumps({
-            'url': f'{config.management_url}/media/{self.media_url}'
-        })
-
-    @property
     def trial_summary(self):
-        log = f'Summary of Trial {self.current_trial}:\n'
+        log_string = f'Summary of Trial {self.current_trial}:\n'
         touches_file = Path(self.trial_path) / config.logger_files.get("touch", '')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)
-            log += f'  Number of touches on the screen: {len(touches_df)}\n'
+            log_string += f'  Number of touches on the screen: {len(touches_df)}\n'
             num_hits = len(touches_df.query("is_hit == True"))
-            log += f'  Number of successful hits: {num_hits}\n'
+            log_string += f'  Number of successful hits: {num_hits}\n'
             num_hits_rewarded = len(touches_df.query("is_hit == True & is_reward_bug == True"))
-            log += f'  Number of Rewarded hits: {num_hits_rewarded}'
+            log_string += f'  Number of Rewarded hits: {num_hits_rewarded}'
         else:
-            log += 'No screen strikes were recorded.'
+            log_string += 'No screen strikes were recorded.'
 
-        log += 2 * '\n'
+        log_string += 2 * '\n'
 
         if num_hits and self.reward_type == 'end_trial':
             mqtt_client.publish_event(config.subscription_topics['reward'], '')
 
-        return log
-
-    @staticmethod
-    def log(msg):
-        print(msg)
-        mqtt_client.publish_event(config.experiment_topic, msg)
-
-    def trial_log(self, msg):
-        self.log(f'>> Trial {self.current_trial} {msg}')
+        return log_string
 
     @property
-    def experiment_duration(self):
-        return round((self.num_trials * self.overall_trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
+    def is_media_experiment(self):
+        return self.block_type == 'media'
+
+    @property
+    def is_always_reward(self):
+        return self.reward_type == 'always'
 
     @property
     def overall_trial_duration(self):
         return self.trial_duration + 2 * self.extra_time_recording
 
     @property
-    def experiment_path(self):
-        return f'{config.experiments_dir}/{self.name}'
+    def block_duration(self):
+        return round((self.num_trials * self.overall_trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
 
     @property
     def trial_path(self):
@@ -281,17 +327,39 @@ class Experiment:
     def videos_path(self):
         return f'{self.trial_path}/videos'
 
-    @property
-    def is_media_experiment(self):
-        return self.experiment_type == 'media'
 
-    @property
-    def is_always_reward(self):
-        return self.reward_type == 'always'
+class ExperimentCache:
+    def __init__(self, cache_dir=None):
+        self.cache_dir = cache_dir or config.experiment_cache_path
+        mkdir(self.cache_dir)
+        self.saved_caches = self.get_saved_caches()
+
+    def load(self, name):
+        path = Path(self.get_cache_path(name))
+        assert path.exists(), f'experiment {name} does not exist'
+        with path.open('r') as f:
+            data = json.load(f)
+        return data
+
+    def save(self, data):
+        name = data.get('name')
+        with Path(self.get_cache_path(name)).open('w') as f:
+            json.dump(data, f)
+
+    def get_saved_caches(self):
+        return list(Path(self.cache_dir).glob('*.json'))
+
+    def get_cache_path(self, name):
+        return f"{self.cache_dir}/{name}.json"
 
 
 class EndExperimentException(Exception):
     """End Experiment"""
+
+
+def log(msg):
+    print(msg)
+    mqtt_client.publish_event(config.experiment_topic, msg)
 
 
 def config_string():
@@ -307,9 +375,9 @@ def config_string():
     return s
 
 
-def experiment_arguments():
+def get_arguments(cls):
     """Get the arguments of the Experiment class"""
-    sig = inspect.signature(Experiment.__init__)
+    sig = inspect.signature(cls.__init__)
     return sig.parameters.keys()
 
 

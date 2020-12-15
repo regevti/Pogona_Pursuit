@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response, request, send_from_directory
+from flask import Flask, render_template, Response, request, send_from_directory, jsonify
 import PySpin
 import cv2
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 from utils import titlize, turn_display_on, turn_display_off
 from cache import RedisCache, CacheColumns
 from mqtt import MQTTPublisher
-from experiment import Experiment
+from experiment import Experiment, ExperimentCache
 from arena import SpinCamera, record, capture_image, filter_cameras, display_info
 
 app = Flask(__name__)
@@ -20,12 +20,14 @@ mqtt_client = MQTTPublisher()
 def index():
     """Video streaming ."""
     print(f'current dir: {os.getcwd()}')
+    cached_experiments = [c.stem for c in Path(config.experiment_cache_path).glob('*.json')]
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
     return render_template('index.html', cameras=config.camera_names.keys(), exposure=config.exposure_time,
                            config=app_config, acquire_stop={k: titlize(k) for k in config.acquire_stop_options.keys()},
                            reward_types=config.reward_types, experiment_types=config.experiment_types,
-                           media_files=list_media())
+                           media_files=list_media(), max_blocks=config.max_blocks, cached_experiments=cached_experiments)
+
 
 @app.route('/record', methods=['POST'])
 def record_video():
@@ -42,6 +44,21 @@ def start_experiment():
     data = request.json
     e = Experiment(**data)
     return Response(e.start())
+
+
+@app.route('/save_experiment', methods=['POST'])
+def save_experiment():
+    """Set Experiment Name"""
+    data = request.json
+    ExperimentCache().save(data)
+    return Response('ok')
+
+
+@app.route('/load_experiment/<name>')
+def load_experiment(name):
+    """Load Cached Experiment"""
+    data = ExperimentCache().load(name)
+    return jsonify(data)
 
 
 @app.route('/get_experiment')
