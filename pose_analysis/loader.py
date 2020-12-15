@@ -53,7 +53,8 @@ class Loader:
             cidx = closest_index(self.frames_ts, hit_ts)
             if cidx is None:
                 print('unable to find frame for hit')
-                frames.append(cidx)
+                continue
+            frames.append(cidx)
         return frames
 
     def get_bug_position_at_time(self, t) -> pd.DataFrame:
