@@ -14,7 +14,7 @@ NUM_FRAMES_BACK = 60 * 5
 class StrikesAnalyzer:
     def __init__(self, loader: Loader = None, experiment_name=None, trial_id=None, camera=None):
         self.loader = loader or Loader(experiment_name, trial_id, camera)
-        self.pose_analyzer = Analyzer(self.loader.video_path)
+        self.pose_df = Analyzer(self.loader.video_path).run_pose()
         self.xfs = []
 
     def get_strikes_pose(self, n_frames_back=None):
@@ -29,27 +29,26 @@ class StrikesAnalyzer:
 
     def get_pose_estimation(self, frames: list):
         flat_frames = sorted([item for sublist in frames for item in sublist])
-        res_df = self.pose_analyzer.run_pose(flat_frames, is_save_frames=True)
         for frame_group in frames:
-            self.xfs.append(res_df.loc[frame_group, :])
+            self.xfs.append(self.pose_df.loc[frame_group, :])
         return self.xfs
 
-    def play_strike(self, xf: pd.DataFrame, n=20):
-        frames2plot = xf.index[-n:]
-        cols = 3
-        rows = int(np.ceil(len(frames2plot) / cols))
-        fig, axes = plt.subplots(rows, cols, figsize=(20, 5 * rows))
-        axes = axes.flatten()
-        for i, frame_id in enumerate(frames2plot):
-            frame = self.pose_analyzer.saved_frames.get(frame_id)
-            if frame is None:
-                continue
-            axes[i].imshow(frame, aspect="auto")
-            for part in BODY_PARTS:
-                axes[i].scatter(xf.loc[frame_id, part].x, xf.loc[frame_id, part].y)
-            axes[i].set_title(frame_id)
-        fig.tight_layout()
-        plt.show()
+    # def play_strike(self, xf: pd.DataFrame, n=20):
+    #     frames2plot = xf.index[-n:]
+    #     cols = 3
+    #     rows = int(np.ceil(len(frames2plot) / cols))
+    #     fig, axes = plt.subplots(rows, cols, figsize=(20, 5 * rows))
+    #     axes = axes.flatten()
+    #     for i, frame_id in enumerate(frames2plot):
+    #         frame = self.pose_analyzer.saved_frames.get(frame_id)
+    #         if frame is None:
+    #             continue
+    #         axes[i].imshow(frame, aspect="auto")
+    #         for part in BODY_PARTS:
+    #             axes[i].scatter(xf.loc[frame_id, part].x, xf.loc[frame_id, part].y)
+    #         axes[i].set_title(frame_id)
+    #     fig.tight_layout()
+    #     plt.show()
 
     def ballistic_analysis(self):
         res = []
