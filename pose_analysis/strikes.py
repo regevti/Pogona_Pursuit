@@ -78,23 +78,22 @@ class StrikesAnalyzer:
         xc, yc, _ = fit_circle(self.loader.traj_df.x, - self.loader.traj_df.y)
         vs = []
         for i, m in self.loader.hits_df.iterrows():
-            m = m.copy().reset_index(drop=True)
+            m = m.copy()
             m[['bug_x', 'x']] = m[['bug_x', 'x']] - xc
             m[['bug_y', 'y']] = -m[['bug_y', 'y']] - yc
 
-            ths = theta(m.bug_x, m.bug_y)
-            ths = ths - np.pi / 2
-            for i, th in enumerate(ths):
-                r = np.array(((np.cos(th), -np.sin(th)),
-                              (np.sin(th), np.cos(th))))
-                bug_u = np.array([m.bug_x[i], m.bug_y[i]])
-                u = np.array([m.x[i], m.y[i]]) - bug_u
-                xr = r.dot(np.array([1, 0]))
-                yr = r.dot(np.array([0, 1]))
-                v = np.array([np.dot(projection(u, xr), xr), np.dot(projection(u, yr), yr)])
-                if np.abs(v[0]) > 1000 or np.abs(v[1]) > 1000:
-                    continue
-                vs.append(v)
+            th = theta(m.bug_x, m.bug_y)
+            th = th - np.pi / 2
+            r = np.array(((np.cos(th), -np.sin(th)),
+                          (np.sin(th), np.cos(th))))
+            bug_u = np.array([m.bug_x[i], m.bug_y[i]])
+            u = np.array([m.x[i], m.y[i]]) - bug_u
+            xr = r.dot(np.array([1, 0]))
+            yr = r.dot(np.array([0, 1]))
+            v = np.array([np.dot(projection(u, xr), xr), np.dot(projection(u, yr), yr)])
+            if np.abs(v[0]) > 1000 or np.abs(v[1]) > 1000:
+                continue
+            vs.append(v)
 
         vs = pd.DataFrame(vs, columns=['x', 'y'])
         return vs
