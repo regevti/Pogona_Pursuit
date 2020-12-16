@@ -77,7 +77,7 @@ class StrikesAnalyzer:
 
         xc, yc, _ = fit_circle(self.loader.traj_df.x, - self.loader.traj_df.y)
         vs = []
-        for i, m in enumerate(self.loader.hits_df):
+        for i, m in self.loader.hits_df.iterrows():
             m = m.copy().reset_index(drop=True)
             m[['bug_x', 'x']] = m[['bug_x', 'x']] - xc
             m[['bug_y', 'y']] = -m[['bug_y', 'y']] - yc
