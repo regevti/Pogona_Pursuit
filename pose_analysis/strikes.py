@@ -86,8 +86,8 @@ class StrikesAnalyzer:
             th = th - np.pi / 2
             r = np.array(((np.cos(th), -np.sin(th)),
                           (np.sin(th), np.cos(th))))
-            bug_u = np.array([m.bug_x[i], m.bug_y[i]])
-            u = np.array([m.x[i], m.y[i]]) - bug_u
+            bug_u = np.array([m.bug_x, m.bug_y])
+            u = np.array([m.x, m.y]) - bug_u
             xr = r.dot(np.array([1, 0]))
             yr = r.dot(np.array([0, 1]))
             v = np.array([np.dot(projection(u, xr), xr), np.dot(projection(u, yr), yr)])
