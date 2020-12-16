@@ -10,17 +10,20 @@ from scipy.signal import find_peaks
 from loader import Loader
 from scipy import optimize
 
-NUM_FRAMES_BACK = 60 * 5
+NUM_FRAMES_BACK = 200
 
 
 class StrikesAnalyzer:
-    def __init__(self, loader: Loader = None, experiment_name=None, trial_id=None, camera=None):
+    def __init__(self, loader: Loader = None, experiment_name=None, trial_id=None, camera=None,
+                 n_frames_back=None, n_frames_forward=10):
         self.loader = loader or Loader(experiment_name, trial_id, camera)
         self.pose_df = Analyzer(self.loader.video_path).run_pose()
         self.xfs = []
+        self.run_strikes_pose(n_frames_back, n_frames_forward)
 
-    def get_strikes_pose(self, n_frames_back=None, n_frames_forward=10):
+    def run_strikes_pose(self, n_frames_back=None, n_frames_forward=10):
         """Run pose estimation on hits frames"""
+        self.xfs = []
         n_frames_back = n_frames_back or NUM_FRAMES_BACK
 
         def first_frame(frame_id):
@@ -30,13 +33,9 @@ class StrikesAnalyzer:
             return frame_id + n_frames_forward if frame_id < len(self.pose_df) - n_frames_forward else self.pose_df.index[-1]
         
         frames_groups = [list(range(first_frame(f), last_frame(f))) for f in self.loader.get_hits_frames()]
-        return self.get_pose_estimation(frames_groups)
-
-    def get_pose_estimation(self, frames: list):
-        flat_frames = sorted([item for sublist in frames for item in sublist])
-        for frame_group in frames:
+        flat_frames = sorted([item for sublist in frames_groups for item in sublist])
+        for frame_group in flat_frames:
             self.xfs.append(self.pose_df.loc[frame_group, :])
-        return self.xfs
 
     # def play_strike(self, xf: pd.DataFrame, n=20):
     #     frames2plot = xf.index[-n:]
