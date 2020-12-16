@@ -71,31 +71,39 @@ class StrikesAnalyzer:
                 res.append(PD / MD)
         return res
 
-    def circle(self) -> pd.DataFrame:
-        theta = lambda x, y: np.arctan2(y, x)
-        projection = lambda x, y: y * np.dot(y, x) / np.dot(y, y)
+    def transform_circle(self) -> pd.DataFrame:
+        """Transform the (x,y) coordinates into circular coordinates in which the bug position while hit is
+        the center of axis. Return data frame with the headers: x,y - that represent the transformed hit position,
+        start_x, start_y - bug position when lizard started leap towards bug."""
+        x_center, y_center, _ = fit_circle(self.loader.traj_df.x, -self.loader.traj_df.y)
 
-        xc, yc, _ = fit_circle(self.loader.traj_df.x, - self.loader.traj_df.y)
-        vs = []
-        for i, m in self.loader.hits_df.iterrows():
-            m = m.copy()
-            m[['bug_x', 'x']] = m[['bug_x', 'x']] - xc
-            m[['bug_y', 'y']] = -m[['bug_y', 'y']] - yc
-
-            th = theta(m.bug_x, m.bug_y)
+        def project(cx, cy, x, y) -> (np.ndarray, None):
+            cx = cx - x_center
+            x = x - x_center
+            cy = -cy - y_center
+            y = -y - y_center
+            th = np.arctan2(cx, cy)
             th = th - np.pi / 2
             r = np.array(((np.cos(th), -np.sin(th)),
                           (np.sin(th), np.cos(th))))
-            bug_u = np.array([m.bug_x, m.bug_y])
-            u = np.array([m.x, m.y]) - bug_u
+            u = np.array([x, y]) - np.array([cx, cy])
             xr = r.dot(np.array([1, 0]))
             yr = r.dot(np.array([0, 1]))
+            projection = lambda x1, y1: y1 * np.dot(y1, x1) / np.dot(y1, y1)
             v = np.array([np.dot(projection(u, xr), xr), np.dot(projection(u, yr), yr)])
             if np.abs(v[0]) > 1000 or np.abs(v[1]) > 1000:
-                continue
-            vs.append(v)
+                return np.array([np.nan, np.nan])
+            return v
 
-        vs = pd.DataFrame(vs, columns=['x', 'y'])
+        vs = []
+        for i, row in self.loader.hits_df.iterrows():
+            start_frame = self.get_strike_start_frame(self.xfs[i])
+            s = self.loader.bug_data_for_frame(start_frame)
+            hit = project(row.bug_x, row.bug_y, row.x, row.y)
+            bug_start = project(row.bug_x, row.bug_y, s.x, s.y)
+            vs.append(np.concatenate([hit, bug_start]))
+
+        vs = pd.DataFrame(vs, columns=['x', 'y', 'start_x', 'start_y'])
         return vs
 
     @staticmethod
