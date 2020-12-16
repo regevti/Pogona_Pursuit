@@ -34,8 +34,8 @@ class StrikesAnalyzer:
         
         frames_groups = [list(range(first_frame(f), last_frame(f))) for f in self.loader.get_hits_frames()]
         for frame_group in frames_groups:
-            flat_frames = sorted([item for sublist in frame_group for item in sublist])
-            self.xfs.append(self.pose_df.loc[flat_frames, :])
+            # flat_frames = sorted([item for sublist in frame_group for item in sublist])
+            self.xfs.append(self.pose_df.loc[frame_group, :])
 
     # def play_strike(self, xf: pd.DataFrame, n=20):
     #     frames2plot = xf.index[-n:]
