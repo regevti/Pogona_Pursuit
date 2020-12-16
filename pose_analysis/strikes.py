@@ -75,6 +75,7 @@ class StrikesAnalyzer:
         the center of axis. Return data frame with the headers: x,y - that represent the transformed hit position,
         start_x, start_y - bug position when lizard started leap towards bug."""
         x_center, y_center, _ = fit_circle(self.loader.traj_df.x, -self.loader.traj_df.y)
+        print(f'center: ({x_center}, {y_center})')
 
         def project(cx, cy, x, y) -> (np.ndarray, None):
             cx = cx - x_center
