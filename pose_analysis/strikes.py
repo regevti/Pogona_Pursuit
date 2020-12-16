@@ -6,7 +6,9 @@ import pandas as pd
 import cv2
 import re
 from pose import Analyzer, BODY_PARTS
+from scipy.signal import find_peaks
 from loader import Loader
+from scipy import optimize
 
 NUM_FRAMES_BACK = 60 * 5
 
@@ -57,21 +59,88 @@ class StrikesAnalyzer:
         res = []
         hits_df = self.loader.hits_df
         for i, xf in enumerate(self.xfs):
-            strike_start_time = self.loader.frames_ts[self.strike_start_index(xf)]
-            traj_time = self.loader.traj_df.time.dt.tz_convert('utc').dt.tz_localize(None)
-            closest_hit_index = (traj_time - pd.to_datetime(strike_start_time)).abs().argsort()[0]
-            bug_start_pos = self.loader.traj_df.loc[closest_hit_index, :]
-            PD = distance(bug_start_pos.x, hits_df.loc[i, 'x'], bug_start_pos.y, hits_df.loc[i, 'y'])
-            MD = distance(hits_df.loc[i, 'bug_x'], hits_df.loc[i, 'x'],
-                          hits_df.loc[i, 'bug_y'], hits_df.loc[i, 'y'])
-            res.append(PD / MD)
+            start_frame = self.get_strike_start_frame(xf)
+            if start_frame is not None:
+                strike_start_time = self.loader.frames_ts[start_frame]
+                traj_time = self.loader.traj_df.time.dt.tz_convert('utc').dt.tz_localize(None)
+                closest_hit_index = (traj_time - pd.to_datetime(strike_start_time)).abs().argsort()[0]
+                bug_start_pos = self.loader.traj_df.loc[closest_hit_index, :]
+                PD = distance(bug_start_pos.x, hits_df.loc[i, 'x'], bug_start_pos.y, hits_df.loc[i, 'y'])
+                MD = distance(hits_df.loc[i, 'bug_x'], hits_df.loc[i, 'x'],
+                              hits_df.loc[i, 'bug_y'], hits_df.loc[i, 'y'])
+                res.append(PD / MD)
         return res
 
+    def circle(self) -> pd.DataFrame:
+        theta = lambda x, y: np.arctan2(y, x)
+        projection = lambda x, y: y * np.dot(y, x) / np.dot(y, y)
+
+        xc, yc, _ = fit_circle(self.loader.traj_df.x, - self.loader.traj_df.y)
+        vs = []
+        for i, m in enumerate(self.loader.hits_df):
+            m = m.copy().reset_index(drop=True)
+            m[['bug_x', 'x']] = m[['bug_x', 'x']] - xc
+            m[['bug_y', 'y']] = -m[['bug_y', 'y']] - yc
+
+            ths = theta(m.bug_x, m.bug_y)
+            ths = ths - np.pi / 2
+            for i, th in enumerate(ths):
+                r = np.array(((np.cos(th), -np.sin(th)),
+                              (np.sin(th), np.cos(th))))
+                bug_u = np.array([m.bug_x[i], m.bug_y[i]])
+                u = np.array([m.x[i], m.y[i]]) - bug_u
+                xr = r.dot(np.array([1, 0]))
+                yr = r.dot(np.array([0, 1]))
+                v = np.array([np.dot(projection(u, xr), xr), np.dot(projection(u, yr), yr)])
+                if np.abs(v[0]) > 1000 or np.abs(v[1]) > 1000:
+                    continue
+                vs.append(v)
+
+        vs = pd.DataFrame(vs, columns=['x', 'y'])
+        return vs
+
     @staticmethod
-    def strike_start_index(xf: pd.DataFrame, th=2.5):
-        dy = xf['nose'].y.diff()
-        return xf[dy > th].index[0]
+    def get_strike_start_frame(xf: pd.DataFrame, th=1.5, grace=3, min_leap=20) -> (int, None):
+        y = xf['nose'].y
+        peaks, _ = find_peaks(y.to_numpy(), height=840, distance=10)
+        hit_idx = y.index[peaks][-1] if len(peaks) > 0 else y.index[-1]
+        dy = y.diff()
+        grace_count = 0
+        first_idx = y.index[0]
+        for r in np.arange(hit_idx, dy.index[0], -1):
+            if dy[r] < th:
+                grace_count += 1
+                if grace_count < grace:
+                    continue
+                first_idx = r
+                break
+            else:
+                grace_count = 0
+        if y[hit_idx] - y[first_idx] < min_leap:
+            return
+        return first_idx
 
 
 def distance(x1, y1, x2, y2):
     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+
+def fit_circle(x, y):
+    def calc_R(xc, yc):
+        """ calculate the distance of each 2D points from the center (xc, yc) """
+        return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
+
+    def f_2(c):
+        """ calculate the algebraic distance between the data points and the mean circle centered at c=(xc, yc) """
+        Ri = calc_R(*c)
+        return Ri - Ri.mean()
+
+    center_estimate = np.mean(x), np.min(y)
+    center_2, ier = optimize.leastsq(f_2, center_estimate)
+
+    xc_2, yc_2 = center_2
+    Ri_2 = calc_R(*center_2)
+    R_2 = Ri_2.mean()
+    #     residu_2 = sum((Ri_2 - R_2) ** 2)
+
+    return xc_2, yc_2, R_2
