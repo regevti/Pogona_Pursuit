@@ -75,8 +75,9 @@ class StrikesAnalyzer:
         the center of axis. Return data frame with the headers: x,y - that represent the transformed hit position,
         start_x, start_y - bug position when lizard started leap towards bug."""
         x_center, y_center, _ = fit_circle(self.loader.traj_df.x, -self.loader.traj_df.y)
+        print(f' center: ({x_center}, {y_center}), is_anti_clockwise: {self.loader.info.get("is_anticlockwise")}')
 
-        def project(cx, cy, x, y) -> (np.ndarray, None):
+        def project(cx, cy, x, y) -> np.ndarray:
             cx = cx - x_center
             x = x - x_center
             cy = -cy - y_center
@@ -94,12 +95,24 @@ class StrikesAnalyzer:
                 return np.array([np.nan, np.nan])
             return v
 
+        def project2(cx, cy, x, y):
+            cx = cx - x_center
+            x = x - x_center
+            cy = -cy - y_center
+            y = -y - y_center
+            theta = lambda x1, y1: np.arctan2(x1, y1)
+            rho = lambda x1, y1: np.sqrt(x1**2 + y1**2)
+            return np.array([theta(x, y) -theta(cx,cy), rho(x, y) - rho(cx, cy)])
+
         vs = []
         for i, row in self.loader.hits_df.iterrows():
             start_frame = self.get_strike_start_frame(self.xfs[i])
             s = self.loader.bug_data_for_frame(start_frame)
-            hit = project(row.bug_x, row.bug_y, row.x, row.y)
-            bug_start = project(row.bug_x, row.bug_y, s.x, s.y)
+            # hit = np.array([row.x - x_center, -row.y - y_center])
+            # bug_start = np.array([s.x - x_center, -s.y - y_center])
+            # bug = np.array([row.bug_x - x_center, -row.bug_y - y_center])
+            hit = project2(row.bug_x, row.bug_y, row.x, row.y)
+            bug_start = project2(row.bug_x, row.bug_y, s.x, s.y)
             vs.append(np.concatenate([hit, bug_start]))
 
         vs = pd.DataFrame(vs, columns=['x', 'y', 'start_x', 'start_y'])

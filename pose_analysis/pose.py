@@ -6,6 +6,7 @@ import yaml
 import subprocess
 import shutil
 from tqdm.auto import tqdm
+import matplotlib.pyplot as plt
 from dlclive import DLCLive, Processor
 from matplotlib.colors import TABLEAU_COLORS
 from loader import Loader
@@ -29,7 +30,7 @@ class Analyzer:
         self.validate_video()
         self.dlc_config = self.load_dlc_config()
 
-    def run_pose(self, frames=None, is_save_frames=False) -> pd.DataFrame:
+    def run_pose(self, frames=None, is_save_frames=False, load_only=False) -> pd.DataFrame:
         """
         Run Pose Estimation
         :param frames: List of frames IDs needed to be analyzed (ignore the rest)
@@ -43,6 +44,8 @@ class Analyzer:
                 self.compress_video()
             if self.output_video_path.with_suffix('.mp4').exists() and self.output_csv_path.exists():
                 return pd.read_csv(self.output_csv_path, index_col=0, header=[0, 1])
+            elif load_only:
+                raise Exception(f'cannot find video for {self.loader.experiment_name}, trial{self.loader.trial_id}')
 
         cap = cv2.VideoCapture(self.video_path.as_posix())
         res = []
@@ -76,10 +79,22 @@ class Analyzer:
 
         self.video_out.release()
         self.video_out = None
+        self.compress_video()
         if res:
             df = pd.concat(res)
             df.to_csv(self.output_video_path.parent / (self.output_video_path.stem + '.csv'))
             return df
+
+    def position_map(self, part='nose'):
+        df = self.run_pose(load_only=True)[part]
+        df.dropna(inplace=True)
+        plt.figure(figsize=(10, 10))
+        hist = plt.hist2d(df.x, df.y, range=[[0, 1000], [0, 950]], bins=50) # , cmap='BuPu'
+        plt.title(f"{self.loader.experiment_name}, trial{self.loader.trial_id}\nscreen here")
+        plt.colorbar()
+        info_st = '\n'.join([f'{k}: {v}' for k, v in self.loader.info.items()])
+        plt.text(0, 0, str(info_st),wrap=True, ha='left', fontsize=14, color='w')
+        return hist[0]
 
     def write_frame(self, frame: np.ndarray, frame_id: int, pred_df: pd.DataFrame):
         try:

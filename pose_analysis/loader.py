@@ -28,7 +28,8 @@ class Loader:
         self.camera = camera
         self.video_path = video_path or self.get_video_path()
         self.validate()
-        
+        self.info = self.get_experiment_info()
+
         self.frames_ts = self.get_frames_timestamps()
         self.hits_df = self.get_hits()
         self.traj_df = self.get_bug_trajectory()
