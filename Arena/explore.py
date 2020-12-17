@@ -3,8 +3,9 @@ from flask import Flask, render_template, Response, request
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-
+import numpy as np
 import pandas as pd
+import seaborn as sns
 from dateutil import parser as date_parser
 
 import config
@@ -25,7 +26,9 @@ def experiment_results():
     df = ea.get_experiments()
     if len(df) < 1:
         return Response('No experiments found')
-    return Response(df.to_html(classes='table-responsive'))
+
+    return Response(render(df))
+    # return Response(df.to_html(classes='table-responsive'))
 
 
 @dataclass
@@ -74,6 +77,7 @@ class ExperimentAnalyzer:
             trial_df = self.get_screen_touches(trial_path)
             trial_meta = dict()
             trial_meta['trial'] = int(re.match(r'trial(\d+)', trial_path.stem)[1])
+            trial_meta['temperature'] = self.get_temperature(trial_path)
             trial_meta['trial_start'] = self.get_trial_start(trial_path, info, trial_meta['trial'])
             for k, v in trial_meta.items():
                 trial_df[k] = v if len(trial_df) > 1 else [v]
@@ -93,6 +97,16 @@ class ExperimentAnalyzer:
             res = pd.read_csv(touches_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
         return res
 
+    @staticmethod
+    def get_temperature(trial_path: Path) -> pd.DataFrame:
+        res = pd.DataFrame()
+        temp_path = trial_path / 'temperature.csv'
+        if not temp_path.exists():
+            return np.nan
+        res = pd.read_csv(temp_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
+        temperature = res['0'].mean()
+        return temperature
+
     def get_trial_start(self, trial_path: Path, info: dict, trial_id: int) -> (datetime, None):
         """Get start time for a trial based on trajectory csv's first record or if not exists, based on calculating
         trial start using meta data such as trial_duration, ITI, etc.."""
@@ -110,27 +124,28 @@ class ExperimentAnalyzer:
         res = pd.read_csv(traj_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
         if len(res) < 1:
             return _calculate_trial_start_from_meta()
+        elif res['time'].dtype.name == 'object':
+            res['time'] = pd.to_datetime(res['time'], unit='ms')
         return res['time'][0]
 
     @staticmethod
     def group_by_experiment_and_trial(res_df: pd.DataFrame) -> pd.DataFrame:
-        group = lambda x: x.groupby(['experiment', 'trial'])
-        to_percent = lambda x: (x.fillna(0) * 100).map('{:.1f}%'.format)
         exp_group = group(res_df)
         exp_df = exp_group[['animal_id']].first()
 
-        num_strikes = exp_group['is_hit'].count()
-        exp_df['num_of_strikes'] = num_strikes
-        exp_df['strike_accuracy'] = to_percent(group(res_df.query('is_hit==1'))['is_hit'].count() / num_strikes)
-        exp_df['reward_accuracy'] = to_percent(
-            group(res_df.query('is_reward_bug==1'))['is_reward_bug'].count() / num_strikes)
+        n_strikes = exp_group['is_hit'].count()
+        n_hits = group(res_df.query('is_hit==1'))['is_hit'].count()
+        n_hits_reward = group(res_df.query('is_hit==1&is_reward_bug==1'))['is_reward_bug'].count()
+        exp_df['num_of_strikes'] = n_strikes
+        exp_df['strike_accuracy'] = to_percent(n_hits / n_strikes)
+        exp_df['reward_accuracy'] = to_percent(n_hits_reward / n_hits)
 
         first_strikes_times = remove_tz(exp_group['time'].first())
         exp_df['trial_start'] = remove_tz(exp_group['trial_start'].first())
         exp_df['time_to_first_strike'] = (first_strikes_times - exp_df['trial_start']).astype('timedelta64[s]')
         exp_df['trial_start'] = localize_dt(exp_df['trial_start'])
 
-        META_COLS = ['bug_speed', 'movement_type', 'bug_types']
+        META_COLS = ['bug_speed', 'movement_type', 'bug_types', 'temperature']
         exp_cols = [x for x in META_COLS if x in res_df.columns]
         exp_df = pd.concat([exp_df, exp_group[exp_cols].first()], axis=1)
         exp_df = exp_df.sort_values(by=['trial_start', 'trial'])
@@ -186,9 +201,51 @@ class ExperimentAnalyzer:
         return info
 
 
+def render(df):
+    """Convert experiments DF to styled HTML"""
+    cm = sns.light_palette("green", as_cmap=True)
+    # Set CSS properties for th elements in dataframe
+    th_props = [
+        ('font-size', '14px'),
+        ('text-align', 'center'),
+        ('font-weight', 'bold'),
+        ('color', '#6d6d6d'),
+        ('background-color', '#f7f7f9')
+    ]
+    # Set CSS properties for td elements in dataframe
+    td_props = [
+        ('font-size', '14px'),
+        ('text-align', 'center'),
+    ]
+    # Set table styles
+    styles = [
+        dict(selector="th", props=th_props),
+        dict(selector="td", props=td_props)
+    ]
+    # .applymap(color_high, ['num_of_strikes']) \
+    return df.style.background_gradient(cmap=cm, subset=['num_of_strikes', 'strike_accuracy', 'reward_accuracy',
+                                                       'temperature']) \
+        .format({'strike_accuracy': "{:.0%}",
+                 'reward_accuracy': "{:.0%}",
+                 'time_to_first_strike': "{:.1f}",
+                 'temperature': "{:.2f}"}, na_rep="-") \
+        .set_table_styles(styles).render()
+
+
 def remove_tz(col):
     return pd.to_datetime(col, utc=True).dt.tz_convert('utc').dt.tz_localize(None)
 
 
 def localize_dt(col: pd.Series):
     return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def group(df: pd.DataFrame):
+    """Group-by experiment and trial"""
+    return df.groupby(['experiment', 'trial'])
+
+
+def to_percent(x: pd.Series) -> pd.Series:
+    x.fillna(0, inplace=True)
+    return x
+    # return x.map(lambda c: c * 100)
