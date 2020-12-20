@@ -19,6 +19,12 @@
             <input type="number" class="form-control" id="numBlocks" value="1" required>
         </div>
     </div>
+    <div class="form-group row pr-3">
+        <label for="timeBetweenBlocks" class="col col-form-label">Time Between Blocks</label>
+        <div class="col-sm-5">
+            <input type="number" class="form-control" id="timeBetweenBlocks" value="300" required>
+        </div>
+    </div>
 
     <div id="accordion">
         {% for i in range(1, 20) %}
@@ -36,7 +42,7 @@
                     <div class="form-group row pr-3">
                         <label for="experimentNumTrials{{i}}" class="col col-form-label">Number of Trials</label>
                         <div class="col-sm-5">
-                            <input type="number" class="form-control" id="experimentNumTrials{{i}}" required>
+                            <input type="number" class="form-control" id="experimentNumTrials{{i}}" value="1" required>
                         </div>
                     </div>
                     <div class="form-group row pr-3">
@@ -56,7 +62,7 @@
                     <div class="form-group row pr-3 bugs-options{{i}}">
                         <label for="timeBetweenBugs{{i}}" class="col col-form-label">Time Between Bugs [sec]:</label>
                         <div class="col-sm-5">
-                            <input type="number" class="form-control" id="timeBetweenBugs{{i}}" value="2" required>
+                            <input type="number" class="form-control" id="timeBetweenBugs{{i}}" value="2">
                         </div>
                     </div>
                     <div class="form-group row pr-3">
@@ -128,7 +134,7 @@
                     <div class="form-group row pr-3 bugs-options{{i}}">
                         <label for="bugSpeed{{i}}" class="col col-form-label">Bug Speed:</label>
                         <div class="col-sm-5">
-                            <input type="number" class="form-control" id="bugSpeed{{i}}" value="2" required>
+                            <input type="number" class="form-control" id="bugSpeed{{i}}" value="2">
                         </div>
                     </div>
                     <div class="form-group row pr-3 media-options{{i}}" style="display: none">

@@ -153,7 +153,8 @@
       params = {
         name: $("#experimentName").val(),
         animal_id: $("#animalId").val(),
-        is_use_predictions: $(`#use_predictions${i}`).is(":checked"),
+        is_use_predictions: $(`#use_predictions`).is(":checked"),
+        time_between_blocks: Number($("#timeBetweenBlocks").val()),
         cameras: getCheckedCameras(),
         blocks: getBlocks()
       }
@@ -202,7 +203,7 @@
       return fields
     }
 
-    const blockNumericalFields = ['num_trials', 'trial_duration', 'bug_speed', 'time_between_bugs']
+    const blockNumericalFields = ['num_trials', 'trial_duration', 'bug_speed', 'time_between_bugs', 'iti']
     const blockCheckFields = ['is_anticlockwise']
 
     function getBlocks() {
