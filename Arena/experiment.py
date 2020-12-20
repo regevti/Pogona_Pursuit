@@ -138,6 +138,7 @@ class Block:
 
     def start(self):
         log(f'>> Block #{self.block_id} started')
+        mkdir(self.block_path)
         if self.is_always_reward:
             self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.block_duration)
         self.clear_app_content()
@@ -320,8 +321,12 @@ class Block:
         return round((self.num_trials * self.overall_trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
 
     @property
+    def block_path(self):
+        return f'{self.experiment_path}/block{self.block_id}'
+
+    @property
     def trial_path(self):
-        return f'{self.experiment_path}/trial{self.current_trial}'
+        return f'{self.block_path}/trial{self.current_trial}'
 
     @property
     def videos_path(self):
