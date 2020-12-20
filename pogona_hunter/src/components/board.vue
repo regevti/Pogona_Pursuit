@@ -269,6 +269,7 @@ canvas {
   background: #e8eaf6;
   position: absolute;
   bottom: 0;
+  top: auto;
 }
 
 </style>
