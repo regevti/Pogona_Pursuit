@@ -73,8 +73,8 @@
         <label for="movementTypeSelect" class="col col-form-label">Movement Type</label>
         <div class="col">
             <select id="movementTypeSelect" class="form-control col">
-                {% for movementType in config.get('movementTypes', []) %}
-                    <option value="{{movementType}}">{{movementType}}</option>
+                {% for value, label in config.get('movementTypes', []).items() %}
+                    <option value="{{value}}">{{label}}</option>
                 {% endfor %}
             </select>
         </div>
