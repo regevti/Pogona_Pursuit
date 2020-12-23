@@ -210,7 +210,7 @@ class Block:
     def init_trial(self):
         mkdir(self.trial_path)
         try:
-            requests.get(f'{config.management_url}/display/on')
+            requests.get('http://localhost:5000/display/on')
         except Exception as exc:
             print(f'error turning off screen: {exc}')
         mqtt_client.publish_command('led_light', 'on')
@@ -238,7 +238,7 @@ class Block:
         mqtt_client.publish_command('end_app_wait')
         self.trial_log(f'{self.block_type} stopped')
         try:
-            requests.get(f'{config.management_url}/display/off')
+            requests.get('http://localhost:5000/display/off')
         except Exception as exc:
             print(f'error turning off screen: {exc}')
 
