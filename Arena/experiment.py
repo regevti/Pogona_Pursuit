@@ -8,13 +8,14 @@ from multiprocessing.pool import ThreadPool
 from threading import Event
 from pathlib import Path
 
+import requests
 import pandas as pd
 
 import config
 from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTPublisher
-from utils import datetime_string, mkdir, turn_display_on, turn_display_off, Serializer
+from utils import datetime_string, mkdir, Serializer
 
 mqtt_client = MQTTPublisher()
 
@@ -208,7 +209,10 @@ class Block:
 
     def init_trial(self):
         mkdir(self.trial_path)
-        turn_display_on()
+        try:
+            requests.get(f'{config.management_url}/display/on')
+        except Exception as exc:
+            print(f'error turning off screen: {exc}')
         mqtt_client.publish_command('led_light', 'on')
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.overall_trial_duration)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path,
@@ -233,7 +237,10 @@ class Block:
         self.clear_app_content()
         mqtt_client.publish_command('end_app_wait')
         self.trial_log(f'{self.block_type} stopped')
-        turn_display_off()
+        try:
+            requests.get(f'{config.management_url}/display/off')
+        except Exception as exc:
+            print(f'error turning off screen: {exc}')
 
     def clear_app_content(self):
         if self.is_media_experiment:
