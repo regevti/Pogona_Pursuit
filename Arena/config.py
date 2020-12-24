@@ -46,6 +46,7 @@ subscription_topics = {
     'led_light': 'event/command/led_light',
     'end_app_wait': 'event/command/end_app_wait',
     'end_experiment': 'event/command/end_experiment',
+    'gaze_external': 'event/command/gaze_external',
     'touch': 'event/log/touch',
     'hit': 'event/log/hit',
     'prediction': 'event/log/prediction',

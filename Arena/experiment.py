@@ -176,6 +176,7 @@ class Block:
 
         def _start_recording():
             self.trial_log('recording started')
+            mqtt_client.publish_command('gaze_external', 'on')
             if not config.is_debug_mode:
                 acquire_stop = {'record_time': self.overall_trial_duration, 'thread_event': self.threads_event}
                 try:
@@ -185,6 +186,7 @@ class Block:
                     print(f'Error in start_recording: {exc}')
             else:
                 self.wait(self.overall_trial_duration)
+            mqtt_client.publish_command('gaze_external', 'off')
             self.trial_log('recording ended')
 
         def _read_temp():
