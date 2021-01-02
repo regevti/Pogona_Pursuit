@@ -59,17 +59,17 @@
       $bugType.bsMultiSelect()
       $bugType.change(() => {
         $(`#rewardBugSelect${i} option`).remove()
-        if (!$rewardBug.val() || $(`#bugTypeSelect${i}`).val().length <= 1) {
+        if ($(`#bugTypeSelect${i}`).val().length <= 1) {
           $rewardBug.hide()
         } else {
           let $el = $(`#rewardBugSelect${i}`)
-          $(`#bugTypeSelect${i} option`).each(() => {
+          $(`#bugTypeSelect${i} option`).each(function (v) {
             if (this.selected) {
               $el.append($("<option></option>").attr("value", this.value).text(this.text)).attr('selected', true);
             }
           });
           $el.bsMultiSelect("UpdateData")
-          $(`#rewardBugDiv${i}`).show()
+          $rewardBug.show()
         }
       })
       // circle movement is anticlockwise listener
@@ -155,6 +155,7 @@
         animal_id: $("#animalId").val(),
         is_use_predictions: $(`#use_predictions`).is(":checked"),
         time_between_blocks: Number($("#timeBetweenBlocks").val()),
+        extra_time_recording: Number($("#extraTimeRecording").val()),
         cameras: getCheckedCameras(),
         blocks: getBlocks()
       }

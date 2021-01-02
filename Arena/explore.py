@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from dateutil import parser as date_parser
+import yaml
 
 import config
 from utils import to_integer
@@ -16,7 +17,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def explore():
-    return render_template('explore.html')
+    return render_template('explore.html', experiment_dir=config.explore_experiment_dir)
 
 
 @app.route('/experiment_results', methods=['POST'])
@@ -27,8 +28,12 @@ def experiment_results():
     if len(df) < 1:
         return Response('No experiments found')
 
-    return Response(render(df))
+    return Response(ea.render(df))
     # return Response(df.to_html(classes='table-responsive'))
+
+
+class NoDataException(Exception):
+    """No data"""
 
 
 @dataclass
@@ -39,7 +44,9 @@ class ExperimentAnalyzer:
     animal_id: int = None
     movement_type: str = None
     num_of_strikes: int = 0
+    block_type: str = None
     experiment_dir: str = field(default=config.explore_experiment_dir)
+    errors: list = field(default_factory=list)
 
     def __post_init__(self):
         if isinstance(self.start_date, str):
@@ -52,16 +59,21 @@ class ExperimentAnalyzer:
         print(f'experiments folder: {self.experiment_dir}')
         for exp_path in Path(self.experiment_dir).glob('*'):
             try:
-                info_path = exp_path / 'experiment.log'
+                info_path = exp_path / 'experiment.yaml'
                 if not info_path.exists() or not self.is_in_date_range(exp_path):
                     continue
                 info = self.get_experiment_info(info_path)
-                if not self.is_match_conditions(info):
+                if not self.is_experiment_match_conditions(info):
                     continue
+
                 trial_data = self.get_trials_data(exp_path, info)
                 res_df.append(trial_data)
+
+            except NoDataException:
+                pass
+
             except Exception as exc:
-                print(f'Error loading {exp_path.name}; {exc}')
+                self.log(f'Error loading {exp_path.name}; {exc}')
 
         if len(res_df) > 0:
             res_df = pd.concat(res_df)
@@ -72,22 +84,54 @@ class ExperimentAnalyzer:
         return res_df
 
     def get_trials_data(self, exp_path: Path, info: dict) -> pd.DataFrame:
+        experiment_info = {k: v for k, v in info.items() if not re.match(r'block\d+', k)}
         trials = []
-        for trial_path in exp_path.glob('trial*'):
-            trial_df = self.get_screen_touches(trial_path)
-            trial_meta = dict()
-            trial_meta['trial'] = int(re.match(r'trial(\d+)', trial_path.stem)[1])
-            trial_meta['temperature'] = self.get_temperature(trial_path)
-            trial_meta['trial_start'] = self.get_trial_start(trial_path, info, trial_meta['trial'])
-            for k, v in trial_meta.items():
-                trial_df[k] = v if len(trial_df) > 1 else [v]
-            trials.append(trial_df)
+        for trial_path in exp_path.rglob('trial*'):
+            if not trial_path.is_dir():
+                continue
+            try:
+                block_id, block_data = self.get_trial_block(trial_path, info)
+                if not block_data:
+                    print(f'block{block_id} has no info data')
+                    continue
+                if not self.is_block_match_conditions(block_data):
+                    continue
 
+                trial_df = self.get_screen_touches(trial_path)
+                trial_meta = dict()
+                trial_meta['trial'] = int(re.match(r'trial(\d+)', trial_path.stem)[1])
+                trial_meta['block'] = block_id
+                trial_meta['temperature'] = self.get_temperature(trial_path)
+                trial_meta['trial_start'] = self.get_trial_start(trial_path, info, trial_meta['trial'])
+                trial_meta['block_type'] = block_data.get('block_type', 'bugs')
+                for k, v in trial_meta.items():
+                    trial_df[k] = v if len(trial_df) > 1 else [v]
+                for key, value in block_data.items():
+                    if key in trial_df.columns:
+                        continue
+                    elif isinstance(value, list):
+                        value = ','.join(value)
+                    trial_df[key] = value
+                trials.append(trial_df)
+            except Exception as exc:
+                self.log(f'Error loading trial {trial_path}; {exc}')
+
+        if len(trials) < 1:
+            raise NoDataException('No trials to concatenate')
         trials = pd.concat(trials)
-        for key, value in info.items():
+
+        for key, value in experiment_info.items():
             trials[key] = value
 
         return trials
+
+    @staticmethod
+    def get_trial_block(trial_path: Path, info: dict):
+        block_id = 1
+        m_block = re.match(r'block(\d+)', trial_path.parent.name)
+        if m_block:
+            block_id = int(m_block[1])
+        return block_id, info.get(f'block{block_id}', {})
 
     @staticmethod
     def get_screen_touches(trial_path: Path) -> pd.DataFrame:
@@ -111,20 +155,31 @@ class ExperimentAnalyzer:
         """Get start time for a trial based on trajectory csv's first record or if not exists, based on calculating
         trial start using meta data such as trial_duration, ITI, etc.."""
         def _calculate_trial_start_from_meta():
-            extra_time_recording = info.get('extra_time_recording') or config.extra_time_recording
-            time2trials = info['trial_duration'] * (trial_id - 1) + info['iti'] * (trial_id - 1) + \
-                          extra_time_recording * trial_id + extra_time_recording * (trial_id - 1)
+            extra_time_recording = info.get('extra_time_recording', 0)
+            block_id, block_data = self.get_trial_block(trial_path, info)
+            time2block = 0
+            for i in range(1, block_id):
+                prev_block_data = info.get(f'block{i}', {})
+                n_trials = prev_block_data.get('num_trials', 1)
+                time2block += prev_block_data['trial_duration'] * n_trials + prev_block_data['iti'] * (n_trials - 1) + \
+                    extra_time_recording * n_trials * 2
+            if 'trial_duration' not in block_data:
+                print(block_data)
+            time2trials = block_data['trial_duration'] * (trial_id - 1) + block_data['iti'] * (trial_id - 1) + \
+                          extra_time_recording * trial_id + extra_time_recording * (trial_id - 1) + time2block
             exp_time = self.get_experiment_time(info)
             return exp_time + timedelta(seconds=time2trials)
 
         traj_path = trial_path / 'bug_trajectory.csv'
         if not traj_path.exists():
+            self.log(f'No trajectory file in {trial_path}')
+        try:
+            res = pd.read_csv(traj_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
+            assert len(res) > 0
+        except Exception:
             return _calculate_trial_start_from_meta()
 
-        res = pd.read_csv(traj_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
-        if len(res) < 1:
-            return _calculate_trial_start_from_meta()
-        elif res['time'].dtype.name == 'object':
+        if res['time'].dtype.name == 'object':
             res['time'] = pd.to_datetime(res['time'], unit='ms')
         return res['time'][0]
 
@@ -132,23 +187,26 @@ class ExperimentAnalyzer:
     def group_by_experiment_and_trial(res_df: pd.DataFrame) -> pd.DataFrame:
         exp_group = group(res_df)
         exp_df = exp_group[['animal_id']].first()
-
-        n_strikes = exp_group['is_hit'].count()
-        n_hits = group(res_df.query('is_hit==1'))['is_hit'].count()
-        n_hits_reward = group(res_df.query('is_hit==1&is_reward_bug==1'))['is_reward_bug'].count()
-        exp_df['num_of_strikes'] = n_strikes
-        exp_df['strike_accuracy'] = to_percent(n_hits / n_strikes)
-        exp_df['reward_accuracy'] = to_percent(n_hits_reward / n_hits)
-
-        first_strikes_times = remove_tz(exp_group['time'].first())
         exp_df['trial_start'] = remove_tz(exp_group['trial_start'].first())
-        exp_df['time_to_first_strike'] = (first_strikes_times - exp_df['trial_start']).astype('timedelta64[s]')
-        exp_df['trial_start'] = localize_dt(exp_df['trial_start'])
 
-        META_COLS = ['bug_speed', 'movement_type', 'bug_types', 'temperature']
+        if 'is_hit' in res_df.columns:
+            n_strikes = exp_group['is_hit'].count()
+            n_hits = group(res_df.query('is_hit==1'))['is_hit'].count()
+            n_hits_reward = group(res_df.query('is_hit==1&is_reward_bug==1'))['is_reward_bug'].count()
+            exp_df['num_of_strikes'] = n_strikes
+            exp_df['strike_accuracy'] = to_percent(n_hits / n_strikes)
+            exp_df['reward_accuracy'] = to_percent(n_hits_reward / n_hits)
+            first_strikes_times = remove_tz(exp_group['time'].first())
+            exp_df['time_to_first_strike'] = (first_strikes_times - exp_df['trial_start']).astype('timedelta64[s]')
+        else:
+            exp_df = exp_df.assign(num_of_strikes=0, strike_accuracy=np.nan, reward_accuracy=np.nan,
+                                   time_to_first_strike=np.nan)
+
+        META_COLS = ['bug_speed', 'block_type', 'movement_type', 'reward_bugs', 'temperature']
         exp_cols = [x for x in META_COLS if x in res_df.columns]
         exp_df = pd.concat([exp_df, exp_group[exp_cols].first()], axis=1)
-        exp_df = exp_df.sort_values(by=['trial_start', 'trial'])
+        exp_df = exp_df.sort_values(by=['trial_start', 'block', 'trial'])
+        exp_df['trial_start'] = localize_dt(exp_df['trial_start'])
         exp_df.drop(columns=['num_trials', 'exp_time'], inplace=True, errors='ignore')
 
         return exp_df
@@ -166,14 +224,19 @@ class ExperimentAnalyzer:
             exp_date = date_parser.parse(exp_date)
             return self.start_date <= exp_date <= self.end_date
         except Exception as exc:
-            print(f'Error parsing experiment {exp_path}; {exc}')
+            self.log(f'Error parsing experiment {exp_path}; {exc}')
 
     @staticmethod
     def get_experiment_time(info: dict) -> datetime:
         return date_parser.parse(info.get('name').split('_')[-1])
 
-    def is_match_conditions(self, info):
-        attrs2check = ['bug_types', 'animal_id', 'movement_type']
+    def is_experiment_match_conditions(self, info):
+        return self._is_match_conditions(['animal_id'], info)
+
+    def is_block_match_conditions(self, block_info):
+        return self._is_match_conditions(['bug_types', 'movement_type', 'block_type'], block_info)
+
+    def _is_match_conditions(self, attrs2check, info):
         for attr in attrs2check:
             req_value = getattr(self, attr)
             if not req_value:
@@ -187,49 +250,57 @@ class ExperimentAnalyzer:
 
     @staticmethod
     def get_experiment_info(p: Path):
-        """Load the experiment info file to data frame"""
-        info = {}
-        int_fields = ['iti', 'trial_duration', 'animal_id', 'extra_time_recording']
         with p.open('r') as f:
-            m = re.finditer(r'(?P<key>\w+): (?P<value>\S+)', f.read())
-            for r in m:
-                key = r.groupdict()['key'].lower()
-                value = r.groupdict()['value']
-                if key in int_fields:
-                    value = to_integer(value)
-                info[key] = value
-        return info
+            data = yaml.load(f, Loader=yaml.FullLoader)
+        return data
 
+    def log(self, msg):
+        self.errors.append(msg)
+        print(msg)
 
-def render(df):
-    """Convert experiments DF to styled HTML"""
-    cm = sns.light_palette("green", as_cmap=True)
-    # Set CSS properties for th elements in dataframe
-    th_props = [
-        ('font-size', '14px'),
-        ('text-align', 'center'),
-        ('font-weight', 'bold'),
-        ('color', '#6d6d6d'),
-        ('background-color', '#f7f7f9')
-    ]
-    # Set CSS properties for td elements in dataframe
-    td_props = [
-        ('font-size', '14px'),
-        ('text-align', 'center'),
-    ]
-    # Set table styles
-    styles = [
-        dict(selector="th", props=th_props),
-        dict(selector="td", props=td_props)
-    ]
-    # .applymap(color_high, ['num_of_strikes']) \
-    return df.style.background_gradient(cmap=cm, subset=['num_of_strikes', 'strike_accuracy', 'reward_accuracy',
-                                                       'temperature']) \
-        .format({'strike_accuracy': "{:.0%}",
-                 'reward_accuracy': "{:.0%}",
-                 'time_to_first_strike': "{:.1f}",
-                 'temperature': "{:.2f}"}, na_rep="-") \
-        .set_table_styles(styles).render()
+    def render(self, df):
+        """Convert experiments DF to styled HTML"""
+        cm = sns.light_palette("green", as_cmap=True)
+        # Set CSS properties for th elements in dataframe
+        th_props = [
+            ('font-size', '14px'),
+            ('text-align', 'center'),
+            ('font-weight', 'bold'),
+            ('color', '#6d6d6d'),
+            ('background-color', '#f7f7f9'),
+            ("border", "2px solid black"),
+            ("white-space", "nowrap")
+        ]
+        # Set CSS properties for td elements in dataframe
+        td_props = [
+            ('font-size', '14px'),
+            ('text-align', 'center'),
+            ("border", "2px solid black"),
+            ("white-space", "nowrap")
+        ]
+        # Set table styles
+        styles = [
+            dict(selector="th", props=th_props),
+            dict(selector="td", props=td_props),
+            dict(selector="tr:hover", props=[("background-color", "#ffff99")])
+        ]
+        # .applymap(color_high, ['num_of_strikes']) \
+        html = df.style.background_gradient(cmap=cm, subset=['num_of_strikes', 'strike_accuracy', 'reward_accuracy',
+                                                           'temperature']) \
+            .format({'strike_accuracy': "{:.0%}",
+                     'reward_accuracy': "{:.0%}",
+                     'time_to_first_strike': "{:.1f}",
+                     'bug_speed': "{:.0f}",
+                     'movement_type': "{}",
+                     'reward_bugs': "{}",
+                     'temperature': "{:.2f}"}, na_rep="-") \
+            .set_table_styles(styles).render()
+        html += f'<br/><div>Total Experiments: {len(df.index.get_level_values(0).unique())}</div>'
+        html += f'<div>Total Trials: {len(df)}</div>'
+        errors = "\n".join(self.errors)
+        if errors:
+            html += f'<br/><h4>Errors:</h4><pre>{errors}</pre>'
+        return html
 
 
 def remove_tz(col):
@@ -237,12 +308,12 @@ def remove_tz(col):
 
 
 def localize_dt(col: pd.Series):
-    return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%Y-%m-%d %H:%M:%S')
+    return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%d-%m-%Y %H:%M:%S')
 
 
 def group(df: pd.DataFrame):
     """Group-by experiment and trial"""
-    return df.groupby(['experiment', 'trial'])
+    return df.groupby(['experiment', 'block', 'trial'])
 
 
 def to_percent(x: pd.Series) -> pd.Series:

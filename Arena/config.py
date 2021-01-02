@@ -13,10 +13,11 @@ explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', experiments_dir)
 extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
 time_between_blocks = env.int('time_between_blocks', 300)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
-experiment_types = [
-    'bugs',
-    'media'
-]
+experiment_types = {
+    'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
+             'is_anticlockwise' 'target_drift'],
+    'media': ['media_url']
+}
 reward_types = [
     'always',
     'end_trial'

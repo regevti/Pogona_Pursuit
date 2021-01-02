@@ -26,7 +26,8 @@ def index():
     return render_template('index.html', cameras=config.camera_names.keys(), exposure=config.exposure_time,
                            config=app_config, acquire_stop={k: titlize(k) for k in config.acquire_stop_options.keys()},
                            reward_types=config.reward_types, experiment_types=config.experiment_types,
-                           media_files=list_media(), max_blocks=config.max_blocks, cached_experiments=cached_experiments)
+                           media_files=list_media(), max_blocks=config.max_blocks, cached_experiments=cached_experiments,
+                           extra_time_recording=config.extra_time_recording)
 
 
 @app.route('/record', methods=['POST'])

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from multiprocessing.pool import ThreadPool
 from threading import Event
 from pathlib import Path
+import yaml
 
 import requests
 import pandas as pd
@@ -29,26 +30,21 @@ class Experiment:
     time_between_blocks: int = config.time_between_blocks
     is_use_predictions: bool = False
     cache: RedisCache = field(default_factory=RedisCache, repr=False)
+    extra_time_recording: int = config.extra_time_recording
 
     def __post_init__(self):
         self.name = f'{self.name}_{datetime_string()}'
         self.blocks = [Block(i + 1, self.cameras, self.cache, self.experiment_path, **kwargs)
                        for i, kwargs in enumerate(self.blocks)]
 
-    def __str__(self):
-        output = ''
-        for obj in get_arguments(self):
-            if obj in ['self', 'blocks', 'cache']:
-                continue
-            value = getattr(self, obj)
-            if isinstance(value, list):
-                value = ','.join(value)
-            output += f'{obj}: {value}\n'
-
+    @property
+    def info(self):
+        non_relevant_fields = ['self', 'blocks', 'cache']
+        info = {k: getattr(self, k) for k in get_arguments(self) if k not in non_relevant_fields}
         for block in self.blocks:
-            output += str(block)
+            info[f'block{block.block_id}'] = block.info
 
-        return output
+        return info
 
     def start(self):
         """Main Function for starting an experiment"""
@@ -69,12 +65,11 @@ class Experiment:
     def save(self, data):
         """Save experiment arguments"""
 
-
     def save_experiment_log(self):
-        with open(f'{self.experiment_path}/experiment.log', 'w') as f:
-            f.write(str(self))
-        with open(f'{self.experiment_path}/config.log', 'w') as f:
-            f.write(config_string())
+        with open(f'{self.experiment_path}/experiment.yaml', 'w') as f:
+            yaml.dump(self.info, f)
+        with open(f'{self.experiment_path}/config.yaml', 'w') as f:
+            yaml.dump(config_log(), f)
 
     def init_experiment_cache(self):
         self.cache.set(CacheColumns.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
@@ -119,23 +114,20 @@ class Block:
     def __post_init__(self):
         if isinstance(self.bug_types, str):
             self.bug_types = self.bug_types.split(',')
-        if self.reward_bugs and isinstance(self.reward_bugs, str):
+        if isinstance(self.reward_bugs, str):
             self.reward_bugs = self.reward_bugs.split(',')
-        else:
+        elif not self.reward_bugs:
+            log(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
 
-    def __str__(self):
-        output = f'\nBlock #{self.block_id}:\n'
-        for obj in get_arguments(self):
-            if obj in ['self', 'cache', 'pool', 'current_trial', 'threads_event', 'is_use_predictions', 'block_id',
-                       'cameras', 'experiment_path']:
-                continue
-            value = getattr(self, obj)
-            if isinstance(value, list):
-                value = ','.join(value)
-            output += f'{obj}: {value}\n'
-
-        return output
+    @property
+    def info(self):
+        non_relevant_fields = ['self', 'cache', 'pool', 'current_trial', 'threads_event', 'is_use_predictions',
+                               'cameras', 'experiment_path']
+        for block_type, block_type_fields in config.experiment_types.items():
+            if block_type != self.block_type:
+                non_relevant_fields += block_type_fields
+        return {k: getattr(self, k) for k in get_arguments(self) if k not in non_relevant_fields}
 
     def start(self):
         log(f'>> Block #{self.block_id} started')
@@ -376,17 +368,14 @@ def log(msg):
     mqtt_client.publish_event(config.experiment_topic, msg)
 
 
-def config_string():
-    """Get a printable string of config"""
+def config_log():
+    """Get the config for logging"""
     drop_config_fields = ['Env', 'env']
     config_dict = config.__dict__
     for k in config_dict.copy():
         if k.startswith('__') or k in drop_config_fields:
             config_dict.pop(k)
-    s = ''
-    for k, v in config_dict.items():
-        s += f'{k}: {v}\n'
-    return s
+    return config_dict
 
 
 def get_arguments(cls):
