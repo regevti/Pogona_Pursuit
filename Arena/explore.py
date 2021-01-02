@@ -353,7 +353,7 @@ def localize_dt(col: pd.Series):
 
 def group(df: pd.DataFrame):
     """Group-by experiment and trial"""
-    return df.groupby(['experiment', 'trial'])
+    return df.groupby(['experiment', 'block', 'trial'])
 
 
 def to_percent(x: pd.Series) -> pd.Series:
