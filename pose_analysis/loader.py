@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 import sys
 sys.path += ['../Arena']
@@ -26,6 +27,8 @@ class Loader:
         self.trial_id = trial_id
         self.camera = camera
         self.video_path = video_path or self.get_video_path()
+        self.validate()
+        self.info = self.get_experiment_info()
 
         self.frames_ts = self.get_frames_timestamps()
         self.hits_df = self.get_hits()
@@ -106,7 +109,7 @@ class Loader:
         return videos[0]
 
     def get_experiment_info(self):
-        return ExperimentAnalyzer.get_experiment_info(self.experiment_path)
+        return ExperimentAnalyzer.get_experiment_info(self.experiment_path / 'experiment.log')
 
     @property
     def experiment_path(self):

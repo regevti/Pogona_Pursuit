@@ -312,17 +312,48 @@ class ExperimentAnalyzer:
         return html
 
 
+def render(df):
+    """Convert experiments DF to styled HTML"""
+    cm = sns.light_palette("green", as_cmap=True)
+    # Set CSS properties for th elements in dataframe
+    th_props = [
+        ('font-size', '14px'),
+        ('text-align', 'center'),
+        ('font-weight', 'bold'),
+        ('color', '#6d6d6d'),
+        ('background-color', '#f7f7f9')
+    ]
+    # Set CSS properties for td elements in dataframe
+    td_props = [
+        ('font-size', '14px'),
+        ('text-align', 'center'),
+    ]
+    # Set table styles
+    styles = [
+        dict(selector="th", props=th_props),
+        dict(selector="td", props=td_props)
+    ]
+    # .applymap(color_high, ['num_of_strikes']) \
+    return df.style.background_gradient(cmap=cm, subset=['num_of_strikes', 'strike_accuracy', 'reward_accuracy',
+                                                       'temperature']) \
+        .format({'strike_accuracy': "{:.0%}",
+                 'reward_accuracy': "{:.0%}",
+                 'time_to_first_strike': "{:.1f}",
+                 'temperature': "{:.2f}"}, na_rep="-") \
+        .set_table_styles(styles).render()
+
+
 def remove_tz(col):
     return pd.to_datetime(col, utc=True).dt.tz_convert('utc').dt.tz_localize(None)
 
 
 def localize_dt(col: pd.Series):
-    return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%d-%m-%Y %H:%M:%S')
+    return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%Y-%m-%d %H:%M:%S')
 
 
 def group(df: pd.DataFrame):
     """Group-by experiment and trial"""
-    return df.groupby(['experiment', 'block', 'trial'])
+    return df.groupby(['experiment', 'trial'])
 
 
 def to_percent(x: pd.Series) -> pd.Series:
