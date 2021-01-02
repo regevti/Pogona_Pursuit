@@ -348,7 +348,7 @@ def remove_tz(col):
 
 
 def localize_dt(col: pd.Series):
-    return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%Y-%m-%d %H:%M:%S')
+    return col.dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem').dt.strftime('%d-%m-%Y %H:%M:%S')
 
 
 def group(df: pd.DataFrame):
