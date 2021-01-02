@@ -4,6 +4,7 @@ import parallel
 # Outputs
 feeder = 0x01
 led_light = 0x02
+gaze_external = 0x04
 
 
 class ParallelPort:

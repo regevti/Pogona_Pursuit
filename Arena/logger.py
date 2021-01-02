@@ -65,6 +65,15 @@ def end_app_wait():
 
 
 @app.task
+def gaze_external(state):
+    if parport:
+        if state == 'on':
+            parport.turn_on(0x04)
+        else:
+            parport.turn_off(0x04)
+
+
+@app.task
 def reward(is_force=False):
     if parport and (is_force or is_always_reward()):
         parport.feed()
