@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 import pandas as pd
 import numpy as np
-
+from scipy import optimize
 import sys
 sys.path += ['../Arena']
 from explore import ExperimentAnalyzer
@@ -31,20 +31,51 @@ class Loader:
         self.info = self.get_experiment_info()
 
         self.frames_ts = self.get_frames_timestamps()
-        self.hits_df = self.get_hits()
-        self.traj_df = self.get_bug_trajectory()
+        self.hits_df = self.load_hits()
+        self.traj_df = self.load_bug_trajectory()
 
-    def get_hits(self, hits_only=False):
+    def load_hits(self, hits_only=False):
         df = pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
         if hits_only:
             df = df.query('is_hit == 1')
         return df
 
-    def get_bug_trajectory(self):
+    def load_bug_trajectory(self):
         try:
             return pd.read_csv(self.bug_traj_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
         except Exception as exc:
             raise Exception(f'Error loading bug trajectory; {exc}')
+
+    def get_bug_trajectory_before_strikes(self, n_records=20):
+        X = []
+        y = []
+        infos = []
+        traj_time = self.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
+        dt = self.traj_df['time'].diff().dt.total_seconds()
+        self.traj_df['vx'] = self.traj_df['x'].diff() / dt
+        self.traj_df['vy'] = self.traj_df['y'].diff() / dt
+        for i, hit in self.hits_df.iterrows():
+            t = hit['time'].tz_convert('utc').tz_localize(None)
+            cidx = closest_index(traj_time, t)
+            if cidx is not None and cidx >= n_records:
+                x = self.traj_df.loc[cidx-n_records+1:cidx, ['x', 'y', 'vx', 'vy']].to_numpy()
+                if np.isnan(x).any():
+                    continue
+                hit_dist = distance(hit['x'], hit['y'], hit['bug_x'], hit['bug_y'])
+                if hit_dist > 1000:
+                    continue
+                X.append(x.reshape(1, *x.shape))
+                y.append(hit[['x', 'y']].to_numpy().reshape(1, -1))
+                info = self.info.copy()
+                info['hit_id'] = i
+                info['trial_id'] = self.trial_id
+                info['is_hit'] = hit['is_hit']
+                info['hit_dist'] = hit_dist
+                infos.append(info)
+                # names.append(f"{self.experiment_name}_trial{self.trial_id}_hit#{i+1}_pogona{self.info['animal_id']}")
+        if len(X) > 0:
+            return np.concatenate(X), np.concatenate(y), infos
+        return None, None, None
 
     def get_frames_timestamps(self) -> pd.Series:
         return pd.to_datetime(pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0'])
@@ -59,7 +90,7 @@ class Loader:
                 continue
             frames.append(cidx)
         return frames
-
+    
     def get_bug_position_at_time(self, t) -> pd.DataFrame:
         traj_time = self.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
         cidx = closest_index(traj_time, t)
@@ -109,7 +140,25 @@ class Loader:
         return videos[0]
 
     def get_experiment_info(self):
-        return ExperimentAnalyzer.get_experiment_info(self.experiment_path / 'experiment.log')
+        info = ExperimentAnalyzer.get_experiment_info(self.experiment_path / 'experiment.log')
+        info['trial_id'] = self.trial_id
+        return info
+
+    def fit_circle(self):
+        if self.info.get('movement_type') != 'circle':
+            return None, None
+        x_center, y_center, _ = fit_circle(self.traj_df.x, -self.traj_df.y)
+        if not 1100 < x_center < 1300 or not -900 < y_center < -700:
+            return None, None
+
+        return x_center, y_center
+
+    def is_circle(self):
+        return self.info.get('movement_type') == 'circle'
+
+    @property
+    def animal_id(self):
+        return self.info.get('animal_id')
 
     @property
     def experiment_path(self):
@@ -132,6 +181,10 @@ class Loader:
         return self.trial_path / 'videos' / 'timestamps' / f'{CAMERAS[self.camera]}.csv'
 
 
+def distance(x1, y1, x2, y2):
+    return np.sqrt((x1-x2)**2 + (y1-y2)**2)
+
+
 def closest_index(series, x, min_dist=0.050):
     diffs = (series - x).abs().dt.total_seconds()
     d = diffs[diffs <= min_dist]
@@ -152,3 +205,24 @@ def get_experiments(*args, **kwargs):
             continue
     print(f'num loaders: {len(loaders)}')
     return loaders
+
+
+def fit_circle(x, y):
+    def calc_R(xc, yc):
+        """ calculate the distance of each 2D points from the center (xc, yc) """
+        return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
+
+    def f_2(c):
+        """ calculate the algebraic distance between the data points and the mean circle centered at c=(xc, yc) """
+        Ri = calc_R(*c)
+        return Ri - Ri.mean()
+
+    center_estimate = np.mean(x), np.min(y)
+    center_2, ier = optimize.leastsq(f_2, center_estimate)
+
+    xc_2, yc_2 = center_2
+    Ri_2 = calc_R(*center_2)
+    R_2 = Ri_2.mean()
+    #     residu_2 = sum((Ri_2 - R_2) ** 2)
+
+    return xc_2, yc_2, R_2

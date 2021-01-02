@@ -11,9 +11,9 @@ from dlclive import DLCLive, Processor
 from matplotlib.colors import TABLEAU_COLORS
 from loader import Loader
 
-DLC_PATH = '/data/pose_estimation/deeplabcut/projects/pogona_pursuit-regev-2020-07-19'
+DLC_PATH = '/data/pose_estimation/deeplabcut/projects/pogona_pursuit_realtime'
 DLC_CONFIG_FILE = DLC_PATH + '/config.yaml'
-EXPORTED_MODEL_PATH = DLC_PATH + '/exported-models/DLC_pogona_pursuit_resnet_50_iteration-1_shuffle-1'
+EXPORTED_MODEL_PATH = DLC_PATH + '/exported-models/DLC_pogona_pursuit_resnet_50_iteration-0_shuffle-1'
 PROBABILITY_THRESH = 0.85
 BODY_PARTS = ['nose', 'left_ear', 'right_ear']
 COLORS = list(TABLEAU_COLORS.values())
@@ -85,16 +85,21 @@ class Analyzer:
             df.to_csv(self.output_video_path.parent / (self.output_video_path.stem + '.csv'))
             return df
 
-    def position_map(self, part='nose'):
+    def position_map(self, part='nose', is_plot=True):
+        range = [[180, 1100], [650, 980]]
         df = self.run_pose(load_only=True)[part]
         df.dropna(inplace=True)
-        plt.figure(figsize=(10, 10))
-        hist = plt.hist2d(df.x, df.y, range=[[0, 1000], [0, 950]], bins=50) # , cmap='BuPu'
-        plt.title(f"{self.loader.experiment_name}, trial{self.loader.trial_id}\nscreen here")
-        plt.colorbar()
-        info_st = '\n'.join([f'{k}: {v}' for k, v in self.loader.info.items()])
-        plt.text(0, 0, str(info_st),wrap=True, ha='left', fontsize=14, color='w')
-        return hist[0]
+        hist = np.histogram2d(df.x, df.y, bins=(20, 5), range=range)
+        if is_plot:
+            plt.figure(figsize=(10, 10))
+            plt.imshow(hist[0].T, extent=[x for sublist in range for x in sublist])
+            # plt.hist2d(df.x, df.y, range=[[0, 1000], [0, 950]], bins=50) # , cmap='BuPu'
+            plt.title(f"{self.loader.experiment_name}, trial{self.loader.trial_id}\nscreen here")
+            plt.colorbar()
+            plt.gca().invert_yaxis()
+            info_st = '\n'.join([f'{k}: {v}' for k, v in self.loader.info.items()])
+            plt.text(0, 0, str(info_st), wrap=True, ha='left', fontsize=14, color='w')
+        return hist[0].T
 
     def write_frame(self, frame: np.ndarray, frame_id: int, pred_df: pd.DataFrame):
         try:

@@ -8,7 +8,6 @@ import re
 from pose import Analyzer, BODY_PARTS
 from scipy.signal import find_peaks
 from loader import Loader
-from scipy import optimize
 
 NUM_FRAMES_BACK = 200
 
@@ -17,7 +16,7 @@ class StrikesAnalyzer:
     def __init__(self, loader: Loader = None, experiment_name=None, trial_id=None, camera=None,
                  n_frames_back=None, n_frames_forward=10):
         self.loader = loader or Loader(experiment_name, trial_id, camera)
-        self.pose_df = Analyzer(self.loader.video_path).run_pose()
+        self.pose_df = Analyzer(self.loader.video_path).run_pose(load_only=True)
         self.xfs = []
         self.run_strikes_pose(n_frames_back, n_frames_forward)
 
@@ -54,7 +53,13 @@ class StrikesAnalyzer:
     #     fig.tight_layout()
     #     plt.show()
 
-    def ballistic_analysis(self):
+    def ballistic_analysis(self, circle_only=False):
+        if circle_only:
+            if self.loader.info.get('movement_type') != 'circle':
+                return
+            x_center, y_center = self.loader.fit_circle()
+            theta = lambda x1, y1: np.arctan2(x1, y1)
+
         res = []
         hits_df = self.loader.hits_df
         for i, xf in enumerate(self.xfs):
@@ -64,9 +69,15 @@ class StrikesAnalyzer:
                 traj_time = self.loader.traj_df.time.dt.tz_convert('utc').dt.tz_localize(None)
                 closest_hit_index = (traj_time - pd.to_datetime(strike_start_time)).abs().argsort()[0]
                 bug_start_pos = self.loader.traj_df.loc[closest_hit_index, :]
-                PD = distance(bug_start_pos.x, hits_df.loc[i, 'x'], bug_start_pos.y, hits_df.loc[i, 'y'])
-                MD = distance(hits_df.loc[i, 'bug_x'], hits_df.loc[i, 'x'],
-                              hits_df.loc[i, 'bug_y'], hits_df.loc[i, 'y'])
+                if circle_only:
+                    PD = theta(bug_start_pos.x - x_center, bug_start_pos.y - y_center) -\
+                         theta(hits_df.loc[i, 'x'] - x_center, hits_df.loc[i, 'y'] - y_center)
+                    MD = theta(hits_df.loc[i, 'bug_x'] - x_center, hits_df.loc[i, 'bug_y'] - y_center) -\
+                         theta(hits_df.loc[i, 'x'] - x_center, hits_df.loc[i, 'y'] - y_center)
+                else:
+                    PD = distance(bug_start_pos.x, bug_start_pos.y, hits_df.loc[i, 'x'], hits_df.loc[i, 'y'])
+                    MD = distance(hits_df.loc[i, 'bug_x'], hits_df.loc[i, 'bug_y'],
+                                  hits_df.loc[i, 'x'], hits_df.loc[i, 'y'])
                 res.append(PD / MD)
         return res
 
@@ -74,8 +85,7 @@ class StrikesAnalyzer:
         """Transform the (x,y) coordinates into circular coordinates in which the bug position while hit is
         the center of axis. Return data frame with the headers: x,y - that represent the transformed hit position,
         start_x, start_y - bug position when lizard started leap towards bug."""
-        x_center, y_center, _ = fit_circle(self.loader.traj_df.x, -self.loader.traj_df.y)
-        print(f' center: ({x_center}, {y_center}), is_anti_clockwise: {self.loader.info.get("is_anticlockwise")}')
+        x_center, y_center = self.loader.fit_circle()
 
         def project(cx, cy, x, y) -> np.ndarray:
             cx = cx - x_center
@@ -142,24 +152,3 @@ class StrikesAnalyzer:
 
 def distance(x1, y1, x2, y2):
     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-
-
-def fit_circle(x, y):
-    def calc_R(xc, yc):
-        """ calculate the distance of each 2D points from the center (xc, yc) """
-        return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
-
-    def f_2(c):
-        """ calculate the algebraic distance between the data points and the mean circle centered at c=(xc, yc) """
-        Ri = calc_R(*c)
-        return Ri - Ri.mean()
-
-    center_estimate = np.mean(x), np.min(y)
-    center_2, ier = optimize.leastsq(f_2, center_estimate)
-
-    xc_2, yc_2 = center_2
-    Ri_2 = calc_R(*center_2)
-    R_2 = Ri_2.mean()
-    #     residu_2 = sum((Ri_2 - R_2) ** 2)
-
-    return xc_2, yc_2, R_2
