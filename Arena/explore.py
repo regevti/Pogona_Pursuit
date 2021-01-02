@@ -89,6 +89,8 @@ class ExperimentAnalyzer:
         for trial_path in exp_path.rglob('trial*'):
             if not trial_path.is_dir():
                 continue
+            if self.exists_folder_labels(trial_path):
+                continue
             try:
                 block_id, block_data = self.get_trial_block(trial_path, info)
                 if not block_data:
@@ -182,6 +184,13 @@ class ExperimentAnalyzer:
         if res['time'].dtype.name == 'object':
             res['time'] = pd.to_datetime(res['time'], unit='ms')
         return res['time'][0]
+
+    def exists_folder_labels(self, trial_path: Path):
+        file_labels = ['climbing', 'no_video']
+        for label in file_labels:
+            if (trial_path / label).exists():
+                self.log(f'trial {trial_path} is labelled as {label}')
+                return True
 
     @staticmethod
     def group_by_experiment_and_trial(res_df: pd.DataFrame) -> pd.DataFrame:
