@@ -51,13 +51,13 @@
       "stepsPerImage": 3
     }
   },
-  "movementTypes": [
-    "random walk",
-    "random walk + drift",
-    "circle",
-    "low horizontal",
-    "low horizontal + noise"
-  ],
+  "movementTypes": {
+    "random": "random walk",
+    "random_drift": "random walk + drift",
+    "circle": "circle",
+    "low_horizontal": "low horizontal",
+    "low_horizontal_noise": "low horizontal + noise"
+  },
   "targetDrifts": {
     "leftBottom": {
       "xTarget": -300,

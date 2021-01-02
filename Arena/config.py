@@ -11,10 +11,13 @@ is_use_parport = env.bool('IS_USE_PARPORT', False)
 experiments_dir = env('EXPERIMENTS_DIR', "experiments")
 explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', experiments_dir)
 extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
-experiment_types = [
-    'bugs',
-    'media'
-]
+time_between_blocks = env.int('time_between_blocks', 300)
+experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
+experiment_types = {
+    'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
+             'is_anticlockwise' 'target_drift'],
+    'media': ['media_url']
+}
 reward_types = [
     'always',
     'end_trial'
@@ -23,6 +26,7 @@ reward_types = [
 # API
 static_files_dir = env('STATIC_FILES_DIR', 'static')
 management_url = env('MANAGEMENT_URL', 'http://localhost:3351')
+max_blocks = 20
 
 # Cache (Redis)
 redis_host = env('REDIS_HOST', 'cache')
@@ -43,6 +47,7 @@ subscription_topics = {
     'led_light': 'event/command/led_light',
     'end_app_wait': 'event/command/end_app_wait',
     'end_experiment': 'event/command/end_experiment',
+    'gaze_external': 'event/command/gaze_external',
     'touch': 'event/log/touch',
     'hit': 'event/log/hit',
     'prediction': 'event/log/prediction',
