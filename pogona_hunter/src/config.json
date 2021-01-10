@@ -53,19 +53,16 @@
   },
   "movementTypes": {
     "random": "random walk",
-    "random_drift": "random walk + drift",
     "circle": "circle",
     "low_horizontal": "low horizontal",
     "low_horizontal_noise": "low horizontal + noise"
   },
   "targetDrifts": {
     "leftBottom": {
-      "xTarget": -300,
-      "yTarget": "height+20"
+      "xTarget": -300
     },
     "rightBottom": {
-      "xTarget": "width+300",
-      "yTarget": "height+20"
+      "xTarget": "width+300"
     }
   }
 }

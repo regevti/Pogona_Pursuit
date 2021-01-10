@@ -16,9 +16,9 @@
         <div class="row">
           <label for="movementType">Movement Type:</label>
           <select id="movementType" v-model="bugSettings.movementType">
-            <option v-for="option in configOptions.movementTypes" v-bind:value="option"
+            <option v-for="option in Object.keys(configOptions.movementTypes)" v-bind:value="option"
                     v-bind:key="option">
-              {{ option }}
+              {{ configOptions.movementTypes[option] }}
             </option>
           </select>
         </div>
@@ -51,7 +51,7 @@
 
         <div class="row">
           <label for="radius-size">Bug Radius Size: </label>
-          <input v-model.number="bugSettings.radiusSize" id="radius-size" type="number"
+          <input v-model.number="bugSettings.bugSize" id="radius-size" type="number"
                  style="width: 3em">
         </div>
 

@@ -97,6 +97,8 @@ class Block:
     block_type: str = 'bugs'
     bug_types: list = field(default_factory=list)
     bug_speed: int = None
+    bug_size: int = None
+    bug_height: int = None
     movement_type: str = None
     reward_type: str = 'always'
     reward_bugs: list = None
@@ -280,7 +282,9 @@ class Block:
             'isStopOnReward': self.is_always_reward,
             'isLogTrajectory': True,
             'isAntiClockWise': self.is_anticlockwise,
-            'targetDrift': self.target_drift
+            'targetDrift': self.target_drift,
+            'bugSize': self.bug_size,
+            'bugHeight': self.bug_height
         })
 
     @property

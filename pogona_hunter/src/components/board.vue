@@ -45,8 +45,10 @@ export default {
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
         movementType: 'line',
+        targetDrift: 'leftBottom',
         speed: 0, // if 0 config default for bug will be used
-        radiusSize: 0, // if 0 config default for bug will be used
+        bugSize: 0, // if 0 config default for bug will be used
+        bugHeight: 100, // relevant only for horizontal movements
         isStopOnReward: false,
         isAntiClockWise: false,
         timeBetweenBugs: 2000,
@@ -179,7 +181,8 @@ export default {
           bug_y: bug.y,
           is_hit: isHit,
           is_reward_bug: isRewardBug,
-          bug_type: bug.currentBugType
+          bug_type: bug.currentBugType,
+          bug_size: bug.currentBugSize
         }))
       }
       this.isHandlingTouch = false

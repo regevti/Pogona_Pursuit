@@ -13,7 +13,7 @@ export default {
       targetDriftsOptions: require('@/config.json')['targetDrifts'],
       bugImages: [],
       currentBugType: undefined,
-      currentRadiusSize: undefined,
+      currentBugSize: undefined,
       imgSrc: '',
       mass: 1,
       randomNoise: 0,
@@ -30,16 +30,19 @@ export default {
       return this.bugsSettings.movementType === 'circle'
     },
     isStraightLine: function () {
-      return this.bugsSettings.movementType === 'random walk'
+      return this.bugsSettings.movementType === 'random'
     },
-    isDrift: function () {
-      return this.bugsSettings.movementType === 'random walk + drift'
+    isRandomDrift: function () {
+      return this.bugsSettings.movementType === 'random_drift'
     },
     isLowHorizontal: function () {
-      return this.bugsSettings.movementType === 'low horizontal'
+      return this.bugsSettings.movementType === 'low_horizontal'
     },
     isNoisyLowHorizontal: function () {
-      return this.bugsSettings.movementType === 'low horizontal + noise'
+      return this.bugsSettings.movementType === 'low_horizontal_noise'
+    },
+    bugHeight: function () {
+      return this.bugsSettings.bugHeight ? Number(this.bugsSettings.bugHeight) : 100
     },
     numImagesPerBug: function () {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
@@ -68,7 +71,7 @@ export default {
     if (this.isMoveInCircles) {
       this.r0 = [this.canvas.width / 2, this.canvas.height]
       this.r = Math.min(this.canvas.width / 2, this.canvas.height) * 0.75
-    } else if (this.isDrift || this.isLowHorizontal || this.isNoisyLowHorizontal) {
+    } else if (this.isRandomDrift || this.isLowHorizontal || this.isNoisyLowHorizontal) {
       this.initTargetDrift()
     }
     this.initBug(this.x, this.y)
@@ -79,21 +82,16 @@ export default {
       this.getNextBugType()
       if (!this.isMoveInCircles) {
         this.initSpeedDirections()
-        if (this.isDrift || this.isStraightLine) {
+        if (this.isRandomDrift || this.isStraightLine) {
           this.startRandomEdgePoint()
         } else if (this.isLowHorizontal || this.isNoisyLowHorizontal) {
-          if (this.xTarget < 0) {
-            this.x = this.canvas.width
-          } else {
-            this.x = 0
-          }
-          this.y = this.canvas.height - 100
+          this.startHorizontal()
         }
       }
       this.step = 0
       this.randomNoiseCount = 0
       this.theta = Math.PI - Math.PI / 20
-      this.currentRadiusSize = this.getRadiusSize()
+      this.currentBugSize = this.getRadiusSize()
     },
     move(particles) {
       if (this.isDead || this.isStatic || this.isOutEdged) {
@@ -116,10 +114,10 @@ export default {
                 (this.xTarget > halfScreen && this.x > halfScreen))) {
           this.dx = 0.5 * this.vx + 0.5 * randNoise
           this.dy = 0.0008 * (this.yTarget - this.y) + 0.5 * randNoise + 0.9 * this.dy
-        } else if (this.isDrift && this.frameCounter > 100) {
+        } else if (this.isRandomDrift && this.frameCounter > 100) {
           this.dx = 0.004 * (this.xTarget - this.x) + 0.5 * randNoise
           this.dy = 0.004 * (this.yTarget - this.y) + 0.5 * randNoise
-        } else if (this.isStraightLine || this.isDrift) {
+        } else if (this.isStraightLine || this.isRandomDrift) {
           this.dx = this.vx + 0.5 * randNoise
           this.dy = this.vy + 0.5 * randNoise
         }
@@ -131,7 +129,7 @@ export default {
       for (let i = 0; i < particles.length; i++) {
         if (this === particles[i]) continue
 
-        if (distance(this.x, this.y, particles[i].x, particles[i].y) <= this.currentRadiusSize + particles[i].currentRadiusSize) {
+        if (distance(this.x, this.y, particles[i].x, particles[i].y) <= this.currentBugSize + particles[i].currentRadiusSize) {
           this.collisionEffect(particles[i])
         }
       }
@@ -162,7 +160,7 @@ export default {
         this.ctx.setTransform(1, 0, 0, 1, this.x, this.y)
         this.ctx.rotate(this.getAngleRadians())
         // drawImage(image, dx, dy, dWidth, dHeight)
-        this.ctx.drawImage(bugImage, -this.currentRadiusSize / 2, -this.currentRadiusSize / 2, this.currentRadiusSize, this.currentRadiusSize)
+        this.ctx.drawImage(bugImage, -this.currentBugSize / 2, -this.currentBugSize / 2, this.currentBugSize, this.currentBugSize)
         this.ctx.setTransform(1, 0, 0, 1, 0, 0)
         // this.ctx.arc(this.x, this.y, this.currentRadiusSize / 1.5, 0, 2 * Math.PI, false)
         // this.ctx.fillStyle = 'rgba(255,0,0,0.3)'
@@ -187,13 +185,13 @@ export default {
         return
       }
       let isHorizontal = this.isLowHorizontal || this.isNoisyLowHorizontal
-      if ((isHorizontal && (this.x < -this.currentRadiusSize || this.x > this.canvas.width + this.currentRadiusSize)) ||
-          (this.isDrift && distance(this.x, this.xTarget, this.y, this.yTarget) < this.currentRadiusSize)) {
+      if ((isHorizontal && (this.x < -this.currentBugSize || this.x > this.canvas.width + this.currentBugSize)) ||
+          (this.isRandomDrift && distance(this.x, this.xTarget, this.y, this.yTarget) < this.currentBugSize)) {
         this.edgeTimeout()
         return
       }
       if (!isHorizontal) {
-        const margin = this.currentRadiusSize / 2
+        const margin = this.currentBugSize / 2
         if ((this.x >= this.canvas.width + margin || this.x <= -margin) ||
             (this.y >= this.canvas.height + margin || this.y <= -margin)) {
           this.edgeTimeout()
@@ -218,8 +216,8 @@ export default {
       this.currentBugType = nextBugOptions[nextIndex]
     },
     getRadiusSize() {
-      if (this.bugsSettings.radiusSize) {
-        return this.bugsSettings.radiusSize
+      if (this.bugsSettings.bugSize) {
+        return this.bugsSettings.bugSize
       }
       let currentBugOptions = this.bugTypeOptions[this.currentBugType]
       return randomRange(currentBugOptions.radiusRange.min, currentBugOptions.radiusRange.max)
@@ -259,6 +257,14 @@ export default {
         this.y = this.canvas.height
       }
     },
+    startHorizontal() {
+      if (this.xTarget < 0) {
+        this.x = this.canvas.width
+      } else {
+        this.x = 0
+      }
+      this.y = this.canvas.height - this.bugHeight
+    },
     initSpeedDirections() {
       if (this.isLowHorizontal || this.isNoisyLowHorizontal) {
         this.vx = Math.sign(this.xTarget) * this.currentSpeed
@@ -279,23 +285,18 @@ export default {
     initTargetDrift() {
       let targetOptions = this.targetDriftsOptions[this.bugsSettings.targetDrift]
       let xt = targetOptions.xTarget
-      let yt = targetOptions.yTarget
       if (typeof xt === 'string') {
         xt = xt.split('+')
         xt = this.canvas[xt[0]] + Number(xt[1])
       }
       this.xTarget = xt
-      if (typeof yt === 'string') {
-        yt = yt.split('+')
-        yt = this.canvas[yt[0]] + Number(yt[1])
-      }
-      this.yTarget = yt
+      this.yTarget = this.bugHeight
     },
     isInsideBoard() {
       return this.x > 0 && this.x < this.canvas.width && this.y > 0 && this.y < this.canvas.height
     },
     isHit(x, y) {
-      return distance(x, y, this.x, this.y) <= this.currentRadiusSize / 1.5
+      return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
     },
     escape(xe, ye) {
       let dist = distance(this.x, this.y, xe, ye)

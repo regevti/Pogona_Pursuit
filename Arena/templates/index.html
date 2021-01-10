@@ -75,6 +75,7 @@
       // circle movement is anticlockwise listener
       let $isAntiClockWiseDiv = $(`#isAntiClockWiseDiv${i}`)
       let $targetDrift = $(`#targetDrift${i}`)
+      let $bugHeight = $(`#bugHeightDiv${i}`)
       $(`#movementTypeSelect${i}`).change(function () {
         let movementType = $(`#movementTypeSelect${i}`).val()
         if (movementType === 'circle') {
@@ -82,10 +83,12 @@
         } else {
           $isAntiClockWiseDiv.hide()
         }
-        if (['random walk + drift', 'low horizontal', 'low horizontal + noise'].indexOf(movementType) !== -1) {
+        if (['low_horizontal', 'low_horizontal_noise'].indexOf(movementType) !== -1) {
           $targetDrift.show()
+          $bugHeight.show()
         } else {
           $targetDrift.hide()
+          $bugHeight.hide()
         }
       })
       // media or bugs experiment block
@@ -98,6 +101,13 @@
           $(`#rewardBugDiv${i}`).hide()
           $isAntiClockWiseDiv.hide()
           $(`.media-options${i}`).hide()
+        }
+      })
+      $(`#isDefaultBugSize${i}`).change(function () {
+        if (this.checked) {
+          $(`#bugSizeDiv${i}`).hide()
+        } else {
+          $(`#bugSizeDiv${i}`).show()
         }
       })
     }
@@ -198,13 +208,18 @@
           movement_type: $(`#movementTypeSelect${i}`),
           time_between_bugs: $(`#timeBetweenBugs${i}`),
           is_anticlockwise: $(`#isAntiClockWise${i}`),
-          target_drift: $(`#targetDriftSelect${i}`)
+          target_drift: $(`#targetDriftSelect${i}`),
+          bug_height: $(`#bugHeight${i}`)
         })
+        if (!$(`#isDefaultBugSize${i}`).is(':checked')) {
+          Object.assign(fields, {bug_size: $(`#bugSize${i}`)})
+        }
       }
       return fields
     }
 
-    const blockNumericalFields = ['num_trials', 'trial_duration', 'bug_speed', 'time_between_bugs', 'iti']
+    const blockNumericalFields = ['num_trials', 'trial_duration', 'bug_speed', 'time_between_bugs', 'iti', 'bug_size',
+                                  'bug_height']
     const blockCheckFields = ['is_anticlockwise']
 
     function getBlocks() {
@@ -302,19 +317,24 @@
       })
     })
     $("#init_bugs").click(function (e) {
+      let payload = {
+        numOfBugs: 1,
+        speed: Number($("#bugSpeed1").val()),
+        bugTypes: $("#bugTypeSelect1").val(),
+        rewardBugs: $("#rewardBugSelect1").val() ? $("#rewardBugSelect1").val() : $("#bugTypeSelect1").val(),
+        movementType: $("#movementTypeSelect1").val(),
+        timeBetweenBugs: Number($("#timeBetweenBugs1").val()),
+        isAntiClockWise: $("#isAntiClockWise1").is(":checked"),
+        targetDrift: $("#targetDriftSelect1").val(),
+        bugHeight: $("#bugHeight1").val()
+      }
+      if (!$("#isDefaultBugSize1").is(':checked')) {
+        Object.assign(payload, {bugSize: Number($("#bugSize1").val())})
+      }
       $.ajax({
         url: "/init_bugs",
         type: "POST",
-        data: JSON.stringify({
-          numOfBugs: 1,
-          speed: Number($("#bugSpeed1").val()),
-          bugTypes: $("#bugTypeSelect1").val(),
-          rewardBugs: $("#rewardBugSelect1").val() ? $("#rewardBugSelect1").val() : $("#bugTypeSelect1").val(),
-          movementType: $("#movementTypeSelect1").val(),
-          timeBetweenBugs: Number($("#timeBetweenBugs1").val()),
-          isAntiClockWise: $("#isAntiClockWise1").is(":checked"),
-          targetDrift: $("#targetDriftSelect1").val()
-        }),
+        data: JSON.stringify(payload),
         contentType: "application/json",
         complete: function (res) {
           appendOutput('>> Bugs initiated manually')
