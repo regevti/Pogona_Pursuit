@@ -186,7 +186,7 @@ class ExperimentAnalyzer:
         return res['time'][0]
 
     def exists_folder_labels(self, trial_path: Path):
-        file_labels = ['climbing', 'no_video']
+        file_labels = ['climbing', 'no_video', 'bad']
         for label in file_labels:
             if (trial_path / label).exists() or (trial_path / 'videos' / label).exists():
                 self.log(f'trial {trial_path} is labelled as {label}')

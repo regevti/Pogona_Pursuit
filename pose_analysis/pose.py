@@ -8,15 +8,16 @@ import shutil
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from dlclive import DLCLive, Processor
-from matplotlib.colors import TABLEAU_COLORS
+from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 from loader import Loader
 
 DLC_PATH = '/data/pose_estimation/deeplabcut/projects/pogona_pursuit_realtime'
 DLC_CONFIG_FILE = DLC_PATH + '/config.yaml'
-EXPORTED_MODEL_PATH = DLC_PATH + '/exported-models/DLC_pogona_pursuit_resnet_50_iteration-0_shuffle-1'
+ITERATION = 3
+EXPORTED_MODEL_PATH = DLC_PATH + f'/exported-models/DLC_pogona_pursuit_resnet_50_iteration-{ITERATION}_shuffle-1'
 PROBABILITY_THRESH = 0.85
 BODY_PARTS = ['nose', 'left_ear', 'right_ear']
-COLORS = list(TABLEAU_COLORS.values())
+COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 
 class Analyzer:
@@ -30,16 +31,16 @@ class Analyzer:
         self.validate_video()
         self.dlc_config = self.load_dlc_config()
 
-    def run_pose(self, frames=None, is_save_frames=False, load_only=False) -> pd.DataFrame:
+    def run_pose(self, selected_frames=None, is_save_frames=False, load_only=False) -> pd.DataFrame:
         """
         Run Pose Estimation
-        :param frames: List of frames IDs needed to be analyzed (ignore the rest)
+        :param selected_frames: List of frames IDs needed to be analyzed (ignore the rest)
         :param is_save_frames: True for saving frames in self.saved_frames
         :return: Dataframe with frames as index and body parts as columns
         """
-        if frames:
-            frames.sort()
-        if not frames:
+        if selected_frames:
+            selected_frames.sort()
+        if not selected_frames:
             if self.output_video_path.exists():
                 self.compress_video()
             if self.output_video_path.with_suffix('.mp4').exists() and self.output_csv_path.exists():
@@ -53,14 +54,14 @@ class Analyzer:
         print(f'start pose estimation for {self.loader.experiment_name} trial{self.loader.trial_id}')
         for frame_id in tqdm(range(num_frames)):
             ret, frame = cap.read()
-            if frames and frame_id not in frames:
+            if selected_frames and frame_id not in selected_frames:
                 continue
             if ret:
                 if not self.is_dlc_live_initiated:
                     self.dlc_live.init_inference(frame)
                     self.is_dlc_live_initiated = True
                 # Initialize video writer (only if no specific frames provided)
-                if not frames and self.video_out is None:
+                if not selected_frames and self.video_out is None:
                     fps = cap.get(cv2.CAP_PROP_FPS)
                     h, w = frame.shape[:2]
                     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
@@ -74,7 +75,7 @@ class Analyzer:
                 pred_df = self.create_pred_df(pred, frame_id)
                 res.append(pred_df)
                 self.write_frame(frame, frame_id, pred_df)
-            if not ret or (frames and frame_id > frames[-1]):
+            if not ret or (selected_frames and frame_id > selected_frames[-1]):
                 break
 
         self.video_out.release()
@@ -89,7 +90,7 @@ class Analyzer:
         range = [[180, 1100], [650, 980]]
         df = self.run_pose(load_only=True)[part]
         df.dropna(inplace=True)
-        hist = np.histogram2d(df.x, df.y, bins=(20, 5), range=range)
+        hist = np.histogram2d(df.x, df.y, bins=(20, 20), range=range)
         if is_plot:
             plt.figure(figsize=(10, 10))
             plt.imshow(hist[0].T, extent=[x for sublist in range for x in sublist])
@@ -142,7 +143,7 @@ class Analyzer:
         return frame
 
     def create_pred_df(self, pred, frame_id: int) -> pd.DataFrame:
-        zf = pd.DataFrame(pred, index=self.dlc_config['bodyparts'], columns=['x', 'y', 'prob']).loc[BODY_PARTS, :]
+        zf = pd.DataFrame(pred, index=self.dlc_config['bodyparts'], columns=['x', 'y', 'prob']) #.loc[BODY_PARTS, :]
         zf.loc[zf['prob'] < PROBABILITY_THRESH, ['x', 'y']] = np.nan
         s = pd.DataFrame(pd.concat([zf['x'], zf['y']]), columns=[frame_id]).T
         s.columns = pd.MultiIndex.from_product([['x', 'y'], zf.index]).swaplevel(0, 1)
@@ -189,4 +190,4 @@ class Analyzer:
 
     @property
     def model_name(self):
-        return Path(EXPORTED_MODEL_PATH).name
+        return Path(DLC_PATH).name + f'_iteration{ITERATION}'

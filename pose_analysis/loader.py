@@ -1,8 +1,10 @@
 import re
+import cv2
 from pathlib import Path
 import pandas as pd
 import numpy as np
 from scipy import optimize
+import matplotlib.pyplot as plt
 import sys
 sys.path += ['../Arena']
 from explore import ExperimentAnalyzer
@@ -18,13 +20,15 @@ CAMERAS = {
 
 
 class Loader:
-    def __init__(self, experiment_name=None, trial_id=None, camera=None, video_path=None, experiment_dir=None):
+    def __init__(self, experiment_name=None, trial_id=None, block_id=None, camera=None, video_path=None,
+                 experiment_dir=None):
         self.experiment_dir = experiment_dir or EXPERIMENTS_DIR
         if video_path:
             video_path = Path(video_path)
-            experiment_name, trial_id, camera = self.parse_video_path(video_path)
+            experiment_name, trial_id, block_id, camera = self.parse_video_path(video_path)
         self.experiment_name = experiment_name
         self.trial_id = trial_id
+        self.block_id = block_id
         self.camera = camera
         self.video_path = video_path or self.get_video_path()
         self.validate()
@@ -33,6 +37,9 @@ class Loader:
         self.frames_ts = self.get_frames_timestamps()
         self.hits_df = self.load_hits()
         self.traj_df = self.load_bug_trajectory()
+
+    def __str__(self):
+        return f'{self.experiment_name}/block{self.block_id or 1}/trial{self.trial_id}'
 
     def load_hits(self, hits_only=False):
         df = pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
@@ -46,36 +53,9 @@ class Loader:
         except Exception as exc:
             raise Exception(f'Error loading bug trajectory; {exc}')
 
-    def get_bug_trajectory_before_strikes(self, n_records=20):
-        X = []
-        y = []
-        infos = []
-        traj_time = self.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
-        dt = self.traj_df['time'].diff().dt.total_seconds()
-        self.traj_df['vx'] = self.traj_df['x'].diff() / dt
-        self.traj_df['vy'] = self.traj_df['y'].diff() / dt
-        for i, hit in self.hits_df.iterrows():
-            t = hit['time'].tz_convert('utc').tz_localize(None)
-            cidx = closest_index(traj_time, t)
-            if cidx is not None and cidx >= n_records:
-                x = self.traj_df.loc[cidx-n_records+1:cidx, ['x', 'y', 'vx', 'vy']].to_numpy()
-                if np.isnan(x).any():
-                    continue
-                hit_dist = distance(hit['x'], hit['y'], hit['bug_x'], hit['bug_y'])
-                if hit_dist > 1000:
-                    continue
-                X.append(x.reshape(1, *x.shape))
-                y.append(hit[['x', 'y']].to_numpy().reshape(1, -1))
-                info = self.info.copy()
-                info['hit_id'] = i
-                info['trial_id'] = self.trial_id
-                info['is_hit'] = hit['is_hit']
-                info['hit_dist'] = hit_dist
-                infos.append(info)
-                # names.append(f"{self.experiment_name}_trial{self.trial_id}_hit#{i+1}_pogona{self.info['animal_id']}")
-        if len(X) > 0:
-            return np.concatenate(X), np.concatenate(y), infos
-        return None, None, None
+    @property
+    def traj_time(self):
+        return self.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
 
     def get_frames_timestamps(self) -> pd.Series:
         return pd.to_datetime(pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0'])
@@ -84,10 +64,10 @@ class Loader:
         """return the frame ids for screen strikes"""
         frames = []
         for hit_ts in self.hits_df['time'].dt.tz_convert('utc').dt.tz_localize(None):
-            cidx = closest_index(self.frames_ts, hit_ts)
-            if cidx is None:
-                print('unable to find frame for hit')
-                continue
+            cidx = closest_index(self.frames_ts, hit_ts, max_dist=0.080)
+            # if cidx is None:
+            #     print('unable to find frame for hit')
+            #     continue
             frames.append(cidx)
         return frames
     
@@ -116,8 +96,15 @@ class Loader:
     def parse_video_path(video_path: Path):
         assert video_path.exists(), f'provided video path: {video_path} does not exist'
         try:
-            experiment_name = video_path.parts[-4]
             trial_id = int(video_path.parts[-3].split('trial')[1])
+            m_block = re.match(r'block(\d+)', video_path.parts[-4])
+            if m_block:
+                block_id = m_block[1]
+                experiment_name = video_path.parts[-5]
+            else:
+                block_id = None
+                experiment_name = video_path.parts[-4]
+
             camera = None
             for name, serial in CAMERAS.items():
                 if name in video_path.name or serial in video_path.name:
@@ -125,7 +112,7 @@ class Loader:
                     break
             if not camera:
                 raise Exception('unable to parse camera from video path')
-            return experiment_name, trial_id, camera
+            return experiment_name, trial_id, block_id, camera
         except Exception as exc:
             raise Exception(f'Error parsing video path: {exc}')
 
@@ -140,21 +127,60 @@ class Loader:
         return videos[0]
 
     def get_experiment_info(self):
-        info = ExperimentAnalyzer.get_experiment_info(self.experiment_path / 'experiment.log')
+        info = ExperimentAnalyzer.get_experiment_info(self.experiment_path / 'experiment.yaml')
+        info.update(info.get(f'block{self.block_id or 1}', {}))
         info['trial_id'] = self.trial_id
         return info
 
     def fit_circle(self):
-        if self.info.get('movement_type') != 'circle':
-            return None, None
+        assert self.info.get('movement_type') == 'circle', 'Trial must be of circle movement'
         x_center, y_center, _ = fit_circle(self.traj_df.x, -self.traj_df.y)
-        if not 1100 < x_center < 1300 or not -900 < y_center < -700:
-            return None, None
-
+        assert 800 < x_center < 1600 and -1000 < y_center < -600, 'x,y center are out of range'
         return x_center, y_center
 
     def is_circle(self):
         return self.info.get('movement_type') == 'circle'
+
+    def get_bug_trajectory_before_strike(self, idx, n_records=20, max_dist=0.050):
+        assert idx < len(self.hits_df), f'hit index: {idx} is out of range'
+        hit = self.hits_df.loc[idx, :]
+        t = hit['time'].tz_convert('utc').tz_localize(None)
+        cidx = closest_index(self.traj_time, t, max_dist=max_dist)
+        if cidx is None:
+            raise Exception(f'unable to find bug trajectory for time: {t};\n'
+                            f'bug traj time: {self.traj_time[0]} - {self.traj_time[self.traj_time.index[-1]]}')
+        return self.traj_df.loc[cidx - n_records:cidx, ['x', 'y', 'time']]
+
+    def get_rnn_train_set(self, n_records=20, max_hit_dist=1000):
+        X = []
+        y = []
+        infos = []
+        traj_time = self.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
+        dt = self.traj_df['time'].diff().dt.total_seconds()
+        self.traj_df['vx'] = self.traj_df['x'].diff() / dt
+        self.traj_df['vy'] = self.traj_df['y'].diff() / dt
+        for i, hit in self.hits_df.iterrows():
+            t = hit['time'].tz_convert('utc').tz_localize(None)
+            cidx = closest_index(traj_time, t)
+            if cidx is not None and cidx >= n_records:
+                x = self.traj_df.loc[cidx-n_records+1:cidx, ['x', 'y', 'vx', 'vy']].to_numpy()
+                if np.isnan(x).any():
+                    continue
+                hit_dist = distance(hit['x'], hit['y'], hit['bug_x'], hit['bug_y'])
+                if max_hit_dist and hist_dist > max_hit_dist:
+                    continue
+                X.append(x.reshape(1, *x.shape))
+                y.append(hit[['x', 'y']].to_numpy().reshape(1, -1))
+                info = self.info.copy()
+                info['hit_id'] = i
+                info['trial_id'] = self.trial_id
+                info['is_hit'] = hit['is_hit']
+                info['hit_dist'] = hit_dist
+                infos.append(info)
+                # names.append(f"{self.experiment_name}_trial{self.trial_id}_hit#{i+1}_pogona{self.info['animal_id']}")
+        if len(X) > 0:
+            return np.concatenate(X), np.concatenate(y), infos
+        return None, None, None
 
     @property
     def animal_id(self):
@@ -166,6 +192,8 @@ class Loader:
 
     @property
     def trial_path(self):
+        if self.block_id:
+            return self.experiment_path / f'block{self.block_id}' / f'trial{self.trial_id}'
         return self.experiment_path / f'trial{self.trial_id}'
 
     @property
@@ -185,9 +213,9 @@ def distance(x1, y1, x2, y2):
     return np.sqrt((x1-x2)**2 + (y1-y2)**2)
 
 
-def closest_index(series, x, min_dist=0.050):
+def closest_index(series, x, max_dist=0.050):
     diffs = (series - x).abs().dt.total_seconds()
-    d = diffs[diffs <= min_dist]
+    d = diffs[diffs <= max_dist]
     if len(d) > 0:
         return d.index[d.argmin()]
 
@@ -196,9 +224,12 @@ def get_experiments(*args, **kwargs):
     """Get experiment using explore"""
     df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
     loaders = []
-    for experiment, trial in df.index:
+    for experiment, block, trial in df.index:
         try:
-            ld = Loader(experiment, int(trial), 'realtime', experiment_dir=kwargs.get('experiment_dir'))
+            experiment_dir = kwargs.get('experiment_dir') or EXPERIMENTS_DIR
+            if not Path(f'{experiment_dir}/{experiment}/block{block}').exists():
+                block = None
+            ld = Loader(experiment, int(trial), block, 'realtime', experiment_dir=experiment_dir)
             loaders.append(ld)
         except Exception as exc:
             print(f'Error loading {experiment} trial{trial}; {exc}')
