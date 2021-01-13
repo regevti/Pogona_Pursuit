@@ -19,100 +19,76 @@ class StrikesSummary:
         self.pose_df = self.get_pose()
         self.strike_errors = None
 
-    def strikes_summary(self, n_frames=5, n_pose_frames=30, save_only=False, use_cache=True):
+    def strikes_summary(self, n_frames=5, n_pose_frames=30, is_plot=True, is_close_plot=False, use_cache=True):
         """
         Main function for strikes analysis
         :param n_frames - Number of frames to show around the strike frame
         :param n_pose_frames - Number of frames (before&after) to be used in pose plots
-        :param save_only - don't show figure, only save
+        :param is_plot - show the figure or not
+        :param is_close_plot - close figure after it was created and saved
+        :param use_cache - Use cached files if exist, instead of running analysis. If not exist, run anyway.
         """
         assert n_frames % 2, 'n_frames must be odd number'
-        saved_images = []
-        expected_images = [self.save_image_path(i) for i in range(len(self.hits_df))]
-        if use_cache and all([p.exists() for p in expected_images]):
-            for p in expected_images:
-                if not save_only:
-                    plt.imshow(cv2.imread(p.as_posix()))
-                saved_images.append(p.as_posix())
-            return saved_images
+        self.strike_errors = []
+        if use_cache:
+            data, images_paths = self.load_cached_summary(is_plot)
+            return data, images_paths
 
-        print(f'Start strikes summary for {self.loader}')
-        d = (n_frames - 1) // 2
-        frames_ids = [list(range(f - d, f + d + 1)) if f else [] for f in self.loader.get_hits_frames()]
-        flat_frames = [f for sublist in frames_ids for f in sublist]
-        if not flat_frames:
-            print(f'No Frames were found.')
-            for i, hit in self.hits_df.iterrows():
-                print(f'hit #{i+1} time: {hit.get("time").tz_convert("utc").tz_localize(None)} not in '
-                      f'{self.loader.frames_ts[0]} - {self.loader.frames_ts[self.loader.frames_ts.index[-1]]}')
-            return
-        cap = cv2.VideoCapture(self.loader.video_path.as_posix())
-        frames = {}
-        for frame_id in range(max(flat_frames) + 1):
-            ret, frame = cap.read()
-            if frame_id in flat_frames:
-                frames[frame_id] = frame
-        cap.release()
-
+        print(f'>> Start strikes summary for {self.loader}')
+        frames, frames_ids = self.load_trial_frames(n_frames)
+        data = []
+        images_paths = []
         for i, frame_group in enumerate(frames_ids):
-            image_path = self.save_image_path(i)
             if not frame_group:
-                print(f'Unable to find frame for strike #{i}')
+                print(f'Unable to find frames for strike #{i}')
                 continue
-            self.strike_errors = []
-            fig = plt.figure(figsize=(20, 15))
-            grid = fig.add_gridspec(ncols=4, nrows=3, width_ratios=[1, 1, 1, 1], height_ratios=[5, 6, 5])
-            is_hit = self.hits_df.loc[i, "is_hit"]
-            fig.suptitle(f'Results for strike #{i + 1} ({"hit" if is_hit else "miss"})\n{self.loader}', fontsize=15)
+            nose = None
+            leap_frame_id = None
+            calc_strike_frame = None
+            pd = None
             try:
-                leap_frame_id = None; calc_strike_frame = None
+                is_hit = self.hits_df.loc[i, "is_hit"]
                 strike_frame = int(np.median(frame_group))
-                self.plot_frames(grid[0, :], frame_group, frames, i, strike_frame)
+                bug_traj = self.get_bug_trajectory_before_strike(i)
+                bug_speed = self.calculate_bug_speed(bug_traj)
                 if self.pose_df is not None:
                     selected_frames = np.arange(strike_frame - n_pose_frames, strike_frame + n_pose_frames)
                     nose = self.pose_df.nose.loc[selected_frames, :].copy()
                     leap_frame_id, calc_strike_frame = self.calculate_leap_frame(nose.y, strike_frame)
-                    self.plot_xy_pose(fig.add_subplot(grid[1, 2]), strike_frame, nose)
-                    self.plot_nose_vs_time(fig.add_subplot(grid[1, 3]), strike_frame, nose,
-                                           leap_frame_id, calc_strike_frame)
-                bug_traj = self.get_bug_trajectory_before_strike(i)
-                if bug_traj is not None:
-                    self.plot_bug_trajectory(fig.add_subplot(grid[1, 0]), bug_traj, i, leap_frame_id)
-                    self.plot_projected_strike(fig.add_subplot(grid[1, 1]), bug_traj, i, leap_frame_id, calc_strike_frame)
-                self.plot_info(fig.add_subplot(grid[2, 0]))
-                self.plot_errors(fig.add_subplot(grid[2, 1:]))
-                fig.tight_layout()
-                fig.subplots_adjust(top=0.95, hspace=0.05)
-                fig.patch.set_linewidth(3)
-                fig.patch.set_edgecolor('black')
+                    pd = self.calculate_prediction_distance(leap_frame_id, i)
+                data.append(self.pickle(i, locals()))
 
-                # pickling
-                vars2pickle = ['bug_traj', 'strike_frame', 'leap_frame_id', 'calc_strike_frame', 'is_hit', 'bug_type',
-                               'bug_radius']
-                bug_type = self.hits_df.loc[i, 'bug_type']
-                bug_radius = self.get_bug_radius(i)
-                pickle_path = self.save_pickle_path(i)
-                lcls = locals()
-                pickle_dict = {k: lcls.get(k) for k in vars2pickle}
-                with pickle_path.open('wb') as f:
-                    pickle.dump(pickle_dict, f)
+                if is_plot:
+                    fig = plt.figure(figsize=(20, 15))
+                    grid = fig.add_gridspec(ncols=4, nrows=3, width_ratios=[1, 1, 1, 1], height_ratios=[5, 6, 5])
+                    fig.suptitle(f'Results for strike #{i + 1} ({"hit" if is_hit else "miss"})\n{self.loader}',
+                                 fontsize=15)
+                    self.plot_frames(grid[0, :], frame_group, frames, i, strike_frame)
+                    if bug_traj is not None:
+                        self.plot_bug_trajectory(fig.add_subplot(grid[1, 0]), bug_traj, i, leap_frame_id, bug_speed)
+                        self.plot_projected_strike(fig.add_subplot(grid[1, 1]), bug_traj, i, pd, leap_frame_id, calc_strike_frame)
+                    if nose is not None:
+                        self.plot_xy_pose(fig.add_subplot(grid[1, 2]), strike_frame, nose)
+                        self.plot_nose_vs_time(fig.add_subplot(grid[1, 3]), strike_frame, nose,
+                                               leap_frame_id, calc_strike_frame)
+                    self.plot_info(fig.add_subplot(grid[2, 0]))
+                    self.plot_errors(fig.add_subplot(grid[2, 1:]))
+                    fig.tight_layout()
+                    fig.subplots_adjust(top=0.95, hspace=0.05)
+                    fig.patch.set_linewidth(3)
+                    fig.patch.set_edgecolor('black')
+
+                    self.saved_image_folder.mkdir(exist_ok=True)
+                    image_path = self.save_image_path(i)
+                    fig.savefig(image_path)
+                    images_paths.append(image_path.as_posix())
+                    if is_close_plot:
+                        plt.close(fig)
 
             except Exception as exc:
                 self.log(f'Error in strike {i+1} {self.loader}; {exc}')
-            finally:
-                self.saved_image_folder.mkdir(exist_ok=True)
-                fig.savefig(image_path)
-                saved_images.append(image_path.as_posix())
-                if save_only:
-                    plt.close(fig)
 
-        return saved_images
-
-    def save_image_path(self, i):
-        return self.saved_image_folder / f'strike{i + 1}.jpg'
-
-    def save_pickle_path(self, i):
-        return self.saved_image_folder / f'strike{i + 1}.pickle'
+        return data, images_paths
 
     def plot_frames(self, grid, frame_group, frames, idx, strike_frame):
         """Plot the frames close to the strike"""
@@ -128,9 +104,8 @@ class StrikesSummary:
             if f_id == strike_frame:
                 axes[i].set_title('strike frame')
 
-    def plot_bug_trajectory(self, ax, bug_traj, i, leap_frame=None):
+    def plot_bug_trajectory(self, ax, bug_traj, i, leap_frame=None, bug_speed=0.0):
         try:
-            bug_speed = self.calculate_bug_speed(bug_traj)
             cl = colorline(ax, bug_traj.x.to_numpy(), bug_traj.y.to_numpy(), alpha=1)
             plt.colorbar(cl, ax=ax, orientation='horizontal')
             ax.scatter(self.hits_df.x[i], self.hits_df.y[i], marker='X', color='r', label='strike', zorder=3)
@@ -143,13 +118,13 @@ class StrikesSummary:
                                zorder=2)
             ax.set_xlim([0, 2400])
             ax.set_ylim([-60, 1000])
-            ax.set_title(f'Bug Trajectory\ncalculated speed: {bug_speed:.1f} pixels/sec')
+            ax.set_title(f'Bug Trajectory\ncalculated speed: {bug_speed:.1f} cm/sec')
             ax.invert_yaxis()
             ax.legend()
         except Exception as exc:
             self.log(f'Error plotting bug trajectory; {exc}')
 
-    def plot_projected_strike(self, ax, bug_traj, i, leap_frame=None, default_leap=20, is_plot_strike_only=False):
+    def plot_projected_strike(self, ax, bug_traj, i, pd, leap_frame, default_leap=20, is_plot_strike_only=False):
         try:
             if leap_frame:
                 leap_pos = self.loader.bug_data_for_frame(leap_frame)[['x', 'y']].to_numpy(dtype='float')
@@ -171,7 +146,10 @@ class StrikesSummary:
             ax.set_ylim([-lim, lim])
             ax.plot([0, 0], [-lim, lim], 'k')
             ax.plot([-lim, lim], [0, 0], 'k')
-            ax.set_title('Projected Strike Coordinates')
+            title = 'Projected Strike Coordinates'
+            if pd:
+                title += f'\nPD: {pd:.2f} cm'
+            ax.set_title(title)
         except Exception as exc:
             self.log(f'Error plotting projected strike; {exc}')
 
@@ -202,6 +180,13 @@ class StrikesSummary:
         ax.set_title(title)
         ax.set_xlabel('Frame')
         ax.set_ylabel('Y (nose)')
+
+    def calculate_prediction_distance(self, leap_frame_id, i):
+        leap_bug_traj = self.loader.bug_data_for_frame(leap_frame_id)
+        if leap_bug_traj is None:
+            return
+        d = distance(leap_bug_traj.x, leap_bug_traj.y, self.hits_df.loc[i, 'x'], self.hits_df.loc[i, 'y'])
+        return pixels2cm(d)
 
     @staticmethod
     def calculate_leap_frame(y: pd.DataFrame, strike_frame, th=0.9, grace=5, min_leap=10,
@@ -248,11 +233,76 @@ class StrikesSummary:
         r0 = r.dot(bug_pos)
         return r.dot(strike_pos) - r0, r.dot(leap_pos) - r0
 
-    def plot_info(self, ax):
+    def load_cached_summary(self, is_plot):
+        data = []
+        images_paths = []
+        for i in self.hits_df.reset_index(drop=True).index:
+            try:
+                if is_plot:
+                    plt.imshow(cv2.imread(self.save_image_path(i).as_posix()))
+                images_paths.append(self.save_image_path(i))
+                with self.save_pickle_path(i).open('rb') as f:
+                    data.append(pickle.load(f))
+            except Exception as exc:
+                self.log(f'Error loading cached summary for strike {i+1}; {exc}')
+        return data, images_paths
+
+    def load_trial_frames(self, n_frames):
+        d = (n_frames - 1) // 2
+        frames_ids = [list(range(f - d, f + d + 1)) if f else [] for f in self.loader.get_hits_frames()]
+        flat_frames = [f for sublist in frames_ids for f in sublist]
+        if not flat_frames:
+            msg = 'No Frames were found; '
+            for i, hit in self.hits_df.iterrows():
+                msg += f'hit #{i + 1} time: {hit.get("time").tz_convert("utc").tz_localize(None)} not in ' \
+                       f'{self.loader.frames_ts[0]} - {self.loader.frames_ts[self.loader.frames_ts.index[-1]]}\n'
+            raise Exception(msg)
+        cap = cv2.VideoCapture(self.loader.video_path.as_posix())
+        frames = {}
+        for frame_id in range(max(flat_frames) + 1):
+            ret, frame = cap.read()
+            if frame_id in flat_frames:
+                frames[frame_id] = frame
+        cap.release()
+        return frames, frames_ids
+
+    def pickle(self, i, lcls):
+        vars2pickle = ['bug_traj', 'strike_frame', 'leap_frame_id', 'calc_strike_frame', 'is_hit', 'bug_type',
+                       'bug_radius', 'pd', 'bug_speed']
+        bug_type = self.hits_df.loc[i, 'bug_type']
+        bug_radius = self.get_bug_radius(i)
+        lcls.update(locals())
+        pickle_path = self.save_pickle_path(i)
+        pickle_dict = {k: lcls.get(k) for k in vars2pickle}
+        if pickle_dict.get('bug_speed'):
+            pickle_dict['speed_group'] = self.get_speed_group(pickle_dict['bug_speed'])
+        with pickle_path.open('wb') as f:
+            pickle.dump(pickle_dict, f)
+
+        return pickle_dict
+
+    def save_image_path(self, i):
+        return self.saved_image_folder / f'strike{i + 1}.jpg'
+
+    def save_pickle_path(self, i):
+        return self.saved_image_folder / f'strike{i + 1}.pickle'
+
+    def plot_info(self, ax, w=30):
         ax.axis('off')
         text = f'Info:\n\n'
-        text += '\n'.join([f'{k}: {v}' for k,v in self.loader.info.items() if not k.lower().startswith('block')])
-        ax.text(0, 0, text, fontsize=14)
+        for k, v in self.loader.info.items():
+            if k.lower().startswith('block'):
+                continue
+            if isinstance(v, str) and len(v) > w:
+                v_new = ''
+                for i in range(0,len(v),w):
+                    if i + w < len(v):
+                        v_new += f'{v[i:i+w]}-\n'
+                    else:
+                        v_new += f'{v[i:]}'
+                v = v_new
+            text += f'{k}: {v}\n'
+        ax.text(0, 0, text, fontsize=14, wrap=True)
 
     def plot_errors(self, ax):
         ax.axis('off')
@@ -288,12 +338,24 @@ class StrikesSummary:
             return
 
     @staticmethod
+    def get_speed_group(v):
+        if 2 <= v < 6:
+            return 4
+        elif 6 <= v < 10:
+            return 8
+        elif 10 <= v < 14:
+            return 12
+
+    @staticmethod
     def calculate_bug_speed(bug_traj: pd.DataFrame):
+        if bug_traj is None:
+            return
         d = bug_traj.diff()
         v = np.sqrt(d.x ** 2 + d.y ** 2) / d.time.dt.total_seconds()
-        return v.mean()
+        return pixels2cm(v.mean())  # speed in cm/sec
 
     def log(self, msg):
+        print(msg)
         self.strike_errors.append(msg)
 
     @property
@@ -301,15 +363,33 @@ class StrikesSummary:
         return self.loader.trial_path / 'strike_analysis'
 
 
+STRIKE_FIELDS = ['bug_type']
+
+
 class MultiStrikesAnalyzer:
-    def __init__(self, loaders, groupby=('animal_id',), defaults=(), **filters):
+    def __init__(self, loaders, groupby=None, main=None, **filters):
+        if groupby:
+            assert isinstance(groupby, dict), 'groupby must be dictionary'
+            assert all(isinstance(v, list) for v in groupby.values() if v is not None), \
+                'all groupby values must be list or None'
+        if main:
+            assert main in groupby, f'main {main} is not in groupby'
         self.loaders = self.filter(loaders, **filters)
+        self.main = main
         self.groupby = groupby
-        self.info_df = pd.DataFrame([ld.info for ld in self.loaders])
-        for g, d in zip(groupby, defaults):
-            if d is not None:
-                self.info_df[g].fillna(d, inplace=True)
-        # self.groups = info_df.groupby(list(groupby)).groups
+        self.info_df = self.load_data()
+
+    def load_data(self):
+        l = []
+        fields2drop = ['bug_traj', 'nose']
+        for ld in self.loaders:
+            data, _ = StrikesSummary(ld).strikes_summary(is_plot=False, use_cache=True)
+            for d in data:
+                [d.pop(f, None) for f in fields2drop]
+                d.update({k: v for k, v in ld.info.items() if not k.startswith('block')})
+                l.append(d)
+
+        return pd.DataFrame(l)
 
     @staticmethod
     def filter(loaders, **filters):
@@ -322,10 +402,11 @@ class MultiStrikesAnalyzer:
         print(f'Left with {len(lds)} loaders after applying the filters')
         return lds
 
-    def create_subplots(self, groups):
-        cols = min([4, len(groups)]) if groups else 1
-        rows = int(np.ceil(len(groups) / cols)) if groups else 1
-        fig = plt.figure(figsize=(20, rows*5))
+    @staticmethod
+    def create_subplots(n_groups):
+        cols = min([4, n_groups or 1])
+        rows = int(np.ceil((n_groups or 1) / cols))
+        fig = plt.figure(figsize=(20, rows * 5))
         axes = fig.subplots(rows, cols)
         if isinstance(axes, np.ndarray):
             axes = axes.flatten()
@@ -333,213 +414,106 @@ class MultiStrikesAnalyzer:
             axes = [axes]
         return fig, axes
 
-    def subplot(self, plot_func, xlim=(0, 2300), ylim=(0, 900), is_invert_y=True):
-        main_group = self.groupby[0]
-        groupby = self.groupby[1:] if len(self.groupby) > 1 else [main_group]
-        for main_group_value in self.info_df[main_group].unique():
-            groups = self.info_df[self.info_df[main_group] == main_group_value].groupby(groupby).groups
-            fig, axes = self.create_subplots(groups)
-            fig.suptitle(f'{main_group} = {main_group_value}', fontsize=15)
-            ia = 0
-            for group_name, group_idx in groups.items():
-                ax = axes[ia]
-                glds = [ld for j, ld in enumerate(self.loaders) if j in group_idx]
-                for ld in glds:
-                    plot_func(ld, ax)
-                ax.set_xlim(list(xlim))
-                ax.set_ylim(list(ylim))
-                if main_group != groupby[0]:
-                    if len(groupby) == 1:
-                        group_name = [group_name]
-                    ax.set_title(', '.join([f'{g}={v}' for g, v in zip(groupby, list(group_name))]))
-                if is_invert_y:
-                    ax.invert_yaxis()
-                # ax.legend()
-                ia += 1
+    @staticmethod
+    def group_plot(plot_func, glds, ax, xlim, ylim, is_invert_y):
+        for ld in glds:
+            plot_func(ld, ax)
+        ax.set_xlim(list(xlim))
+        ax.set_ylim(list(ylim))
+        if is_invert_y:
+            ax.invert_yaxis()
 
-    def plot_projected_strikes(self):
+    def subplot(self, plot_func, xlim=(0, 2300), ylim=(0, 900), is_invert_y=True):
+        if not self.groupby:
+            fig, axes = self.create_subplots(1)
+            self.group_plot(plot_func, self.loaders, axes[0], xlim, ylim, is_invert_y)
+            return
+
+        groupby = list(self.groupby.keys())
+        main_group = self.main or groupby[0]
+        if len(groupby) > 1:
+            groupby.remove(main_group)
+        main_values = self.groupby[main_group] if self.groupby.get(main_group) else self.info_df[main_group].unique()
+        for main_group_value in main_values:
+            groups = self.info_df[self.info_df[main_group] == main_group_value].groupby(groupby).groups
+            groups = self.check_groups(groups, groupby)
+            fig, axes = self.create_subplots(len(groups))
+            fig.suptitle(f'{main_group} = {main_group_value}', fontsize=15)
+            for ia, (group_values, group_idx) in enumerate(groups.items()):
+                if len(groupby) == 1:
+                    group_values = [group_values]
+                glds = [ld for j, ld in enumerate(self.loaders) if j in group_idx]
+                self.group_plot(plot_func, glds, axes[ia], xlim, ylim, is_invert_y)
+                if main_group != groupby[0]:
+                    axes[ia].set_title(', '.join([f'{g}={v}' for g, v in zip(groupby, list(group_values))]))
+
+    def check_groups(self, groups, groupby):
+        new_groups = {}
+        for group_values, group_idx in groups.items():
+            is_group_ok = True
+            for key, value in zip(groupby, group_values if len(groupby) > 1 else [group_values]):
+                if self.groupby.get(key) and value not in self.groupby[key]:
+                    is_group_ok = False
+            if is_group_ok:
+                new_groups[group_values] = group_idx
+
+        return new_groups
+
+    def plot_projected_strikes(self, xlim=(-200, 200), ylim=(-200, 200)):
+
         def _plot_projected_strikes(ld, ax):
             s = StrikesSummary(ld)
             for i in range(len(s.hits_df)):
+                if 'bug_type' in self.groupby and not ax.patches:
+                    ax.add_patch(plt.Circle((0, 0), s.get_bug_radius(i), color='lemonchiffon', alpha=0.4))
                 pickle_path = s.save_pickle_path(i)
                 if pickle_path.exists():
                     with pickle_path.open('rb') as f:
                         data = pickle.load(f)
                     if data.get('bug_traj') is None:
                         continue
-                    s.plot_projected_strike(ax, data['bug_traj'], i, leap_frame=data.get('leap_frame'),
+                    s.plot_projected_strike(ax, data['bug_traj'], i, data.get('pd'), leap_frame=data.get('leap_frame'),
                                             is_plot_strike_only=True)
+                    ax.plot([0, 0], ylim, 'k')
+                    ax.plot(xlim, [0, 0], 'k')
 
-        self.subplot(_plot_projected_strikes, xlim=[-200, 200], ylim=[-200, 200])
+        self.subplot(_plot_projected_strikes, xlim=xlim, ylim=ylim, is_invert_y=False)
 
-    def plot_strikes(self, n_records=20):
-        def _plot_strikes(ld, ax):
-            hits_df = ld.hits_df
-            hits_df['dist'] = distance(hits_df.x, hits_df.y, hits_df.bug_x, hits_df.bug_y)
-            hits_df = hits_df.query('dist < 700')
-            ax.scatter(hits_df.query('is_hit').x, hits_df.query('is_hit').y, color='r', label='successful hits',
-                       marker='X', s=120)
-            ax.scatter(hits_df.query('~is_hit').x, hits_df.query('~is_hit').y, color='y', label='misses', marker='X',
-                       s=120)
-            traj_time = ld.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
-            for i, hit in hits_df.iterrows():
-                t = hit['time'].tz_convert('utc').tz_localize(None)
-                cidx = closest_index(traj_time, t)
-                if cidx is not None and cidx >= n_records:
-                    B = ld.traj_df.loc[cidx - n_records + 1:cidx, ['x', 'y']].reset_index(drop=True)
-                    B = B.loc[np.arange(0, len(B), 3)]
-                    ax.scatter(B.x, B.y, color='k', s=20, label=None)
+    def plot_pd(self, xlim=(0, 15), ylim=(-2.5, 5)):
 
-            ax.plot([hits_df.x, hits_df.bug_x], [hits_df.y, hits_df.bug_y], 'b-')
-            ax.scatter(hits_df.bug_x, hits_df.bug_y, color='g', label='bug position at hit', marker='D', s=100)
+        def _plot_pd(ld, ax):
+            s = StrikesSummary(ld)
+            for i in range(len(s.hits_df)):
+                pickle_path = s.save_pickle_path(i)
+                if pickle_path.exists():
+                    with pickle_path.open('rb') as f:
+                        data = pickle.load(f)
+                    if not data.get('pd') or not data.get('bug_speed'):
+                        continue
+                    ax.scatter(data['bug_speed'], data['pd'], color='b')
+                    ax.set_xlabel('bug speed [cm/sec]')
+                    ax.set_ylabel('PD [cm]')
+        self.subplot(_plot_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
 
-        self.subplot(_plot_strikes)
+    def plot_accuracy_vs_speed(self, xlim=(0, 15), ylim=(-2.5, 5)):
 
-    def plot_centred_strikes(self):
-        xlim = [-300, 300]
-        ylim = [-300, 300]
-
-        def _plot_centred_strikes(ld, ax):
-            hits_df = ld.hits_df.copy()
-            hits_df['dist'] = distance(hits_df.x, hits_df.y, hits_df.bug_x, hits_df.bug_y)
-            hits_df = hits_df.query('dist < 700').copy()
-            hits_df.loc[:, 'x'] = hits_df.x - hits_df.bug_x
-            hits_df.loc[:, 'y'] = hits_df.y - hits_df.bug_y
-            ax.scatter(hits_df.query('is_hit').x, hits_df.query('is_hit').y, color='r', label='successful hits',
-                       marker='X', s=120)
-            ax.scatter(hits_df.query('~is_hit').x, hits_df.query('~is_hit').y, color='y', label='misses', marker='X',
-                       s=120)
-            ax.plot(xlim, [0, 0], 'k')
-            ax.plot([0, 0], ylim, 'k')
-        self.subplot(_plot_centred_strikes, xlim=[-300, 300], ylim=[-300, 300])
-
-    def plot_polar_transform(self):
-        xlim = [-0.7, 0.7]
-        ylim = [-100, 100]
-
-        def _plot_cycles_transform(ld: Loader, ax):
-            try:
-                hits_df = get_polar_hits_df(ld)
-                hits = hits_df.query('is_hit')
-                misses = hits_df.query('~is_hit')
-                ax.scatter(hits.x, hits.y, color='r', label='successful hits', marker='X', s=120)
-                ax.scatter(misses.x, misses.y, color='y', label='misses', marker='X', s=120)
-            except ImportError as exc:
-                print(f'Error running transform circle for {ld}; {exc}')
-                return
-            ax.plot(xlim, [0, 0], 'k')
-            ax.plot([0, 0], ylim, 'k')
-        self.subplot(_plot_cycles_transform, xlim=xlim, ylim=ylim, is_invert_y=False)
-
-    def plot_strikes_polar(self):
-        xlim = [-1, 1]
-        ylim = [-150, 150]
-
-        def _plot_strikes_polar(ld: Loader, ax):
-            try:
-                hits_df, bug_traj = get_polar_hits_df(ld, max_dist=300)
-                hits = hits_df.query('is_hit')
-                misses = hits_df.query('~is_hit')
-                ax.scatter(hits.x, hits.y, color='r', label='successful hits', marker='X', s=120)
-                ax.scatter(misses.x, misses.y, color='y', label='misses', marker='X', s=120)
-                for i, b in enumerate(bug_traj):
-                    b = b.reset_index(drop=True)
-                    # b = b.loc[np.arange(0, len(b), 3)]
-                    ax.plot([hits_df.loc[i,'x'], b.theta[0]], [hits_df.loc[i,'y'], b.rho[0]], 'b-')
-                    ax.scatter(b.theta[0], b.rho[0], color='g', s=20, label=None, marker='D')
-                    # ax.scatter(b.theta.values[-1], b.rho.values[-1], color='g', s=50, label=None)
-            except Exception as exc:
-                print(f'Error running transform circle for {ld}; {exc}')
-                return
-
-            ax.plot(xlim, [0, 0], 'k')
-            ax.plot([0, 0], ylim, 'k')
-        self.subplot(_plot_strikes_polar, xlim=xlim, ylim=ylim, is_invert_y=False)
-
-    def plot_position_map(self):
-        main_group = self.groupby[0]
-        groupby = self.groupby[1:] if len(self.groupby) > 1 else [main_group]
-        for main_group_value in self.info_df[main_group].unique():
-            groups = self.info_df[self.info_df[main_group] == main_group_value].groupby(groupby).groups
-            fig, axes = self.create_subplots(groups)
-            fig.suptitle(f'{main_group} = {main_group_value}', fontsize=15)
-            ia = 0
-            for group_name, group_idx in groups.items():
-                ax = axes[ia]
-                hists = []
-                glds = [ld for j, ld in enumerate(self.loaders) if j in group_idx]
-                for ld in glds:
-                    a = Analyzer(ld.video_path)
-                    pm = a.position_map(is_plot=False)
-                    hists.append(pm)
-                h = np.sum(hists, axis=0)
-                ax.imshow(h, extent=[180, 1100, 100, 980])
-                ax.invert_yaxis()
-                ax.invert_xaxis()
-                # ax.set_xlim(list(xlim))
-                # ax.set_ylim(list(ylim))
-                if main_group != groupby[0]:
-                    if len(groupby) == 1:
-                        group_name = [group_name]
-                    ax.set_title(', '.join([f'{g}={v}' for g, v in zip(groupby, list(group_name))]))
-                # ax.legend()
-                ia += 1
-
-    def plot_ballistic_analysis(self):
-        main_group = self.groupby[0]
-        groupby = self.groupby[1:] if len(self.groupby) > 1 else [main_group]
-        for main_group_value in self.info_df[main_group].unique():
-            groups = self.info_df[self.info_df[main_group] == main_group_value].groupby(groupby).groups
-            fig, axes = self.create_subplots(groups)
-            fig.suptitle(f'{main_group} = {main_group_value}', fontsize=15)
-            ia = 0
-            for group_name, group_idx in groups.items():
-                ax = axes[ia]
-                res = []
-                glds = [ld for j, ld in enumerate(self.loaders) if j in group_idx]
-                glds = sorted(glds, key=lambda x: x.experiment_name.split('_')[-1])
-                for ld in glds:
-                    s = StrikesAnalyzer(ld)
-                    res.append(s.ballistic_analysis(circle_only=True))
-
-                ax.plot(np.concatenate(res))
-                # ax.set_xlim(list(xlim))
-                # ax.set_ylim(list(ylim))
-                if main_group != groupby[0]:
-                    if len(groupby) == 1:
-                        group_name = [group_name]
-                    ax.set_title(', '.join([f'{g}={v}' for g, v in zip(groupby, list(group_name))]))
-                # ax.legend()
-                ia += 1
+        def _plot_pd(ld, ax):
+            s = StrikesSummary(ld)
+            for i in range(len(s.hits_df)):
+                pickle_path = s.save_pickle_path(i)
+                if pickle_path.exists():
+                    with pickle_path.open('rb') as f:
+                        data = pickle.load(f)
+                    if not data.get('pd') or not data.get('bug_speed'):
+                        continue
+                    ax.scatter(data['bug_speed'], data['pd'], color='b')
+                    ax.set_xlabel('bug speed [cm/sec]')
+                    ax.set_ylabel('PD [cm]')
+        self.subplot(_plot_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
 
 
-def get_polar_hits_df(ld: Loader, max_dist=800, n_records=20) -> (pd.DataFrame, list):
-    x_center, y_center = ld.fit_circle()
-    hits_df = ld.hits_df.copy()
-    hits_df['dist'] = distance(hits_df.x, hits_df.y, hits_df.bug_x, hits_df.bug_y)
-    hits_df = hits_df.query(f'dist < {max_dist}').copy()
-    # x, y = transform_circle_center(hits_df.x, hits_df.y, x_center, y_center)
-    # cx, cy = transform_circle_center(hits_df.bug_x, hits_df.bug_y, x_center, y_center)
-    theta, rho = polar_transform(hits_df.x, hits_df.y, x_center, y_center)
-    c_theta, c_rho = polar_transform(hits_df.bug_x, hits_df.bug_y, x_center, y_center)
-    hits_df.loc[:, 'x'] = theta - c_theta
-    hits_df.loc[:, 'y'] = rho - c_rho
-
-    traj_time = ld.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
-    bug_traj = []
-    for i, hit in hits_df.iterrows():
-        t = hit['time'].tz_convert('utc').tz_localize(None)
-        cidx = closest_index(traj_time, t)
-        if cidx is not None and cidx >= n_records:
-            B = ld.traj_df.loc[cidx - n_records + 1:cidx, ['x', 'y']].reset_index(drop=True)
-            b_theta, b_rho = polar_transform(B.x, B.y, x_center, y_center)
-            B['theta'] = b_theta - c_theta[i]
-            B['rho'] = b_rho - c_rho[i]
-            bug_traj.append(B)
-            # B = B.loc[np.arange(0, len(B), 3)]
-            # ax.scatter(B.x, B.y, color='k', s=20, label=None)
-
-    return hits_df, bug_traj
+def pixels2cm(x):
+    return x * 0.01833304668870419
 
 
 def distance(x1, y1, x2, y2):
