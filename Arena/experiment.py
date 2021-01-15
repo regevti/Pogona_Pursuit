@@ -52,22 +52,31 @@ class Experiment:
         mkdir(self.experiment_path)
         self.save_experiment_log()
         self.init_experiment_cache()
+        self.turn_screen('on')
 
-        for i, block in enumerate(self.blocks):
-            if i > 0:
-                time.sleep(self.time_between_blocks)
-            block.start()
-
-        time.sleep(3)
         try:
-            requests.get('http://localhost:5000/display/off')
-        except Exception as exc:
-            print(f'error turning off screen: {exc}')
+            for i, block in enumerate(self.blocks):
+                if i > 0:
+                    time.sleep(self.time_between_blocks)
+                block.start()
+        except EndExperimentException as exc:
+            log('>> Experiment stopped externally')
+
+        self.turn_screen('off')
+        time.sleep(3)
         mqtt_client.publish_command('end_experiment')
         return str(self)
 
     def save(self, data):
         """Save experiment arguments"""
+
+    @staticmethod
+    def turn_screen(val):
+        """val must be on or off"""
+        try:
+            requests.get(f'http://localhost:5000/display/{val}')
+        except Exception as exc:
+            print(f'error turning off screen: {exc}')
 
     def save_experiment_log(self):
         with open(f'{self.experiment_path}/experiment.yaml', 'w') as f:
@@ -147,11 +156,11 @@ class Block:
                 if i != 0:
                     self.wait(self.iti)
                 self.run_trial()
-            except EndExperimentException:
+            except EndExperimentException as exc:
                 self.clear_app_content()
                 self.end_trial()
-                log('>> experiment was stopped externally')
-                return str(self)
+                log(f'>> block{self.block_id} was stopped externally')
+                raise exc
 
             log(self.trial_summary)
 
@@ -209,10 +218,6 @@ class Block:
 
     def init_trial(self):
         mkdir(self.trial_path)
-        try:
-            requests.get('http://localhost:5000/display/on')
-        except Exception as exc:
-            print(f'error turning off screen: {exc}')
         mqtt_client.publish_command('led_light', 'on')
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.overall_trial_duration)
         self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path,
