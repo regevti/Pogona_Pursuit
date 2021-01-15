@@ -3,8 +3,10 @@ import cv2
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from scipy import optimize
 import matplotlib.pyplot as plt
+from functools import cache, cached_property
 import sys
 sys.path += ['../Arena']
 from explore import ExperimentAnalyzer
@@ -17,6 +19,7 @@ CAMERAS = {
     'left': '19506455',
     'back': '19506481',
 }
+SCREEN_BOUNDARIES = {'x': (0, 1850), 'y': (0, 800)}
 
 
 class Loader:
@@ -34,40 +37,42 @@ class Loader:
         self.validate()
         self.info = self.get_experiment_info()
 
-        self.frames_ts = self.get_frames_timestamps()
-        self.hits_df = self.load_hits()
-        self.traj_df = self.load_bug_trajectory()
-
     def __str__(self):
         return f'{self.experiment_name}/block{self.block_id or 1}/trial{self.trial_id}'
 
-    def load_hits(self, hits_only=False):
+    @cache
+    def hits_df(self, hits_only):
         df = pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
         if hits_only:
             df = df.query('is_hit == 1')
         return df
 
-    def load_bug_trajectory(self):
+    @cached_property
+    def traj_df(self):
         try:
             return pd.read_csv(self.bug_traj_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
         except Exception as exc:
             raise Exception(f'Error loading bug trajectory; {exc}')
 
-    @property
+    @cached_property
     def traj_time(self):
         return self.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
 
-    def get_frames_timestamps(self) -> pd.Series:
+    @cached_property
+    def frames_ts(self) -> pd.Series:
         return pd.to_datetime(pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0'])
+
+    def get_frame_at_time(self, t: pd.Timestamp):
+        assert isinstance(t, pd.Timestamp)
+        if t.tzinfo:
+            t = t.tz_convert('utc').tz_localize(None)
+        return closest_index(self.frames_ts, t, max_dist=0.080)
 
     def get_hits_frames(self):
         """return the frame ids for screen strikes"""
         frames = []
         for hit_ts in self.hits_df['time'].dt.tz_convert('utc').dt.tz_localize(None):
             cidx = closest_index(self.frames_ts, hit_ts, max_dist=0.080)
-            # if cidx is None:
-            #     print('unable to find frame for hit')
-            #     continue
             frames.append(cidx)
         return frames
     
@@ -83,6 +88,19 @@ class Loader:
         cidx = closest_index(traj_time, frame_time)
         if cidx is not None:
             return self.traj_df.loc[cidx, :]
+
+    def bug_phases(self):
+        def out(a):
+            return (self.traj_df[a] < SCREEN_BOUNDARIES[a][0]) | (SCREEN_BOUNDARIES[a][1] < self.traj_df[a])
+
+        in_indices = self.traj_df[~(out('x') | out('y'))].reset_index()['index']
+        starts = self.traj_df.loc[in_indices[in_indices.diff() != 1], :]
+        ends_indices = in_indices[in_indices[in_indices.diff() > 1].index - 1]
+        # add the last in-index as an end_index
+        ends_indices = ends_indices.append(pd.Series(in_indices[in_indices.index[-1]], index=[in_indices.index[-1]]))
+        ends = self.traj_df.loc[ends_indices, :]
+        assert len(starts) == len(ends), 'bad bug_phases analysis, starts != ends'
+        return starts, ends
 
     def validate(self):
         assert self.experiment_path.exists(), 'experiment dir not exist'
