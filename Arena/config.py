@@ -57,6 +57,7 @@ subscription_topics = {
 }
 
 # Arena
+pixels2cm = 0.01833304668870419
 default_num_frames = 1000
 default_max_throughput = 94578303
 exposure_time = env.int('EXPOSURE_TIME', 8000)
