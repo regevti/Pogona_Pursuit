@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import optimize
 import matplotlib.pyplot as plt
 import matplotlib.collections as mcoll
 
@@ -7,8 +8,36 @@ def pixels2cm(x):
     return x * 0.01833304668870419
 
 
+def closest_index(series, x, max_dist=0.050):
+    diffs = (series - x).abs().dt.total_seconds()
+    d = diffs[diffs <= max_dist]
+    if len(d) > 0:
+        return d.index[d.argmin()]
+
+
 def distance(x1, y1, x2, y2):
     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+
+def fit_circle(x, y):
+    def calc_R(xc, yc):
+        """ calculate the distance of each 2D points from the center (xc, yc) """
+        return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
+
+    def f_2(c):
+        """ calculate the algebraic distance between the data points and the mean circle centered at c=(xc, yc) """
+        Ri = calc_R(*c)
+        return Ri - Ri.mean()
+
+    center_estimate = np.mean(x), np.min(y)
+    center_2, ier = optimize.leastsq(f_2, center_estimate)
+
+    xc_2, yc_2 = center_2
+    Ri_2 = calc_R(*center_2)
+    R_2 = Ri_2.mean()
+    #     residu_2 = sum((Ri_2 - R_2) ** 2)
+
+    return xc_2, yc_2, R_2
 
 
 def transform_circle_center(x, y, x_center, y_center):

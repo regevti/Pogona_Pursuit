@@ -1,13 +1,13 @@
 from pathlib import Path
 import numpy as np
-from functools import cache, cached_property
+from functools import lru_cache
 import pandas as pd
 import pickle
 import cv2
 from pose import PoseAnalyzer, BODY_PARTS
 from scipy.signal import find_peaks
 from loader import Loader, closest_index
-from utils import *
+from pose_utils import *
 
 NUM_FRAMES_TO_PLOT = 5
 NUM_POSE_FRAMES_PER_STRIKE = 30
@@ -75,7 +75,8 @@ class StrikeSummary:
         self.loader = loader
         self.strike_idx = strike_idx
         self.hit_df = loader.hits_df.loc[strike_idx, :]
-        self.strike_frame = self.loader.get_hits_frames()[strike_idx]
+        hits_frames = self.loader.get_hits_frames()
+        self.strike_frame = hits_frames[strike_idx] if strike_idx < len(hits_frames) else None
         self.pose_df = pose_df
         self.strike_errors = []
 
@@ -202,7 +203,7 @@ class StrikeSummary:
                 continue
             if isinstance(v, str) and len(v) > w:
                 v_new = ''
-                for i in range(0,len(v),w):
+                for i in range(0, len(v), w):
                     if i + w < len(v):
                         v_new += f'{v[i:i+w]}-\n'
                     else:
@@ -231,8 +232,9 @@ class StrikeSummary:
         r0 = r.dot(bug_pos)
         return r.dot(strike_pos) - r0, r.dot(leap_pos) - r0
 
-    @cache
-    def leap_frame(self, th=0.9, grace=5, min_leap=10):
+    @property
+    @lru_cache()
+    def leap_frame(self):
         if self.nose_df is None:
             return
         y = self.nose_df.y
@@ -240,20 +242,21 @@ class StrikeSummary:
         leap_frame_idx = y.index[0]
         grace_count = 0
         for r in np.arange(self.calc_strike_frame, dy.index[0], -1):
-            if dy[r] < th:
+            if dy[r] < 0.9:
                 if grace_count == 0:
                     leap_frame_idx = r
                 grace_count += 1
-                if grace_count < grace:
+                if grace_count < 5:
                     continue
                 break
             else:
                 grace_count = 0
-        if y[self.calc_strike_frame] - y[leap_frame_idx] < min_leap:
+        if y[self.calc_strike_frame] - y[leap_frame_idx] < 10:
             return
         return leap_frame_idx
 
-    @cached_property
+    @property
+    @lru_cache()
     def calc_strike_frame(self):
         strike_frame_idx = self.strike_frame
         if self.nose_df is None:
@@ -273,7 +276,8 @@ class StrikeSummary:
             print(exc)
         return strike_frame_idx
 
-    @cached_property
+    @property
+    @lru_cache()
     def pd(self):
         leap_bug_traj = self.loader.bug_data_for_frame(self.leap_frame)
         if leap_bug_traj is None:
@@ -281,7 +285,8 @@ class StrikeSummary:
         d = distance(leap_bug_traj.x, leap_bug_traj.y, self.hit_df.x, self.hit_df.y)
         return pixels2cm(d)
 
-    @cached_property
+    @property
+    @lru_cache()
     def nose_df(self):
         if self.pose_df is None:
             return
@@ -289,7 +294,8 @@ class StrikeSummary:
         selected_frames = np.arange(self.strike_frame - n_pose_frames, self.strike_frame + n_pose_frames)
         return self.pose_df.nose.loc[selected_frames, :].copy()
 
-    @cached_property
+    @property
+    @lru_cache()
     def bug_speed(self):
         if self.bug_traj is None:
             return
@@ -297,18 +303,21 @@ class StrikeSummary:
         v = np.sqrt(d.x ** 2 + d.y ** 2) / d.time.dt.total_seconds()
         return pixels2cm(v.mean())  # speed in cm/sec
 
-    @cached_property
+    @property
+    @lru_cache()
     def bug_traj(self):
         try:
             return self.loader.get_bug_trajectory_before_strike(self.strike_idx, n_records=120, max_dist=0.4)
         except Exception as exc:
             self.log(str(exc))
 
-    @cached_property
+    @property
+    @lru_cache()
     def bug_type(self):
         return self.hit_df.bug_type
 
-    @cached_property
+    @property
+    @lru_cache()
     def speed_group(self):
         if 2 <= self.bug_speed < 6:
             return 4
@@ -317,7 +326,8 @@ class StrikeSummary:
         elif 10 <= self.bug_speed < 14:
             return 12
 
-    @cached_property
+    @property
+    @lru_cache()
     def bug_radius(self):
         bugs = {
             'cockroach': 150,
@@ -333,7 +343,8 @@ class StrikeSummary:
     def is_hit(self):
         return self.hit_df.is_hit
 
-    @cached_property
+    @property
+    @lru_cache()
     def data(self):
         data_vars = ['bug_traj', 'strike_frame', 'leap_frame', 'calc_strike_frame', 'is_hit', 'bug_type',
                      'bug_radius', 'pd', 'bug_speed', 'speed_group', 'pose_df', 'bug_type', 'save_image_path']
@@ -347,6 +358,7 @@ class StrikeSummary:
                 data = pickle.load(f)
         except Exception as exc:
             self.log(f'Error loading cached summary for strike {self.strike_idx + 1}; {exc}')
+            return {}
         return data
 
     def save(self):

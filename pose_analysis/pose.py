@@ -5,13 +5,13 @@ import cv2
 import yaml
 import subprocess
 import shutil
-from functools import cache, cached_property
+from functools import lru_cache
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from dlclive import DLCLive, Processor
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 from loader import Loader
-from utils import colorline
+from pose_utils import colorline
 
 DLC_PATH = '/data/pose_estimation/deeplabcut/projects/pogona_pursuit_realtime'
 DLC_CONFIG_FILE = DLC_PATH + '/config.yaml'
@@ -104,30 +104,41 @@ class PoseAnalyzer:
             plt.text(0, 0, str(info_st), wrap=True, ha='left', fontsize=14, color='w')
         return hist[0].T
 
-    @cached_property
+    @property
+    @lru_cache()
     def pose_df(self):
         if self.output_video_path.with_suffix('.mp4').exists() and self.output_csv_path.exists():
             return pd.read_csv(self.output_csv_path, index_col=0, header=[0, 1])
 
-    def arena_trajectories(self, is_plot=True, ax=None):
+    def arena_trajectories(self, is_plot=True, ax=None, cmap=None):
         if self.pose_df is None:
             return
         starts, ends = self.loader.bug_phases()
+        if starts is None:
+            print('No bug phases were found')
+            return
         arena_trajs = []
         for start_t, end_t in zip(starts.time, ends.time):
             start_frame = self.loader.get_frame_at_time(start_t)
             end_frame = self.loader.get_frame_at_time(end_t)
-            traj = self.pose_df.nose.loc[np.arange(start_frame, end_frame), :].copy()
-            arena_trajs.append(traj)
+            if start_frame and end_frame:
+                traj = self.pose_df.nose.loc[np.arange(start_frame, end_frame), :].copy()
+                arena_trajs.append(traj)
 
         if is_plot:
             if ax is None:
-                _, ax = plt.subplots()
-            for traj in arena_trajs:
-                cl = colorline(ax, traj.x.to_numpy(), traj.y.to_numpy(), alpha=1)
-            plt.colorbar(cl, ax=ax, orientation='horizontal')
+                _, ax = plt.subplots(figsize=(15, 15))
+            for i, traj in enumerate(arena_trajs):
+                if not cmap:
+                    cmap = 'Blues'
+                    if i == 0:
+                        cmap = 'Oranges'
+                    elif i == len(arena_trajs) - 1:
+                        cmap = 'Greys'
+                cl = colorline(ax, traj.x.to_numpy(), traj.y.to_numpy(), alpha=1, cmap=plt.get_cmap(cmap))
+                # plt.colorbar(cl, ax=ax, orientation='horizontal')
             ax.set_xlim([0, 2400])
-            ax.set_ylim([-60, 1000])
+            ax.set_ylim([0, 1000])
 
         return arena_trajs
 

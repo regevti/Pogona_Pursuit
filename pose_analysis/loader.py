@@ -1,13 +1,10 @@
 import re
-import cv2
+import sys
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from datetime import datetime
-from scipy import optimize
-import matplotlib.pyplot as plt
-from functools import cache, cached_property
-import sys
+from functools import lru_cache
+from pose_utils import distance, fit_circle, closest_index
 sys.path += ['../Arena']
 from explore import ExperimentAnalyzer
 
@@ -20,6 +17,7 @@ CAMERAS = {
     'back': '19506481',
 }
 SCREEN_BOUNDARIES = {'x': (0, 1850), 'y': (0, 800)}
+# SCREEN_BOUNDARIES = {'x': (0, 1918), 'y': (443, 1075)}
 
 
 class Loader:
@@ -40,25 +38,28 @@ class Loader:
     def __str__(self):
         return f'{self.experiment_name}/block{self.block_id or 1}/trial{self.trial_id}'
 
-    @cache
-    def hits_df(self, hits_only):
+    @property
+    @lru_cache()
+    def hits_df(self):
         df = pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
-        if hits_only:
-            df = df.query('is_hit == 1')
+        df = df.query('is_hit == 1')
         return df
 
-    @cached_property
+    @property
+    @lru_cache()
     def traj_df(self):
         try:
             return pd.read_csv(self.bug_traj_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
         except Exception as exc:
             raise Exception(f'Error loading bug trajectory; {exc}')
 
-    @cached_property
+    @property
+    @lru_cache()
     def traj_time(self):
         return self.traj_df['time'].dt.tz_convert('utc').dt.tz_localize(None)
 
-    @cached_property
+    @property
+    @lru_cache()
     def frames_ts(self) -> pd.Series:
         return pd.to_datetime(pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0'])
 
@@ -94,6 +95,8 @@ class Loader:
             return (self.traj_df[a] < SCREEN_BOUNDARIES[a][0]) | (SCREEN_BOUNDARIES[a][1] < self.traj_df[a])
 
         in_indices = self.traj_df[~(out('x') | out('y'))].reset_index()['index']
+        if in_indices is None or len(in_indices) == 0:
+            return None, None
         starts = self.traj_df.loc[in_indices[in_indices.diff() != 1], :]
         ends_indices = in_indices[in_indices[in_indices.diff() > 1].index - 1]
         # add the last in-index as an end_index
@@ -185,7 +188,7 @@ class Loader:
                 if np.isnan(x).any():
                     continue
                 hit_dist = distance(hit['x'], hit['y'], hit['bug_x'], hit['bug_y'])
-                if max_hit_dist and hist_dist > max_hit_dist:
+                if max_hit_dist and hit_dist > max_hit_dist:
                     continue
                 X.append(x.reshape(1, *x.shape))
                 y.append(hit[['x', 'y']].to_numpy().reshape(1, -1))
@@ -227,17 +230,6 @@ class Loader:
         return self.trial_path / 'videos' / 'timestamps' / f'{CAMERAS[self.camera]}.csv'
 
 
-def distance(x1, y1, x2, y2):
-    return np.sqrt((x1-x2)**2 + (y1-y2)**2)
-
-
-def closest_index(series, x, max_dist=0.050):
-    diffs = (series - x).abs().dt.total_seconds()
-    d = diffs[diffs <= max_dist]
-    if len(d) > 0:
-        return d.index[d.argmin()]
-
-
 def get_experiments(*args, **kwargs):
     """Get experiment using explore"""
     df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
@@ -254,24 +246,3 @@ def get_experiments(*args, **kwargs):
             continue
     print(f'num loaders: {len(loaders)}')
     return loaders
-
-
-def fit_circle(x, y):
-    def calc_R(xc, yc):
-        """ calculate the distance of each 2D points from the center (xc, yc) """
-        return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
-
-    def f_2(c):
-        """ calculate the algebraic distance between the data points and the mean circle centered at c=(xc, yc) """
-        Ri = calc_R(*c)
-        return Ri - Ri.mean()
-
-    center_estimate = np.mean(x), np.min(y)
-    center_2, ier = optimize.leastsq(f_2, center_estimate)
-
-    xc_2, yc_2 = center_2
-    Ri_2 = calc_R(*center_2)
-    R_2 = Ri_2.mean()
-    #     residu_2 = sum((Ri_2 - R_2) ** 2)
-
-    return xc_2, yc_2, R_2

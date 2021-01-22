@@ -1,4 +1,5 @@
 from strikes import TrialStrikes
+from pose import PoseAnalyzer
 from fpdf import FPDF
 import pandas as pd
 import numpy as np
@@ -31,7 +32,9 @@ class MultiStrikesAnalyzer:
                 d.update({k: v for k, v in ld.info.items() if not k.startswith('block')})
                 l.append(d)
 
-        return pd.DataFrame(l)
+        info_df = pd.DataFrame(l)
+        info_df.is_anticlockwise.fillna(False, inplace=True)
+        return info_df
 
     @staticmethod
     def filter(loaders, **filters):
@@ -121,53 +124,34 @@ class MultiStrikesAnalyzer:
         pdf.output(filename, "F")
 
     def plot_projected_strikes(self, xlim=(-200, 200), ylim=(-200, 200)):
-
         def _plot_projected_strikes(ld, ax):
-            s = StrikesSummary(ld)
-            for i in range(len(s.hits_df)):
+            ts = TrialStrikes(ld)
+            for s in ts.strikes:
                 if 'bug_type' in self.groupby and not ax.patches:
-                    ax.add_patch(plt.Circle((0, 0), s.get_bug_radius(i), color='lemonchiffon', alpha=0.4))
-                pickle_path = s.save_pickle_path(i)
-                if pickle_path.exists():
-                    with pickle_path.open('rb') as f:
-                        data = pickle.load(f)
-                    if data.get('bug_traj') is None:
-                        continue
-                    s.plot_projected_strike(ax, data['bug_traj'], i, data.get('pd'), leap_frame=data.get('leap_frame'),
-                                            is_plot_strike_only=True)
-                    ax.plot([0, 0], ylim, 'k')
-                    ax.plot(xlim, [0, 0], 'k')
+                    ax.add_patch(plt.Circle((0, 0), s.bug_radius, color='lemonchiffon', alpha=0.4))
+                if s.bug_traj is None:
+                    continue
+                s.plot_projected_strike(ax, is_plot_strike_only=True)
+                ax.plot([0, 0], ylim, 'k')
+                ax.plot(xlim, [0, 0], 'k')
 
         self.subplot(_plot_projected_strikes, xlim=xlim, ylim=ylim, is_invert_y=False)
 
     def plot_pd(self, xlim=(0, 15), ylim=(-2.5, 5)):
-
         def _plot_pd(ld, ax):
-            s = StrikesSummary(ld)
-            for i in range(len(s.hits_df)):
-                pickle_path = s.save_pickle_path(i)
-                if pickle_path.exists():
-                    with pickle_path.open('rb') as f:
-                        data = pickle.load(f)
-                    if not data.get('pd') or not data.get('bug_speed'):
-                        continue
-                    ax.scatter(data['bug_speed'], data['pd'], color='b')
-                    ax.set_xlabel('bug speed [cm/sec]')
-                    ax.set_ylabel('PD [cm]')
+            ts = TrialStrikes(ld)
+            for s in ts.strikes:
+                if not s.pd or not s.bug_speed:
+                    continue
+                ax.scatter(s.bug_speed, s.pd, color='b')
+                ax.set_xlabel('bug speed [cm/sec]')
+                ax.set_ylabel('PD [cm]')
+
         self.subplot(_plot_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
 
-    def plot_accuracy_vs_speed(self, xlim=(0, 15), ylim=(-2.5, 5)):
+    def plot_arena_trajectory(self, xlim=(0, 1000), ylim=(0, 1000)):
+        def _plot_arena_trajectory(ld, ax):
+            a = PoseAnalyzer(ld.video_path)
+            a.arena_trajectories(ax=ax, cmap='Oranges')
 
-        def _plot_pd(ld, ax):
-            s = StrikesSummary(ld)
-            for i in range(len(s.hits_df)):
-                pickle_path = s.save_pickle_path(i)
-                if pickle_path.exists():
-                    with pickle_path.open('rb') as f:
-                        data = pickle.load(f)
-                    if not data.get('pd') or not data.get('bug_speed'):
-                        continue
-                    ax.scatter(data['bug_speed'], data['pd'], color='b')
-                    ax.set_xlabel('bug speed [cm/sec]')
-                    ax.set_ylabel('PD [cm]')
-        self.subplot(_plot_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
+        self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=False)
