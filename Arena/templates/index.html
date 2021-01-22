@@ -219,7 +219,7 @@
     }
 
     const blockNumericalFields = ['num_trials', 'trial_duration', 'bug_speed', 'time_between_bugs', 'iti', 'bug_size',
-                                  'bug_height']
+      'bug_height']
     const blockCheckFields = ['is_anticlockwise']
 
     function getBlocks() {
@@ -239,6 +239,28 @@
       }
       return blocks
     }
+
+    $("#loadMediaManual").click(function () {
+      let video = $("#manualMediaSelect").val()
+      $('#startMediaModal').modal('toggle');
+      $.ajax({
+        url: "/start_media",
+        type: "POST",
+        data: JSON.stringify({
+            media_url: video
+        }),
+        contentType: "application/json",
+        complete: function (res) {
+          appendOutput(`>> Video ${video} started manually`)
+        }
+      })
+    })
+
+    $("#media_stop").click(function () {
+      $.get('/stop_media', (data) => {
+
+      })
+    })
 
     $("#loadExperiment").click(() => {
       let experiment = $("#cachedExperimentsSelect").val()

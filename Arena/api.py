@@ -157,6 +157,24 @@ def hide_bugs():
     return Response('ok')
 
 
+@app.route('/start_media', methods=['POST'])
+def start_media():
+    if request.method == 'POST':
+        data = request.json
+        if not data or not data.get('media_url'):
+            return Response('Unable to find media url')
+        payload = json.dumps({'url': f'{config.management_url}/media/{data["media_url"]}'})
+        print(payload)
+        mqtt_client.publish_command('init_media', payload)
+    return Response('ok')
+
+
+@app.route('/stop_media')
+def stop_media():
+    mqtt_client.publish_command('hide_media')
+    return Response('ok')
+
+
 def list_media():
     media_files = []
     for f in Path(config.static_files_dir).glob('*'):
