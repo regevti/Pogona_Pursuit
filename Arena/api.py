@@ -144,6 +144,11 @@ def set_stream_camera():
         return Response(request.form['camera'])
 
 
+@app.route('/reload_app')
+def reload_app():
+    mqtt_client.publish_command('reload_app')
+
+
 @app.route('/init_bugs', methods=['POST'])
 def init_bugs():
     if request.method == 'POST':

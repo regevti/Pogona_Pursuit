@@ -21,8 +21,9 @@
     <div class="row mb-1" id="media-event-div">
         <h4 class="col ml-2">Media:</h4>
         <div class="col ml-5">
-            <button id="media_start" type="button" class="btn btn-lg btn-primary"  data-toggle="modal"
-                    data-target="#startMediaModal">ON</button>
+            <button id="media_start" type="button" class="btn btn-lg btn-primary" data-toggle="modal"
+                    data-target="#startMediaModal">ON
+            </button>
         </div>
         <div class="col ml-2">
             <button id="media_stop" type="button" class="btn btn-lg btn-outline-danger">OFF</button>
@@ -43,6 +44,9 @@
     <div class="row mb-2">
         <button id="reward" type="button" class="btn btn-lg btn-primary mx-auto">Reward</button>
     </div>
+    <div class="row mb-2">
+        <button id="reloadApp" type="button" class="btn btn-lg btn-primary mx-auto">Reload App</button>
+    </div>
 
 </div>
 
@@ -60,19 +64,46 @@
             <div class="modal-body">
                 <p>Please select video</p>
                 <div class="form-group row pr-3">
-                        <label for="manualMediaSelect" class="col col-form-label">Media File:</label>
-                        <div class="col">
-                            <select id="manualMediaSelect" class="form-control col">
-                                {% for mediaFile in media_files %}
-                                <option value="{{mediaFile}}">{{mediaFile}}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
+                    <label for="manualMediaSelect" class="col col-form-label">Media File:</label>
+                    <div class="col">
+                        <select id="manualMediaSelect" class="form-control col">
+                            {% for mediaFile in media_files %}
+                            <option value="{{mediaFile}}">{{mediaFile}}</option>
+                            {% endfor %}
+                        </select>
                     </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
                 <button id="loadMediaManual" type="button" class="btn btn-primary">Load</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Bugs Modal -->
+<div class="modal fade" id="startBugsModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="loadBugsModalLabel">Load Bugs</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Please Select Bug Options</p>
+                <div class="form-group row pr-3">
+
+
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button id="loadBugsManual" type="button" class="btn btn-primary">Load</button>
             </div>
         </div>
     </div>

@@ -9,7 +9,7 @@
           :muted="muted"
           @frameupdate="onFrameUpdate"
       />
-    <canvas id="canvas" v-bind:height="canvasHeight" v-bind:width="canvasWidth"
+    <canvas id="media-canvas" v-bind:height="canvasHeight" v-bind:width="canvasWidth"
               v-on:mousedown="handleTouchEvent($event)" style="z-index: 10;">
     </canvas>
   </div>
@@ -36,9 +36,11 @@ export default {
     }
   },
   mounted() {
-    this.canvas = document.getElementById('canvas')
-    let video = this.$refs.videoElement.getVideoElement()
-    video.setAttribute('loop', 'true')
+    this.canvas = document.getElementById('media-canvas')
+    if (this.isVideoFile()) {
+      let video = this.$refs.videoElement.getVideoElement()
+      video.setAttribute('loop', 'true')
+    }
   },
   methods: {
     onFrameUpdate(event) {
@@ -100,7 +102,7 @@ video {
   left: 50%;
   transform: translate(-50%, -50%);
 }
-canvas {
+#media-canvas {
   padding: 0;
   top: 0;
   /*margin: 20px auto 0;*/

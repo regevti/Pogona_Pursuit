@@ -257,9 +257,7 @@
     })
 
     $("#media_stop").click(function () {
-      $.get('/stop_media', (data) => {
-
-      })
+      $.get('/stop_media', (data) => {})
     })
 
     $("#loadExperiment").click(() => {
@@ -371,6 +369,11 @@
       $.get('/calibrate', function (data) {
         appendOutput(`>> Calibration: ${data}`)
       })
+    })
+
+    $("#reloadApp").click(function (e) {
+      $.get('/reload_app')
+      appendOutput('>> App reload command sent manually')
     })
 
     $("#reward").click(function (e) {
