@@ -63,7 +63,7 @@ class TrialStrikes:
 
     def get_pose(self):
         """Load the pose csv using pose.Analyzer"""
-        a = PoseAnalyzer(self.loader.video_path)
+        a = PoseAnalyzer(self.loader)
         try:
             return a.run_pose(load_only=True)
         except Exception:

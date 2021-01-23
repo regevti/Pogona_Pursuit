@@ -23,10 +23,17 @@ COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 
 class PoseAnalyzer:
-    def __init__(self, video_path):
-        self.video_path = Path(video_path)
-        self.loader = Loader(video_path=video_path, is_validate=False)
-        self.dlc_live = DLCLive(EXPORTED_MODEL_PATH, processor=Processor())
+    def __init__(self, loader: (Loader, str)):
+        if isinstance(loader, str):
+            self.video_path = Path(loader)
+            self.loader = Loader(video_path=loader, is_validate=False)
+        else:
+            self.loader = loader
+            self.video_path = loader.video_path
+        if Path(EXPORTED_MODEL_PATH).exists():
+            self.dlc_live = DLCLive(EXPORTED_MODEL_PATH, processor=Processor())
+        else:
+            self.dlc_live = None
         self.is_dlc_live_initiated = False
         self.saved_frames = {}
         self.video_out = None
@@ -227,6 +234,8 @@ class PoseAnalyzer:
 
     @staticmethod
     def load_dlc_config():
+        if not Path(DLC_CONFIG_FILE).exists():
+            return
         return yaml.load(open(DLC_CONFIG_FILE), Loader=yaml.FullLoader)
 
     def save_cache(self, df):

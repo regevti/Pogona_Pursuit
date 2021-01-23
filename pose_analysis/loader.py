@@ -45,7 +45,7 @@ class Loader:
     @lru_cache()
     def hits_df(self):
         df = pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
-        df = df.query('is_hit == 1')
+        # df = df.query('is_hit == 1')
         return df
 
     @property

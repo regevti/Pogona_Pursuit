@@ -79,6 +79,7 @@ class MultiStrikesAnalyzer:
 
         groupby = list(self.groupby.keys())
         main_group = self.main or groupby[0]
+
         if len(groupby) > 1:
             groupby.remove(main_group)
         main_values = self.groupby[main_group] if self.groupby.get(main_group) else self.info_df[main_group].unique()
@@ -168,7 +169,7 @@ class MultiStrikesAnalyzer:
 
     def plot_arena_trajectory(self, xlim=(0, 1400), ylim=(0, 1100), **kwargs):
         def _plot_arena_trajectory(ld, ax, cmap):
-            a = PoseAnalyzer(ld.video_path)
+            a = PoseAnalyzer(ld)
             a.arena_trajectories(ax=ax, cmap=cmap, **kwargs)
 
             rect = patches.Rectangle((70, 940), 1270, 50, linewidth=1, edgecolor='k', facecolor='k')
