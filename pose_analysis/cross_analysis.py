@@ -178,4 +178,4 @@ class MultiStrikesAnalyzer:
             rect = patches.Rectangle((70, 940), 1270, 50, linewidth=1, edgecolor='k', facecolor='k')
             ax.add_patch(rect)
 
-        self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=False, is_time_cmap=True)
+        self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=True, is_time_cmap=True)
