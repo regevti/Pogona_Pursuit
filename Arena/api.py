@@ -144,6 +144,11 @@ def set_stream_camera():
         return Response(request.form['camera'])
 
 
+@app.route('/reload_app')
+def reload_app():
+    mqtt_client.publish_command('reload_app')
+
+
 @app.route('/init_bugs', methods=['POST'])
 def init_bugs():
     if request.method == 'POST':
@@ -154,6 +159,24 @@ def init_bugs():
 @app.route('/hide_bugs')
 def hide_bugs():
     mqtt_client.publish_event('event/command/hide_bugs', '')
+    return Response('ok')
+
+
+@app.route('/start_media', methods=['POST'])
+def start_media():
+    if request.method == 'POST':
+        data = request.json
+        if not data or not data.get('media_url'):
+            return Response('Unable to find media url')
+        payload = json.dumps({'url': f'{config.management_url}/media/{data["media_url"]}'})
+        print(payload)
+        mqtt_client.publish_command('init_media', payload)
+    return Response('ok')
+
+
+@app.route('/stop_media')
+def stop_media():
+    mqtt_client.publish_command('hide_media')
     return Response('ok')
 
 

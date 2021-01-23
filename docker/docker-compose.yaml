@@ -70,6 +70,7 @@ services:
     image: pogona_explore:${explore_tag-latest}
     container_name: explore
     command: 'flask run --host=0.0.0.0'
+    restart: always
     ports:
       - 3352:5000
     volumes:

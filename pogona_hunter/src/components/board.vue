@@ -11,7 +11,7 @@
       <!--        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"-->
       <!--                v-on:touchstart="setCanvasTouch($event)" style="z-index: 10;">-->
       <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
-              v-on:mousedown="setCanvasClick($event)" style="z-index: 100;"
+              v-on:mousedown="setCanvasClick($event)" style="z-index: 10;"
               v-on:click.right="changeTrajectory($event)">
         <bug v-for="(value, index) in bugsProps"
              :key="index"
@@ -91,6 +91,7 @@ export default {
         this.$mqtt.publish('event/log/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
         this.isMedia = false
       }
+      location.reload()
     },
     'event/command/init_media'(options) {
       options = JSON.parse(options)
@@ -104,6 +105,9 @@ export default {
     },
     'event/log/prediction'(options) {
       handlePrediction(options, this.ctx, this.canvasParams)
+    },
+    'event/command/reload_app'(options) {
+      location.reload()
     }
   },
   computed: {
