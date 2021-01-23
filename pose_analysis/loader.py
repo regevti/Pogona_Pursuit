@@ -1,10 +1,12 @@
 import re
 import sys
 from pathlib import Path
+from dateutil import parser
 import pandas as pd
 import numpy as np
 from functools import lru_cache
 from pose_utils import distance, fit_circle, closest_index
+from datetime import timedelta
 sys.path += ['../Arena']
 from explore import ExperimentAnalyzer
 
@@ -22,7 +24,7 @@ SCREEN_BOUNDARIES = {'x': (0, 1850), 'y': (0, 800)}
 
 class Loader:
     def __init__(self, experiment_name=None, trial_id=None, block_id=None, camera=None, video_path=None,
-                 experiment_dir=None):
+                 experiment_dir=None, is_validate=True):
         self.experiment_dir = experiment_dir or EXPERIMENTS_DIR
         if video_path:
             video_path = Path(video_path)
@@ -32,7 +34,8 @@ class Loader:
         self.block_id = block_id
         self.camera = camera
         self.video_path = video_path or self.get_video_path()
-        self.validate()
+        if is_validate:
+            self.validate()
         self.info = self.get_experiment_info()
 
     def __str__(self):
@@ -94,16 +97,30 @@ class Loader:
         def out(a):
             return (self.traj_df[a] < SCREEN_BOUNDARIES[a][0]) | (SCREEN_BOUNDARIES[a][1] < self.traj_df[a])
 
-        in_indices = self.traj_df[~(out('x') | out('y'))].reset_index()['index']
-        if in_indices is None or len(in_indices) == 0:
+        try:
+            in_indices = self.traj_df[~(out('x') | out('y'))].reset_index()['index']
+            if in_indices is None or len(in_indices) == 0:
+                return None, None
+            starts = self.traj_df.loc[in_indices[in_indices.diff() != 1], :]
+            ends_indices = in_indices[in_indices[in_indices.diff() > 1].index - 1]
+            # add the last in-index as an end_index
+            ends_indices = ends_indices.append(pd.Series(in_indices[in_indices.index[-1]], index=[in_indices.index[-1]]))
+            ends = self.traj_df.loc[ends_indices, :]
+            assert len(starts) == len(ends), 'bad bug_phases analysis, starts != ends'
+            return starts, ends
+        except Exception as exc:
+            print(f'Error in bug_phases: {exc}')
             return None, None
-        starts = self.traj_df.loc[in_indices[in_indices.diff() != 1], :]
-        ends_indices = in_indices[in_indices[in_indices.diff() > 1].index - 1]
-        # add the last in-index as an end_index
-        ends_indices = ends_indices.append(pd.Series(in_indices[in_indices.index[-1]], index=[in_indices.index[-1]]))
-        ends = self.traj_df.loc[ends_indices, :]
-        assert len(starts) == len(ends), 'bad bug_phases analysis, starts != ends'
-        return starts, ends
+
+    def first30_traj(self):
+        try:
+            starts = self.traj_df.loc[0, :]
+            cidx = closest_index(self.traj_time, starts.time.tz_convert('utc').tz_localize(None) + timedelta(seconds=30))
+            ends = self.traj_df.loc[cidx, :]
+            return starts.to_frame().transpose(), ends.to_frame().transpose()
+        except Exception as exc:
+            print(f'Error in first 30: {exc}')
+            return None, None
 
     def validate(self):
         assert self.experiment_path.exists(), 'experiment dir not exist'
@@ -204,6 +221,12 @@ class Loader:
         return None, None, None
 
     @property
+    def day(self):
+        s = self.experiment_name.split('_')[-1]
+        dt = parser.parse(s)
+        return dt.strftime('%d/%m/%y')
+
+    @property
     def animal_id(self):
         return self.info.get('animal_id')
 
@@ -230,7 +253,7 @@ class Loader:
         return self.trial_path / 'videos' / 'timestamps' / f'{CAMERAS[self.camera]}.csv'
 
 
-def get_experiments(*args, **kwargs):
+def get_experiments(*args, is_validate=True, **kwargs):
     """Get experiment using explore"""
     df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
     loaders = []
@@ -239,7 +262,7 @@ def get_experiments(*args, **kwargs):
             experiment_dir = kwargs.get('experiment_dir') or EXPERIMENTS_DIR
             if not Path(f'{experiment_dir}/{experiment}/block{block}').exists():
                 block = None
-            ld = Loader(experiment, int(trial), block, 'realtime', experiment_dir=experiment_dir)
+            ld = Loader(experiment, int(trial), block, 'realtime', experiment_dir=experiment_dir, is_validate=is_validate)
             loaders.append(ld)
         except Exception as exc:
             print(f'Error loading {experiment} trial{trial}; {exc}')

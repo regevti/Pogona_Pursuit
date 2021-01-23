@@ -5,6 +5,9 @@ import pandas as pd
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+from matplotlib.cm import ScalarMappable
 
 STRIKE_FIELDS = ['bug_type']
 
@@ -60,15 +63,16 @@ class MultiStrikesAnalyzer:
         return fig, axes
 
     @staticmethod
-    def group_plot(plot_func, glds, ax, xlim, ylim, is_invert_y):
-        for ld in glds:
-            plot_func(ld, ax)
+    def group_plot(plot_func, glds, ax, xlim, ylim, is_invert_y, cmaps=None):
+        for i, ld in enumerate(glds):
+            cmap = cmaps[i] if cmaps else None
+            plot_func(ld, ax, cmap=cmap)
         ax.set_xlim(list(xlim))
         ax.set_ylim(list(ylim))
         if is_invert_y:
             ax.invert_yaxis()
 
-    def subplot(self, plot_func, xlim=(0, 2300), ylim=(0, 900), is_invert_y=True):
+    def subplot(self, plot_func, xlim=(0, 2300), ylim=(0, 900), is_invert_y=True, is_time_cmap=False):
         if not self.groupby:
             fig, axes = self.create_subplots(1)
             self.group_plot(plot_func, self.loaders, axes[0], xlim, ylim, is_invert_y)
@@ -88,9 +92,23 @@ class MultiStrikesAnalyzer:
                 if len(groupby) == 1:
                     group_values = [group_values]
                 glds = [ld for j, ld in enumerate(self.loaders) if j in group_idx]
-                self.group_plot(plot_func, glds, axes[ia], xlim, ylim, is_invert_y)
+                cmaps = self.time_cmap(glds, fig, axes[ia]) if is_time_cmap else None
+                self.group_plot(plot_func, glds, axes[ia], xlim, ylim, is_invert_y, cmaps=cmaps)
                 if main_group != groupby[0]:
                     axes[ia].set_title(', '.join([f'{g}={v}' for g, v in zip(groupby, list(group_values))]))
+
+    @staticmethod
+    def time_cmap(glds, fig, ax):
+        colormaps = ['Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds']
+        z = np.linspace(0, len(colormaps) - 1, len(glds))
+        cmaps = [colormaps[int(np.floor(j))] for j in z]
+        custom_cmap = ListedColormap([plt.get_cmap(name)(0.5) for name in colormaps])
+        time_lds = [glds[cmaps.index(c)] for c in colormaps if c in cmaps]
+        cbar = fig.colorbar(ScalarMappable(norm=None, cmap=custom_cmap), ax=ax, ticks=np.linspace(0,1,len(time_lds)))
+
+        cbar.ax.set_yticklabels([tld.day for tld in time_lds])
+
+        return cmaps
 
     def check_groups(self, groups, groupby):
         new_groups = {}
@@ -124,7 +142,7 @@ class MultiStrikesAnalyzer:
         pdf.output(filename, "F")
 
     def plot_projected_strikes(self, xlim=(-200, 200), ylim=(-200, 200)):
-        def _plot_projected_strikes(ld, ax):
+        def _plot_projected_strikes(ld, ax, *args):
             ts = TrialStrikes(ld)
             for s in ts.strikes:
                 if 'bug_type' in self.groupby and not ax.patches:
@@ -138,7 +156,7 @@ class MultiStrikesAnalyzer:
         self.subplot(_plot_projected_strikes, xlim=xlim, ylim=ylim, is_invert_y=False)
 
     def plot_pd(self, xlim=(0, 15), ylim=(-2.5, 5)):
-        def _plot_pd(ld, ax):
+        def _plot_pd(ld, ax, *args):
             ts = TrialStrikes(ld)
             for s in ts.strikes:
                 if not s.pd or not s.bug_speed:
@@ -149,9 +167,12 @@ class MultiStrikesAnalyzer:
 
         self.subplot(_plot_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
 
-    def plot_arena_trajectory(self, xlim=(0, 1000), ylim=(0, 1000)):
-        def _plot_arena_trajectory(ld, ax):
+    def plot_arena_trajectory(self, xlim=(0, 1400), ylim=(0, 1100), **kwargs):
+        def _plot_arena_trajectory(ld, ax, cmap):
             a = PoseAnalyzer(ld.video_path)
-            a.arena_trajectories(ax=ax, cmap='Oranges')
+            a.arena_trajectories(ax=ax, cmap=cmap, **kwargs)
 
-        self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=False)
+            rect = patches.Rectangle((70, 940), 1270, 50, linewidth=1, edgecolor='k', facecolor='k')
+            ax.add_patch(rect)
+
+        self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=False, is_time_cmap=True)

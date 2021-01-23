@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from dlclive import DLCLive, Processor
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 from loader import Loader
-from pose_utils import colorline
+from pose_utils import colorline, calc_total_trajectory
 
 DLC_PATH = '/data/pose_estimation/deeplabcut/projects/pogona_pursuit_realtime'
 DLC_CONFIG_FILE = DLC_PATH + '/config.yaml'
@@ -25,7 +25,7 @@ COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 class PoseAnalyzer:
     def __init__(self, video_path):
         self.video_path = Path(video_path)
-        self.loader = Loader(video_path=video_path)
+        self.loader = Loader(video_path=video_path, is_validate=False)
         self.dlc_live = DLCLive(EXPORTED_MODEL_PATH, processor=Processor())
         self.is_dlc_live_initiated = False
         self.saved_frames = {}
@@ -110,10 +110,15 @@ class PoseAnalyzer:
         if self.output_video_path.with_suffix('.mp4').exists() and self.output_csv_path.exists():
             return pd.read_csv(self.output_csv_path, index_col=0, header=[0, 1])
 
-    def arena_trajectories(self, is_plot=True, ax=None, cmap=None):
+    def arena_trajectories(self, is_plot=True, ax=None, cmap=None, is_only_first=False, yrange=None,
+                           min_total_traj=None, mode='bug_phases'):
+        assert mode in ['bug_phases', 'first30']
         if self.pose_df is None:
             return
-        starts, ends = self.loader.bug_phases()
+        if mode == 'bug_phases':
+            starts, ends = self.loader.bug_phases()
+        elif mode == 'first30':
+            starts, ends = self.loader.first30_traj()
         if starts is None:
             print('No bug phases were found')
             return
@@ -122,8 +127,20 @@ class PoseAnalyzer:
             start_frame = self.loader.get_frame_at_time(start_t)
             end_frame = self.loader.get_frame_at_time(end_t)
             if start_frame and end_frame:
-                traj = self.pose_df.nose.loc[np.arange(start_frame, end_frame), :].copy()
+                try:
+                    traj = self.pose_df.nose.loc[np.arange(start_frame, end_frame), :].copy()
+                    if yrange is not None and len(traj.y[(yrange[0] <= traj.y) & (traj.y <= yrange[1])]) == 0:
+                        # drop trajectories which are out of yrange
+                        continue
+                    if min_total_traj is not None and calc_total_trajectory(traj) < min_total_traj:
+                        continue
+
+                except Exception as exc:
+                    print(exc)
+                    continue
                 arena_trajs.append(traj)
+                if is_only_first:
+                    break
 
         if is_plot:
             if ax is None:
@@ -136,7 +153,9 @@ class PoseAnalyzer:
                     elif i == len(arena_trajs) - 1:
                         cmap = 'Greys'
                 cl = colorline(ax, traj.x.to_numpy(), traj.y.to_numpy(), alpha=1, cmap=plt.get_cmap(cmap))
-                # plt.colorbar(cl, ax=ax, orientation='horizontal')
+                # print(len(ax.get_figure().axes))
+                # if len(ax.collections) == 1:
+                #     plt.colorbar(cl, ax=ax, orientation='vertical')
             ax.set_xlim([0, 2400])
             ax.set_ylim([0, 1000])
 

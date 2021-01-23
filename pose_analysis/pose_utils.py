@@ -102,3 +102,8 @@ def make_segments(x, y):
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
     return segments
+
+
+def calc_total_trajectory(df):
+    assert 'x' in df.columns and 'y' in df.columns
+    return np.sqrt(df.x.diff() ** 2 + df.y.diff() ** 2).sum()
