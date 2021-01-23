@@ -65,7 +65,7 @@ class MultiStrikesAnalyzer:
         return fig, axes
 
     @staticmethod
-    def group_plot(plot_func, glds, ax, xlim, ylim, is_invert_y, cmaps=None):
+    def group_plot(plot_func, glds, ax, xlim, ylim, is_invert_y, is_invert_x, cmaps=None):
         for i, ld in enumerate(glds):
             cmap = cmaps[i] if cmaps else None
             plot_func(ld, ax, cmap=cmap)
@@ -73,11 +73,13 @@ class MultiStrikesAnalyzer:
         ax.set_ylim(list(ylim))
         if is_invert_y:
             ax.invert_yaxis()
+        if is_invert_x:
+            ax.invert_xaxis()
 
-    def subplot(self, plot_func, xlim=(0, 2300), ylim=(0, 900), is_invert_y=True, is_time_cmap=False):
+    def subplot(self, plot_func, xlim=(0, 2300), ylim=(0, 900), is_invert_y=True, is_invert_x=False, is_time_cmap=False):
         if not self.groupby:
             fig, axes = self.create_subplots(1)
-            self.group_plot(plot_func, self.loaders, axes[0], xlim, ylim, is_invert_y)
+            self.group_plot(plot_func, self.loaders, axes[0], xlim, ylim, is_invert_y, is_invert_x)
             return
 
         groupby = list(self.groupby.keys())
@@ -96,7 +98,7 @@ class MultiStrikesAnalyzer:
                     group_values = [group_values]
                 glds = [ld for j, ld in enumerate(self.loaders) if j in group_idx]
                 cmaps = self.time_cmap(glds, fig, axes[ia]) if is_time_cmap else None
-                self.group_plot(plot_func, glds, axes[ia], xlim, ylim, is_invert_y, cmaps=cmaps)
+                self.group_plot(plot_func, glds, axes[ia], xlim, ylim, is_invert_y, is_invert_x, cmaps=cmaps)
                 if main_group != groupby[0]:
                     axes[ia].set_title(', '.join([f'{g}={v}' for g, v in zip(groupby, list(group_values))]))
 
@@ -175,7 +177,7 @@ class MultiStrikesAnalyzer:
             a = PoseAnalyzer(ld)
             a.arena_trajectories(ax=ax, cmap=cmap, **kwargs)
 
-            rect = patches.Rectangle((70, 940), 1270, 50, linewidth=1, edgecolor='k', facecolor='k')
+            rect = patches.Rectangle((200, 1000), 850, 50, linewidth=1, edgecolor='k', facecolor='k')
             ax.add_patch(rect)
 
-        self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=True, is_time_cmap=True)
+        self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=False, is_invert_x=True, is_time_cmap=True)
