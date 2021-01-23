@@ -172,7 +172,7 @@ class MultiStrikesAnalyzer:
 
         self.subplot(_plot_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
 
-    def plot_arena_trajectory(self, xlim=(0, 1400), ylim=(0, 1100), **kwargs):
+    def plot_arena_trajectory(self, xlim=(0, 1200), ylim=(0, 1100), **kwargs):
         def _plot_arena_trajectory(ld, ax, cmap):
             a = PoseAnalyzer(ld)
             a.arena_trajectories(ax=ax, cmap=cmap, **kwargs)
