@@ -39,7 +39,6 @@ class TrialStrikes:
                 continue
             data = self.strikes[i].summary_plot(frame_group, frames, is_close_plot)
             all_data.append(data)
-
         return all_data
 
     def load_trial_frames(self, n_frames):
@@ -359,6 +358,7 @@ class StrikeSummary:
         except Exception as exc:
             self.log(f'Error loading cached summary for strike {self.strike_idx + 1}; {exc}')
             return {}
+
         return data
 
     def save(self):

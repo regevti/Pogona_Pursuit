@@ -4,6 +4,7 @@ from fpdf import FPDF
 import pandas as pd
 import numpy as np
 import pickle
+from icecream import ic
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
@@ -29,13 +30,16 @@ class MultiStrikesAnalyzer:
         l = []
         fields2drop = ['bug_traj', 'nose']
         for ld in self.loaders:
-            data = TrialStrikes(ld).strikes_summary(is_plot=False, use_cache=True)
-            for d in data:
-                [d.pop(f, None) for f in fields2drop]
-                d.update({k: v for k, v in ld.info.items() if not k.startswith('block')})
-                l.append(d)
+            # data = TrialStrikes(ld).strikes_summary(is_plot=False, use_cache=True)
+            # for d in data:
+            #     [d.pop(f, None) for f in fields2drop]
+            #     d.update({k: v for k, v in ld.info.items() if not k.startswith('block')})
+            #     d['loader_id'] = loader_id
+            #     l.append(d)
+            l.append({k: v for k, v in ld.info.items() if not k.startswith('block')})
 
         info_df = pd.DataFrame(l)
+        ic(info_df.columns)
         return info_df
 
     @staticmethod
