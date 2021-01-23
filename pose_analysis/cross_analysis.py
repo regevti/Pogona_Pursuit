@@ -36,7 +36,6 @@ class MultiStrikesAnalyzer:
                 l.append(d)
 
         info_df = pd.DataFrame(l)
-        info_df.is_anticlockwise.fillna(False, inplace=True)
         return info_df
 
     @staticmethod
