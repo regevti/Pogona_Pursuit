@@ -39,7 +39,6 @@ class MultiStrikesAnalyzer:
             l.append({k: v for k, v in ld.info.items() if not k.startswith('block')})
 
         info_df = pd.DataFrame(l)
-        ic(info_df.columns)
         return info_df
 
     @staticmethod
