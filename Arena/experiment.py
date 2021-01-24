@@ -26,6 +26,7 @@ class Experiment:
     name: str
     animal_id: str
     cameras: str
+    num_blocks: int = 1
     blocks: list = field(default_factory=list, repr=False)
     time_between_blocks: int = config.time_between_blocks
     is_use_predictions: bool = False
@@ -120,6 +121,7 @@ class Block:
     time_between_bugs: int = None
     media_url: str = ''
     is_use_predictions: bool = False
+    is_default_bug_size: bool = True
 
     current_trial: int = field(default=1, repr=False)
     pool: ThreadPool = field(default=None, repr=False)
