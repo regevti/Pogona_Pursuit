@@ -216,7 +216,8 @@ const blockFields = {
     target_drift: new FieldObject('targetDriftSelect', Field, {movement_type: ['circle', 'low_horizontal', 'low_horizontal_noise']}),
     bug_height: new FieldObject('bugHeight', NumericalField, {movement_type: ['low_horizontal', 'low_horizontal_noise']}),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
-    bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false})
+    bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false}),
+    background_color: new FieldObject('backgroundColor', Field)
   },
   media: {
     media_url: new FieldObject('media-url', Field)

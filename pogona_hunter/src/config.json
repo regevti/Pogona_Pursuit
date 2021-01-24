@@ -49,6 +49,36 @@
         "max": 160
       },
       "stepsPerImage": 3
+    },
+    "ant": {
+      "text": "Ant",
+      "numImagesPerBug": 7,
+      "speed": 3,
+      "radiusRange": {
+        "min": 120,
+        "max": 130
+      },
+      "stepsPerImage": 5
+    },
+    "centipede": {
+      "text": "Centipede",
+      "numImagesPerBug": 4,
+      "speed": 3,
+      "radiusRange": {
+        "min": 150,
+        "max": 170
+      },
+      "stepsPerImage": 7
+    },
+    "spider": {
+      "text": "Spider",
+      "numImagesPerBug": 5,
+      "speed": 3,
+      "radiusRange": {
+        "min": 140,
+        "max": 150
+      },
+      "stepsPerImage": 9
     }
   },
   "movementTypes": {

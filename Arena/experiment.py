@@ -122,6 +122,7 @@ class Block:
     media_url: str = ''
     is_use_predictions: bool = False
     is_default_bug_size: bool = True
+    background_color: str = ''
 
     current_trial: int = field(default=1, repr=False)
     pool: ThreadPool = field(default=None, repr=False)
@@ -291,7 +292,8 @@ class Block:
             'isAntiClockWise': self.is_anticlockwise,
             'targetDrift': self.target_drift,
             'bugSize': self.bug_size,
-            'bugHeight': self.bug_height
+            'bugHeight': self.bug_height,
+            'backgroundColor': self.background_color
         })
 
     @property

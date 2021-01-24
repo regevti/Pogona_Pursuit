@@ -263,7 +263,8 @@
         timeBetweenBugs: blockValues.time_between_bugs,
         isAntiClockWise: blockValues.is_anticlockwise,
         targetDrift: blockValues.target_drift,
-        bugHeight: blockValues.bug_height
+        bugHeight: blockValues.bug_height,
+        backgroundColor: blockValues.background_color
       }
       if (!$("#isDefaultBugSize1").is(':checked')) {
         Object.assign(payload, {bugSize: Number($("#bugSize1").val())})

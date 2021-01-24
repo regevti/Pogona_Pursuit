@@ -11,7 +11,7 @@
       <!--        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"-->
       <!--                v-on:touchstart="setCanvasTouch($event)" style="z-index: 10;">-->
       <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
-              v-on:mousedown="setCanvasClick($event)" style="z-index: 100;"
+              v-on:mousedown="setCanvasClick($event)" v-bind:style="{background: bugsSettings.backgroundColor}"
               v-on:click.right="changeTrajectory($event)">
         <bug v-for="(value, index) in bugsProps"
              :key="index"
@@ -53,7 +53,8 @@ export default {
         isAntiClockWise: false,
         timeBetweenBugs: 2000,
         bloodDuration: 2000,
-        timeInEdge: 2000
+        timeInEdge: 2000,
+        backgroundColor: '#e8eaf6'
       },
       mediaUrl: '',
       isMedia: false,
@@ -269,11 +270,11 @@ export default {
 
 <style scoped>
 
-canvas {
+#canvas {
   padding: 0;
+  z-index: 100;
   /*margin: 20px auto 0;*/
   display: block;
-  background: #e8eaf6;
   position: absolute;
   bottom: 0;
   top: auto;
