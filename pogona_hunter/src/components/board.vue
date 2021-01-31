@@ -41,7 +41,7 @@ export default {
       configOptions: require('@/config.json'),
       bugsProps: [],
       bugsSettings: {
-        numOfBugs: 1,
+        numOfBugs: 0,
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
         movementType: 'circle',
