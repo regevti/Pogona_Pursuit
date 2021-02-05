@@ -1,5 +1,5 @@
 <template>
-  <div class="board-canvas-wrapper" oncontextmenu="return false;">
+  <div class="board-canvas-wrapper" oncontextmenu="return false;" v-on:mousedown="logTouch">
     <div id="bugs-board" v-if="!isMedia">
       <audio ref="audio1"><source src="@/assets/sounds/2.mp3" type="audio/mpeg"></audio>
       <p style="float: right">SCORE: {{ $store.state.score }}</p>
@@ -13,13 +13,18 @@
       <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
               v-on:mousedown="setCanvasClick($event)" v-bind:style="{background: bugsSettings.backgroundColor}"
               v-on:click.right="changeTrajectory($event)">
-        <bug v-for="(value, index) in bugsProps"
+        <hole-bugs v-for="(value, index) in bugsProps"
              :key="index"
-             :x0="value.x"
-             :y0="value.y"
              :bugsSettings="bugsSettings"
              ref="bugChild">
-        </bug>
+        </hole-bugs>
+<!--        <bug v-for="(value, index) in bugsProps"-->
+<!--             :key="index"-->
+<!--             :x0="value.x"-->
+<!--             :y0="value.y"-->
+<!--             :bugsSettings="bugsSettings"-->
+<!--             ref="bugChild">-->
+<!--        </bug>-->
       </canvas>
     </div>
     <media v-if="isMedia" :url="mediaUrl" ref="mediaElement"></media>
@@ -28,6 +33,7 @@
 
 <script>
 import bug from './bug'
+import holeBugs from './holeBugs'
 import {distance, randomRange} from '@/js/helpers'
 import {handlePrediction, showPogona} from '../js/predictions'
 import SlideMenu from './slideMenu'
@@ -35,7 +41,7 @@ import media from './media'
 
 export default {
   name: 'board',
-  components: {SlideMenu, bug, media},
+  components: {SlideMenu, bug, media, holeBugs},
   data() {
     return {
       configOptions: require('@/config.json'),
@@ -60,9 +66,11 @@ export default {
       isMedia: false,
       isHandlingTouch: false,
       trajectoryLog: [],
+      touchesCounter: 0,
       canvasParams: {
         width: window.innerWidth,
-        height: Math.round(window.innerHeight / 1.5)
+        height: window.innerHeight
+        // height: Math.round(window.innerHeight / 1.5)
       }
     }
   },
@@ -147,12 +155,15 @@ export default {
       })
     },
     animate() {
+      if (!this.$refs.bugChild) {
+          return
+      }
       try {
         this.animationHandler = requestAnimationFrame(this.animate)
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
         this.$refs.bugChild.forEach(bug => bug.move(this.$refs.bugChild))
       } catch (e) {
-        // console.log(e)
+        console.log(e)
         cancelAnimationFrame(this.animationHandler)
       }
     },
@@ -263,6 +274,19 @@ export default {
       this.$mqtt.publish('event/log/trajectory', JSON.stringify(this.trajectoryLog))
       console.log('sent trajectory through mqtt...')
       this.trajectoryLog = []
+    },
+    logTouch(event) {
+      if (this.touchesCounter === 0) {
+        let that = this
+        let t = setTimeout(() => {
+          that.touchesCounter = 0
+          clearTimeout(t)
+        }, 4000)
+      }
+      this.touchesCounter++
+      if (this.touchesCounter > 5) {
+        console.log('climbing!')
+      }
     }
   }
 }
