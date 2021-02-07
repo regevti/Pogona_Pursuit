@@ -67,8 +67,8 @@ saved_frame_resolution = env.list('SAVED_FRAME_RESOLUTION', [1440, 1088])
 camera_names = {
     'realtime': '19506468',
     'left': '19506455',
-    'back': '19506481',
-    'stream': '19506475',
+    'stream': '19506481',
+    'back': '19506475',
     'top': '20349303'
 }
 acquire_stop_options = {
