@@ -77,21 +77,21 @@
       let $isAntiClockWiseDiv = $(`#isAntiClockWiseDiv${i}`)
       let $targetDrift = $(`#targetDrift${i}`)
       let $bugHeight = $(`#bugHeightDiv${i}`)
-      $(`#movementTypeSelect${i}`).change(function () {
-        let movementType = $(`#movementTypeSelect${i}`).val()
-        if (movementType === 'circle') {
-          $isAntiClockWiseDiv.show()
-        } else {
-          $isAntiClockWiseDiv.hide()
-        }
-        if (['low_horizontal', 'low_horizontal_noise'].indexOf(movementType) !== -1) {
-          $targetDrift.show()
-          $bugHeight.show()
-        } else {
-          $targetDrift.hide()
-          $bugHeight.hide()
-        }
-      })
+      // $(`#movementTypeSelect${i}`).change(function () {
+      //   let movementType = $(`#movementTypeSelect${i}`).val()
+      //   if (movementType === 'circle') {
+      //     $isAntiClockWiseDiv.show()
+      //   } else {
+      //     $isAntiClockWiseDiv.hide()
+      //   }
+      //   if (['low_horizontal', 'low_horizontal_noise'].indexOf(movementType) !== -1) {
+      //     $targetDrift.show()
+      //     $bugHeight.show()
+      //   } else {
+      //     $targetDrift.hide()
+      //     $bugHeight.hide()
+      //   }
+      // })
       // media or bugs experiment block
       $(`#blockTypeSelect${i}`).change(function () {
         if (isMediaExperiment(i)) {
@@ -256,15 +256,14 @@
       let blockValues = new Block(1).values
       let payload = {
         numOfBugs: 1,
+        iti: blockValues.iti,
+        trialDuration: blockValues.trial_duration,
         speed: blockValues.bug_speed,
         bugTypes: blockValues.bug_types,
         rewardBugs: blockValues.reward_bugs,
         movementType: blockValues.movement_type,
-        timeBetweenBugs: blockValues.time_between_bugs,
-        isAntiClockWise: blockValues.is_anticlockwise,
-        targetDrift: blockValues.target_drift,
-        bugHeight: blockValues.bug_height,
-        backgroundColor: blockValues.background_color
+        backgroundColor: blockValues.background_color,
+        exitHole: blockValues.exit_hole
       }
       if (!$("#isDefaultBugSize1").is(':checked')) {
         Object.assign(payload, {bugSize: Number($("#bugSize1").val())})

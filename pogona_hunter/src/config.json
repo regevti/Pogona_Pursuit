@@ -81,6 +81,10 @@
       "stepsPerImage": 9
     }
   },
+  "holePositions": {
+    "bottomLeft": "Bottom Left",
+    "bottomRight": "Bottom Right"
+  },
   "movementTypes": {
     "random": "random walk",
     "circle": "circle",

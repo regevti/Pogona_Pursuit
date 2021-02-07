@@ -61,7 +61,7 @@ services:
       - ../Arena:/logger
     environment:
       - PYTHONUNBUFFERED=1
-      - IS_USE_PARPORT=1
+      - IS_USE_PARPORT=${IS_USE_PARPORT-1}
 
   explore:
     build:

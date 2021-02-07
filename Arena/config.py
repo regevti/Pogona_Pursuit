@@ -15,7 +15,7 @@ time_between_blocks = env.int('time_between_blocks', 300)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
-             'is_anticlockwise' 'target_drift', 'background_color'],
+             'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
     'media': ['media_url']
 }
 reward_types = [
@@ -66,9 +66,10 @@ output_dir = env('OUTPUT_DIR', 'output')
 saved_frame_resolution = env.list('SAVED_FRAME_RESOLUTION', [1440, 1088])
 camera_names = {
     'realtime': '19506468',
-    'right': '19506475',
     'left': '19506455',
     'back': '19506481',
+    'stream': '19506475',
+    'top': '20349303'
 }
 acquire_stop_options = {
     'num_frames': int,

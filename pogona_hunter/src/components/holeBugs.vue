@@ -1,7 +1,6 @@
 <template>
   <div>
     <img ref="bugImg" :src="bugImgSrc" alt=""/>
-    <img ref="holeImg" :src="holeImgSrc" alt=""/>
   </div>
 </template>
 
@@ -21,31 +20,17 @@ export default {
       holeImgSrc: '',
       randomNoise: 0,
       frameCounter: 0,
-      pad: 100, // padding for holes
       framesUntilExitFromEntranceHole: 100
     }
   },
   props: {
-    bugsSettings: Object
+    bugsSettings: Object,
+    exitHolePos: Array,
+    entranceHolePos: Array
   },
   computed: {
     holeSize: function () {
-      return this.bugsSettings.holeSize || [200, 200]
-    },
-    holesPositions: function() {
-      let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
-      return {
-        bottomLeft: [this.pad, canvasH - this.holeSize[1] - this.pad],
-        bottomRight: [canvasW - this.holeSize[0] - this.pad, canvasH - this.holeSize[1] - this.pad]
-      }
-    },
-    exitHolePos: function () {
-      let exitPos = this.bugsSettings.exitHolePos
-      return exitPos ? this.holesPositions[exitPos] : this.holesPositions.bottomLeft
-    },
-    entranceHolePos: function () {
-      let entrancePos = this.bugsSettings.entranceHolePos
-      return entrancePos ? this.holesPositions[entrancePos] : this.holesPositions.bottomRight
+      return this.bugsSettings.holeSize
     },
     stepsPerImage: function () {
       return this.bugTypeOptions[this.currentBugType].stepsPerImage
@@ -60,10 +45,10 @@ export default {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
     },
     numFramesToRetreat: function () {
-      return (this.bugsSettings.timeUntilRetreat || 1) * 60
+      return (this.bugsSettings.trialDuration || 1) * 60
     },
     timeBetweenBugs: function () {
-      return (this.bugsSettings.timeBetweenBugs || 2) * 1000
+      return (this.bugsSettings.iti || 2) * 1000
     }
   },
   mounted() {
@@ -85,10 +70,10 @@ export default {
       this.isHoleRetreatStarted = false
       this.isChangingDirection = false
       this.currentBugSize = this.getRadiusSize()
-      this.x = this.entranceHolePos[0] + (this.holeSize[0] / 2)
-      this.y = this.entranceHolePos[1] + (this.holeSize[1] / 2)
-      this.xTarget = this.exitHolePos[0] + (this.holeSize[0] / 2)
-      this.yTarget = this.exitHolePos[1] + (this.holeSize[1] / 2)
+      this.x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
+      this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
+      this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
+      this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
       this.vx = this.currentSpeed / Math.sqrt(2)
       this.vy = plusOrMinus() * this.currentSpeed / Math.sqrt(2)
     },
@@ -131,8 +116,8 @@ export default {
       this.changeDirectionTimeout()
     },
     draw() {
-      this.ctx.beginPath()
-      this.drawHoles()
+      // this.ctx.beginPath()
+      // this.drawHoles()
       let imgIndex = Math.floor(this.step / this.stepsPerImage)
       this.bugImgSrc = this.getImageSrc(`/${this.currentBugType}${imgIndex}.png`)
       this.drawBug()
@@ -140,8 +125,8 @@ export default {
       if (this.step > (this.numImagesPerBug - 1) * this.stepsPerImage) {
         this.step = 0
       }
-      this.ctx.fill()
-      this.ctx.closePath()
+      // this.ctx.fill()
+      // this.ctx.closePath()
     },
     drawBug() {
       if (this.isRetreated) {
@@ -158,13 +143,13 @@ export default {
         console.error(e)
       }
     },
-    drawHoles() {
-      this.holeImgSrc = this.getImageSrc(`/hole2.png`)
-      this.ctx.drawImage(this.$refs.holeImg,
-          this.exitHolePos[0], this.exitHolePos[1], this.holeSize[0], this.holeSize[1])
-      this.ctx.drawImage(this.$refs.holeImg,
-          this.entranceHolePos[0], this.entranceHolePos[1], this.holeSize[0], this.holeSize[1])
-    },
+    // drawHoles() {
+    //   this.holeImgSrc = this.getImageSrc(`/hole2.png`)
+    //   this.ctx.drawImage(this.$refs.holeImg,
+    //       this.exitHolePos[0], this.exitHolePos[1], this.holeSize[0], this.holeSize[1])
+    //   this.ctx.drawImage(this.$refs.holeImg,
+    //       this.entranceHolePos[0], this.entranceHolePos[1], this.holeSize[0], this.holeSize[1])
+    // },
     startRetreat() {
       let fadeTimeout = setTimeout(() => {
         this.isRetreated = true

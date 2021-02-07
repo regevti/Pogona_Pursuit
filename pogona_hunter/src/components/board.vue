@@ -8,16 +8,16 @@
                   v-bind:configOptions="configOptions"
                   v-bind:canvasParams="canvasParams">
       </slide-menu>
-      <!--        <canvas id="canvas" v-bind:width="canvasParams.width" v-bind:height="canvasParams.height"-->
-      <!--                v-on:touchstart="setCanvasTouch($event)" style="z-index: 10;">-->
-      <canvas id="canvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
-              v-on:mousedown="setCanvasClick($event)" v-bind:style="{background: bugsSettings.backgroundColor}"
-              v-on:click.right="changeTrajectory($event)">
+      <canvas id="holesCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
+              v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
+      <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
+              v-on:mousedown="setCanvasClick($event)">
         <hole-bugs v-for="(value, index) in bugsProps"
-             :key="index"
-             :bugsSettings="bugsSettings"
-             ref="bugChild">
-        </hole-bugs>
+                   :key="index"
+                   :bugsSettings="bugsSettings"
+                   :exit-hole-pos="exitHolePos"
+                   :entrance-hole-pos="entranceHolePos"
+              ref="bugChild"></hole-bugs>
 <!--        <bug v-for="(value, index) in bugsProps"-->
 <!--             :key="index"-->
 <!--             :x0="value.x"-->
@@ -48,21 +48,29 @@ export default {
       bugsProps: [],
       bugsSettings: {
         numOfBugs: 0,
+        numTrials: 2, // null = endless trials
+        trialDuration: 10,
+        iti: 5,
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
         movementType: 'circle',
-        targetDrift: 'leftBottom',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
-        bugHeight: 100, // relevant only for horizontal movements
-        isStopOnReward: false,
-        isAntiClockWise: false,
-        timeBetweenBugs: 2000,
         bloodDuration: 2000,
-        timeInEdge: 2000,
-        backgroundColor: '#e8eaf6'
+        backgroundColor: '#e8eaf6',
+        holeSize: [200, 200],
+        exitHole: 'bottomRight',
+        entranceHole: null
+        // timeInEdge: 2000,
+        // isStopOnReward: false,
+        // isAntiClockWise: false,
+        // targetDrift: 'leftBottom'
+        // bugHeight: 100, // relevant only for horizontal movements
       },
       mediaUrl: '',
+      holeImgSrc: '',
+      trial_id: 1,
+      pad: 100, // padding for holes
       isMedia: false,
       isHandlingTouch: false,
       trajectoryLog: [],
@@ -77,7 +85,7 @@ export default {
   mounted() {
     this.$mqtt.subscribe('event/log/prediction')
     this.$mqtt.subscribe('event/command/+')
-    this.canvas = document.getElementById('canvas')
+    this.canvas = document.getElementById('bugCanvas')
     this.ctx = this.canvas.getContext('2d')
     this.initBoard()
     window.addEventListener('keypress', e => {
@@ -123,6 +131,21 @@ export default {
     currentBugOptions: function () {
       let bugType = Array.isArray(this.bugsSettings.bugTypes) ? this.bugsSettings.bugTypes[0] : this.bugsSettings.bugTypes
       return this.configOptions.bugTypes[bugType]
+    },
+    holesPositions: function() {
+      let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
+      let [holeW, holeH] = this.bugsSettings.holeSize
+      return {
+        bottomLeft: [this.pad, canvasH - holeH - this.pad],
+        bottomRight: [canvasW - holeW - this.pad, canvasH - holeH - this.pad]
+      }
+    },
+    exitHolePos: function () {
+      return this.holesPositions[this.bugsSettings.exitHole]
+    },
+    entranceHolePos: function () {
+      let entranceHole = this.bugsSettings.exitHole === 'bottomLeft' ? 'bottomRight' : 'bottomLeft'
+      return this.holesPositions[entranceHole]
     }
   },
   methods: {
@@ -134,11 +157,24 @@ export default {
       if (isLogTrajectory) {
         this.startLogTrajectory()
       }
+      this.drawHoles()
       this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
         console.log('start animation...')
         this.animate()
       })
+    },
+    drawHoles() {
+      let image = new Image()
+      let canvas = document.getElementById('holesCanvas')
+      let ctx = canvas.getContext('2d')
+      let [holeW, holeH] = this.bugsSettings.holeSize
+      let that = this
+      image.onload = function () {
+        ctx.drawImage(image, that.exitHolePos[0], that.exitHolePos[1], holeW, holeH)
+        ctx.drawImage(image, that.entranceHolePos[0], that.entranceHolePos[1], holeW, holeH)
+      }
+      image.src = require('@/assets/hole2.png')
     },
     clearBoard() {
       this.bugsSettings.numOfBugs = 0
@@ -149,6 +185,7 @@ export default {
       if (this.trajectoryLogInterval) {
         this.endLogTrajectory()
       }
+      this.trial_id = 1
       this.$nextTick(function () {
         console.log('Clear board')
         this.animate()
@@ -184,6 +221,9 @@ export default {
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
         let isHit = false
         let bug = this.$refs.bugChild[i]
+        if (bug.isDead) {
+          continue
+        }
         let isRewardBug = this.bugsSettings.rewardBugs.includes(bug.currentBugType)
         if (bug.isHit(x, y)) {
           this.destruct(i, x, y, isRewardBug)
@@ -204,9 +244,6 @@ export default {
       this.isHandlingTouch = false
     },
     destruct(bugIndex, x, y, isRewardBug) {
-      if (this.$refs.bugChild[bugIndex].isDead) {
-        return
-      }
       this.$refs.bugChild[bugIndex].isDead = true
       if (isRewardBug) {
         this.$refs.audio1.play()
@@ -215,13 +252,15 @@ export default {
       const bloodTimeout = setTimeout(() => {
         this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
         if (this.$refs.bugChild.length === 0) {
-          if (this.bugsSettings.isStopOnReward && isRewardBug) {
+          this.trial_id++
+          if (this.bugsSettings.numTrials && this.trial_id > this.bugsSettings.numTrials) {
+            this.$mqtt.publish('event/command/end_app_wait', '')
             this.clearBoard()
           } else {
             const startNewGameTimeout = setTimeout(() => {
               this.initBoard()
               clearTimeout(startNewGameTimeout)
-            }, this.bugsSettings.timeBetweenBugs)
+            }, this.bugsSettings.iti)
           }
         }
         clearTimeout(bloodTimeout)
@@ -258,7 +297,7 @@ export default {
       console.log('trajectory log started...')
       this.trajectoryLogInterval = setInterval(() => {
         let bug = this.$refs.bugChild[0]
-        if (bug && bug.isInsideBoard()) {
+        if (bug) {
           this.trajectoryLog.push({
             time: Date.now(),
             x: bug.x,
@@ -294,9 +333,18 @@ export default {
 
 <style scoped>
 
-#canvas {
+#bugCanvas {
   padding: 0;
   z-index: 100;
+  /*margin: 20px auto 0;*/
+  display: block;
+  position: absolute;
+  bottom: 0;
+  top: auto;
+}
+
+#holesCanvas {
+  padding: 0;
   /*margin: 20px auto 0;*/
   display: block;
   position: absolute;

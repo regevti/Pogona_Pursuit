@@ -184,7 +184,7 @@ class SpinCamera:
         return not self.cache.get(CacheColumns.MANUAL_RECORD_STOP)
 
     def check_trial_alive(self, iteration):
-        return self.cache.get(CacheColumns.EXPERIMENT_TRIAL_ON)
+        return self.cache.get(CacheColumns.EXPERIMENT_BLOCK_ON)
 
     def check_thread_event(self, iteration):
         return self.thread_event.is_set()

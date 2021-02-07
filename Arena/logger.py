@@ -12,8 +12,8 @@ import paho.mqtt.client as mqtt
 
 
 mqtt = mqtt.Client()
-if config.is_debug_mode and config.is_use_parport:
-    config.redis_host = 'cache'
+# if config.is_logger and config.is_debug_mode and not config.is_use_parport:
+#     config.redis_host = 'cache'
 cache = RedisCache()
 logger = get_task_logger(__name__)
 h = logging.StreamHandler(sys.stdout)
@@ -44,15 +44,15 @@ app = Celery('logger', broker=f'redis://{config.redis_host}:6379/0')
 @app.task
 def handle_hit(payload):
     if is_always_reward() and payload.get('is_hit') and payload.get('is_reward_bug'):
-        end_app_wait()
+        # end_app_wait()
         return reward()
 
 
 @app.task
 def end_experiment():
     cache.delete(CacheColumns.APP_ON)
-    cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
-    cache.delete(CacheColumns.EXPERIMENT_TRIAL_PATH)
+    cache.delete(CacheColumns.EXPERIMENT_BLOCK_ON)
+    cache.delete(CacheColumns.EXPERIMENT_BLOCK_PATH)
     cache.delete(CacheColumns.ALWAYS_REWARD)
     cache.delete(CacheColumns.EXPERIMENT_NAME)
     cache.delete(CacheColumns.EXPERIMENT_PATH)
@@ -112,7 +112,7 @@ def save_to_csv(topic, payload):
 
 def get_csv_filename(topic) -> Path:
     if cache.get(CacheColumns.EXPERIMENT_NAME):
-        parent = cache.get(CacheColumns.EXPERIMENT_TRIAL_PATH)
+        parent = cache.get(CacheColumns.EXPERIMENT_BLOCK_PATH)
     else:
         parent = f'events/{datetime.today().strftime("%Y%m%d")}'
         Path(parent).mkdir(parents=True, exist_ok=True)

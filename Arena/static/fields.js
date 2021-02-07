@@ -189,7 +189,7 @@ class Block {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 const mainFields = {
-  name: new FieldObject('experimentName', Field),
+  // name: new FieldObject('experimentName', Field),
   animal_id: new FieldObject('animalId', Field),
   is_use_predictions: new FieldObject('use_predictions', CheckField),
   time_between_blocks: new FieldObject('timeBetweenBlocks', NumericalField),
@@ -210,14 +210,11 @@ const blockFields = {
     bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
     reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
     bug_speed: new FieldObject('bugSpeed', NumericalField),
-    movement_type: new FieldObject('movementTypeSelect', Field),
-    time_between_bugs: new FieldObject('timeBetweenBugs', NumericalField),
-    is_anticlockwise: new FieldObject('isAntiClockWise', CheckField, {movement_type: 'circle'}),
-    target_drift: new FieldObject('targetDriftSelect', Field, {movement_type: ['circle', 'low_horizontal', 'low_horizontal_noise']}),
-    bug_height: new FieldObject('bugHeight', NumericalField, {movement_type: ['low_horizontal', 'low_horizontal_noise']}),
+    // movement_type: new FieldObject('movementTypeSelect', Field),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
     bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false}),
-    background_color: new FieldObject('backgroundColor', Field)
+    background_color: new FieldObject('backgroundColor', Field),
+    exit_hole: new FieldObject('exitHolePositionSelect', Field)
   },
   media: {
     media_url: new FieldObject('media-url', Field)

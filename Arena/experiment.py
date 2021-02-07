@@ -3,6 +3,7 @@ import inspect
 import json
 import time
 import re
+from datetime import datetime
 from dataclasses import dataclass, field
 from multiprocessing.pool import ThreadPool
 from threading import Event
@@ -16,27 +17,35 @@ import config
 from arena import record
 from cache import CacheColumns, RedisCache
 from mqtt import MQTTPublisher
-from utils import datetime_string, mkdir, Serializer
+from utils import mkdir, Serializer, to_integer
 
 mqtt_client = MQTTPublisher()
 
 
 @dataclass
 class Experiment:
-    name: str
     animal_id: str
     cameras: str
     num_blocks: int = 1
     blocks: list = field(default_factory=list, repr=False)
+    name: str = field(default=datetime.now().strftime('%Y%m%d'))
     time_between_blocks: int = config.time_between_blocks
     is_use_predictions: bool = False
     cache: RedisCache = field(default_factory=RedisCache, repr=False)
     extra_time_recording: int = config.extra_time_recording
 
     def __post_init__(self):
-        self.name = f'{self.name}_{datetime_string()}'
-        self.blocks = [Block(i + 1, self.cameras, self.cache, self.experiment_path, **kwargs)
-                       for i, kwargs in enumerate(self.blocks)]
+        blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
+        self.blocks = [Block(i, self.cameras, self.cache, self.experiment_path, **kwargs)
+                       for i, kwargs in zip(blocks_ids, self.blocks)]
+
+    @property
+    def first_block(self):
+        mkdir(self.experiment_path)
+        blocks = Path(self.experiment_path).glob('block*')
+        blocks = [to_integer(x.name.split('block')[-1]) for x in blocks]
+        blocks = sorted([b for b in blocks if isinstance(b, int)])
+        return blocks[-1] + 1 if blocks else 1
 
     @property
     def info(self):
@@ -50,8 +59,6 @@ class Experiment:
     def start(self):
         """Main Function for starting an experiment"""
         log(f'>> Experiment {self.name} started\n')
-        mkdir(self.experiment_path)
-        self.save_experiment_log()
         self.init_experiment_cache()
         self.turn_screen('on')
 
@@ -79,23 +86,17 @@ class Experiment:
         except Exception as exc:
             print(f'error turning off screen: {exc}')
 
-    def save_experiment_log(self):
-        with open(f'{self.experiment_path}/experiment.yaml', 'w') as f:
-            yaml.dump(self.info, f)
-        with open(f'{self.experiment_path}/config.yaml', 'w') as f:
-            yaml.dump(config_log(), f)
-
     def init_experiment_cache(self):
         self.cache.set(CacheColumns.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
         self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
 
     @property
     def experiment_path(self):
-        return f'{config.experiments_dir}/{self.name}'
+        return f'{config.experiments_dir}/{self.animal_id}/{self.name}'
 
     @property
     def experiment_duration(self):
-        return sum(b.block_duration for b in self.blocks) + self.time_between_blocks * (len(self.blocks) - 1)
+        return sum(b.overall_block_duration for b in self.blocks) + self.time_between_blocks * (len(self.blocks) - 1)
 
 
 @dataclass
@@ -104,30 +105,32 @@ class Block:
     cameras: str
     cache: RedisCache
     experiment_path: str
+    extra_time_recording: int = config.extra_time_recording
 
     num_trials: int = 1
-    trial_duration: int = 60
+    trial_duration: int = 10
     iti: int = 10
     block_type: str = 'bugs'
     bug_types: list = field(default_factory=list)
     bug_speed: int = None
     bug_size: int = None
-    bug_height: int = None
-    movement_type: str = None
+    is_default_bug_size: bool = True
+    exit_hole: str = None
     reward_type: str = 'always'
     reward_bugs: list = None
+
+    media_url: str = ''
+
+    movement_type: str = None
     is_anticlockwise: bool = False
     target_drift: str = ''
+    bug_height: int = None
     time_between_bugs: int = None
-    media_url: str = ''
     is_use_predictions: bool = False
-    is_default_bug_size: bool = True
     background_color: str = ''
 
-    current_trial: int = field(default=1, repr=False)
     pool: ThreadPool = field(default=None, repr=False)
     threads_event: Event = field(default_factory=Event, repr=False)
-    extra_time_recording: int = config.extra_time_recording
 
     def __post_init__(self):
         if isinstance(self.bug_types, str):
@@ -140,7 +143,7 @@ class Block:
 
     @property
     def info(self):
-        non_relevant_fields = ['self', 'cache', 'pool', 'current_trial', 'threads_event', 'is_use_predictions',
+        non_relevant_fields = ['self', 'cache', 'pool', 'threads_event', 'is_use_predictions',
                                'cameras', 'experiment_path']
         for block_type, block_type_fields in config.experiment_types.items():
             if block_type != self.block_type:
@@ -153,51 +156,47 @@ class Block:
         if self.is_always_reward:
             self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.block_duration)
         self.clear_app_content()
-        for i in range(self.num_trials):
-            try:
-                self.current_trial = i + 1
-                if i != 0:
-                    self.wait(self.iti)
-                self.run_trial()
-            except EndExperimentException as exc:
-                self.clear_app_content()
-                self.end_trial()
-                log(f'>> block{self.block_id} was stopped externally')
-                raise exc
+        try:
+            self.run_block()
+        except EndExperimentException as exc:
+            self.clear_app_content()
+            self.end_block()
+            log(f'>> block{self.block_id} was stopped externally')
+            raise exc
 
-            log(self.trial_summary)
+        log(self.block_summary)
 
-    def run_trial(self):
-        """Run trial flow"""
-        self.init_trial()
+    def run_block(self):
+        """Run block flow"""
+        self.init_block()
         self.pool = self.start_threads()
         self.wait(self.extra_time_recording)
 
         self.start_app()
-        self.wait(self.trial_duration, check_app_on=True)
+        self.wait(self.block_duration, check_app_on=True)
 
         self.end_app()
         self.wait(self.extra_time_recording)
-        self.end_trial()
+        self.end_block()
 
     def start_threads(self) -> ThreadPool:
         """Start cameras recording and temperature recording on a separate processes"""
         self.threads_event.set()
 
         def _start_recording():
-            self.trial_log('recording started')
+            self.block_log('recording started')
             mqtt_client.publish_command('gaze_external', 'on')
             if not config.is_debug_mode:
-                acquire_stop = {'record_time': self.overall_trial_duration, 'thread_event': self.threads_event}
+                acquire_stop = {'record_time': self.block_duration, 'thread_event': self.threads_event}
                 try:
                     record(cameras=self.cameras, output=self.videos_path, cache=self.cache,
                            is_use_predictions=self.is_use_predictions, **acquire_stop)
                 except Exception as exc:
                     print(f'Error in start_recording: {exc}')
             else:
-                self.wait(self.overall_trial_duration)
+                self.wait(self.block_duration)
             mqtt_client.publish_command('gaze_external', 'off')
-            self.trial_log('recording ended')
+            self.block_log('recording ended')
 
         def _read_temp():
             ser = Serializer()
@@ -219,18 +218,18 @@ class Block:
 
         return pool
 
-    def init_trial(self):
-        mkdir(self.trial_path)
+    def init_block(self):
+        mkdir(self.block_path)
+        self.save_block_log()
         mqtt_client.publish_command('led_light', 'on')
-        self.cache.set(CacheColumns.EXPERIMENT_TRIAL_ON, True, timeout=self.overall_trial_duration)
-        self.cache.set(CacheColumns.EXPERIMENT_TRIAL_PATH, self.trial_path,
-                       timeout=self.overall_trial_duration + self.iti)
+        self.cache.set(CacheColumns.EXPERIMENT_BLOCK_ON, True, timeout=self.overall_block_duration)
+        self.cache.set(CacheColumns.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
 
-    def end_trial(self):
+    def end_block(self):
         mqtt_client.publish_command('led_light', 'off')
         self.terminate_pool()
-        self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_ON)
-        self.cache.delete(CacheColumns.EXPERIMENT_TRIAL_PATH)
+        self.cache.delete(CacheColumns.EXPERIMENT_BLOCK_ON)
+        self.cache.delete(CacheColumns.EXPERIMENT_BLOCK_PATH)
 
     def start_app(self):
         if self.is_media_experiment:
@@ -239,18 +238,23 @@ class Block:
             mqtt_client.publish_command('init_bugs', self.bug_options)
 
         self.cache.set(CacheColumns.APP_ON, True)
-        self.trial_log(f'{self.block_type} initiated')
+        self.block_log(f'{self.block_type} initiated')
 
     def end_app(self):
         self.clear_app_content()
         mqtt_client.publish_command('end_app_wait')
-        self.trial_log(f'{self.block_type} stopped')
 
     def clear_app_content(self):
         if self.is_media_experiment:
             mqtt_client.publish_command('hide_media')
         else:
             mqtt_client.publish_command('hide_bugs')
+
+    def save_block_log(self):
+        with open(f'{self.block_path}/info.yaml', 'w') as f:
+            yaml.dump(self.info, f)
+        with open(f'{self.block_path}/config.yaml', 'w') as f:
+            yaml.dump(config_log(), f)
 
     def wait(self, duration, check_app_on=False):
         """Sleep while checking for experiment end"""
@@ -259,7 +263,7 @@ class Block:
             if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
                 raise EndExperimentException()
             if check_app_on and not self.cache.get(CacheColumns.APP_ON):
-                self.trial_log('Reward Bug catch')
+                self.block_log('Trials ended')
                 return
             time.sleep(2)
 
@@ -275,13 +279,16 @@ class Block:
             'url': f'{config.management_url}/media/{self.media_url}'
         })
 
-    def trial_log(self, msg):
-        log(f'>> Trial {self.current_trial} {msg}')
+    def block_log(self, msg):
+        log(f'>> Block {self.block_id} {msg}')
 
     @property
     def bug_options(self):
         return json.dumps({
             'numOfBugs': 1,
+            'numTrials': self.num_trials,
+            'iti': self.iti,
+            'trialDuration': self.trial_duration,
             'speed': self.bug_speed,
             'bugTypes': self.bug_types,
             'rewardBugs': self.reward_bugs,
@@ -289,17 +296,15 @@ class Block:
             'timeBetweenBugs': self.time_between_bugs,
             'isStopOnReward': self.is_always_reward,
             'isLogTrajectory': True,
-            'isAntiClockWise': self.is_anticlockwise,
-            'targetDrift': self.target_drift,
             'bugSize': self.bug_size,
-            'bugHeight': self.bug_height,
-            'backgroundColor': self.background_color
+            'backgroundColor': self.background_color,
+            'exitHole': self.exit_hole
         })
 
     @property
-    def trial_summary(self):
-        log_string = f'Summary of Trial {self.current_trial}:\n'
-        touches_file = Path(self.trial_path) / config.logger_files.get("touch", '')
+    def block_summary(self):
+        log_string = f'Summary of Block {self.block_id}:\n'
+        touches_file = Path(self.block_path) / config.logger_files.get("touch", '')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)
@@ -327,24 +332,20 @@ class Block:
         return self.reward_type == 'always'
 
     @property
-    def overall_trial_duration(self):
-        return self.trial_duration + 2 * self.extra_time_recording
+    def overall_block_duration(self):
+        return self.block_duration + 2 * self.extra_time_recording
 
     @property
     def block_duration(self):
-        return round((self.num_trials * self.overall_trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
+        return round((self.num_trials * self.trial_duration + (self.num_trials - 1) * self.iti) * 1.5)
 
     @property
     def block_path(self):
         return f'{self.experiment_path}/block{self.block_id}'
 
     @property
-    def trial_path(self):
-        return f'{self.block_path}/trial{self.current_trial}'
-
-    @property
     def videos_path(self):
-        return f'{self.trial_path}/videos'
+        return f'{self.block_path}/videos'
 
 
 class ExperimentCache:
