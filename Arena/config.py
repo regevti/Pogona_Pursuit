@@ -3,7 +3,7 @@ env = Env()
 env.read_env()
 
 # General
-version = '1.1'
+version = '2.0'
 is_debug_mode = env.bool('DEBUG', False)
 is_use_parport = env.bool('IS_USE_PARPORT', False)
 
