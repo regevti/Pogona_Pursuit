@@ -97,10 +97,11 @@ export default {
         return
       }
       // vertical edges
-      if (this.x < 0 || this.x > this.canvas.width) {
+      let radius = this.currentBugSize / 2
+      if (this.x < radius || this.x > this.canvas.width - radius) {
         this.vx = -this.vx
       // horizontal edges
-      } else if (this.y < 0 || this.y > this.canvas.height) {
+      } else if (this.y < radius || this.y > this.canvas.height - radius) {
         this.vy = -this.vy
       // holes edges
       } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
