@@ -5,7 +5,7 @@
 </template>
 
 <script>
-import {distance, plusOrMinus, randBM, randomRange} from '@/js/helpers'
+import {distance, randBM, randomRange} from '@/js/helpers'
 
 export default {
   name: 'holeBugs',
@@ -74,8 +74,44 @@ export default {
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
       this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      this.vx = this.currentSpeed / Math.sqrt(2)
-      this.vy = plusOrMinus() * this.currentSpeed / Math.sqrt(2)
+      this.setEntranceDirection()
+      // this.vx = this.currentSpeed / Math.sqrt(2)
+      // this.vy = plusOrMinus() * this.currentSpeed / Math.sqrt(2)
+    },
+    setEntranceDirection() {
+      let minDist = 300
+      let padAngle = Math.PI / 4
+      let A = [
+          [3 * Math.PI / 2, this.y],
+          [0, this.canvas.width - this.x],
+          [Math.PI / 2, this.canvas.height - this.y],
+          [Math.PI, this.x]
+      ]
+      let angles = []
+      for (let a of A) {
+        if (a[1] < minDist) {
+          angles.push(a[0])
+        }
+      }
+      let r = Math.random() * 2 * Math.PI
+      if (angles.length > 0) {
+        angles = angles.sort()
+        angles = [angles[0] - padAngle, angles[angles.length - 1] + padAngle]
+        for (let i = 0; i < 100; i++) {
+          if (angles[0] < 0) {
+            if (!(r > 2 * Math.PI + angles[0] || (r >= 0 && r < angles[1]))) {
+              break
+            }
+          } else {
+            if (!(r > angles[0] && r < angles[1])) {
+              break
+            }
+          }
+          r = Math.random() * 2 * Math.PI
+        }
+      }
+      this.vx = this.currentSpeed * Math.cos(r)
+      this.vy = this.currentSpeed * Math.sin(r)
     },
     move() {
       if (this.isDead || this.isRetreated) {

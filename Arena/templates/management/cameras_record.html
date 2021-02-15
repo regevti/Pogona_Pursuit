@@ -5,7 +5,7 @@
             {% for cam in cameras %}
             <div class="row ml-4" id="cams-checkboxes">
                 <input class="form-check-input" type="checkbox" value="{{cam}}" id="camera-{{cam}}"
-                       checked>
+                       {% if cam not in ['stream','top'] %} checked{% endif %}>
                 <label class="form-check-label" for="camera-{{cam}}">{{cam}}</label>
             </div>
             {% endfor %}
