@@ -42,7 +42,7 @@ class SpinCamera:
         self.is_ready = False  # ready for acquisition
         self.video_out = None
         self.start_acquire_time = None
-        self.mqtt_client = None
+        self.mqtt_client = MQTTPublisher()
 
         self.cam.Init()
         self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
@@ -51,7 +51,6 @@ class SpinCamera:
             self.logger.info('Working in realtime mode')
             self.predictor_experiment_ids = []
             self.predictor = predictor.gen_hit_predictor(self.logger, dir_path)
-            self.mqtt_client = MQTTPublisher()
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
