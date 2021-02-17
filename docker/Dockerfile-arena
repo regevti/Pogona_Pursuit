@@ -151,7 +151,7 @@ COPY ./Arena .
 RUN apt-get -qq update && apt-get -qq install -y lsb-release \
   libusb-1.0.0
 
-ENV DEBIAN_FRONTEND=
+ENV DEBIAN_FRONTEND=dialog
 RUN pip3 install -r arena.txt
 # Installation of deeplabcut-live
 RUN pip3 install --no-deps deeplabcut-live colorcet
