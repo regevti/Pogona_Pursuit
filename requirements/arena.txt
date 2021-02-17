@@ -11,4 +11,5 @@ Flask==1.1.2
 Flask-Caching==1.9.0
 
 # pose estimation
-deeplabcut-live==0.0.3
+ruamel.yaml==0.16.12
+tensorflow-gpu==1.13.1
