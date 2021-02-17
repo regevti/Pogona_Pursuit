@@ -2,7 +2,8 @@ FROM ubuntu:18.04
 # Built using PyImageSearch guide:
 # http://www.pyimagesearch.com/2015/06/22/install-opencv-3-0-and-python-2-7-on-ubuntu/
 
-ARG DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND
+ENV DEBIAN_FRONTEND=noninteractive
 # Install dependencies
 RUN apt-get -qq update && apt-get -qq upgrade -y && apt-get -qq install -y \
   wget \
@@ -150,6 +151,7 @@ COPY ./Arena .
 RUN apt-get -qq update && apt-get -qq install -y lsb-release \
   libusb-1.0.0
 
+ENV DEBIAN_FRONTEND=
 RUN pip3 install -r arena.txt
 # Installation of deeplabcut-live
 RUN pip3 install --no-deps deeplabcut-live colorcet
