@@ -40,6 +40,12 @@
     const maxBlocks = Number("{{max_blocks}}")
     const $numBlocks = $("#numBlocks")
     checkCurrentExperiment()
+    // Test cameras
+    $.get('/check_cameras', function (data) {
+      data = JSON.parse(data)
+      let text = data && data.length > 0 ? `missing cameras: ${data}` : 'Cameras are OK'
+      $("#record-output").text(text)
+    })
 
     // Number of blocks listener
     $numBlocks.change(() => {
@@ -158,24 +164,25 @@
     });
 
     $("#saveExperiment").click(() => {
-      if (confirm("Please confirm save")) {
-        let params = AllFields.values
-        $.ajax({
-          url: "/save_experiment",
-          type: "POST",
-          data: JSON.stringify(params),
-          contentType: "application/json",
-          beforeSend: function () {
-            $("#record-output").text('>> saving experiment...')
-          },
-          success: function (res) {
-            $("#record-output").text(`>> experiment ${params.name} was saved successfully`)
-          },
-          error: function (data) {
-            $("#record-output").html(data.responseText)
-          }
-        })
-      }
+      let params = AllFields.values
+      params['name'] = $('#saveExperimentName').val()
+      $.ajax({
+        url: "/save_experiment",
+        type: "POST",
+        data: JSON.stringify(params),
+        contentType: "application/json",
+        beforeSend: function () {
+          $("#record-output").text('>> saving experiment...')
+        },
+        success: function (res) {
+          $("#record-output").text(`>> experiment ${params.name} was saved successfully`)
+          $('#saveExperimentModal').modal('toggle');
+        },
+        error: function (data) {
+          $("#record-output").html(data.responseText)
+          $('#saveExperimentModal').modal('toggle');
+        }
+      })
     })
 
     $("#loadExperiment").click(() => {
@@ -260,8 +267,8 @@
         iti: blockValues.iti,
         trialDuration: blockValues.trial_duration,
         speed: blockValues.bug_speed,
-        bugTypes: blockValues.bug_types,
-        rewardBugs: blockValues.reward_bugs,
+        bugTypes: blockValues.bug_types || ['cockroach'],
+        rewardBugs: blockValues.reward_bugs || [],
         movementType: blockValues.movement_type,
         backgroundColor: blockValues.background_color,
         exitHole: blockValues.exit_hole

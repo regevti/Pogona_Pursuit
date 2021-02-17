@@ -3,6 +3,7 @@ import PySpin
 import cv2
 import json
 import os
+import re
 import config
 from pathlib import Path
 from utils import titlize, turn_display_on, turn_display_off
@@ -121,6 +122,21 @@ def display(state):
 def cameras_info():
     """Get cameras info"""
     return Response(display_info())
+
+
+@app.route('/check_cameras')
+def check_cameras():
+    """Check all cameras are connected"""
+    if config.is_debug_mode:
+        return Response(json.dumps([]))
+    info = display_info()
+    cameras_ids = [str(c) for c in re.findall(r'(?m)^\d+', info or '')]
+    missing_cameras = []
+    for cam_name, cam_id in config.camera_names.items():
+        if cam_id not in cameras_ids:
+            missing_cameras.append(cam_name)
+
+    return Response(json.dumps(missing_cameras))
 
 
 @app.route('/video_feed')

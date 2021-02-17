@@ -95,6 +95,7 @@ class SpinCamera:
             frame_times = list()
             image_handler_times = list()
             i = 0
+            err_count = 0
             while self.is_acquire_allowed(i):
                 try:
                     image_result = self.cam.GetNextImage(2000)  # Retrieve next received image
@@ -119,7 +120,8 @@ class SpinCamera:
 
                 except PySpin.SpinnakerException as exc:
                     self.logger.error(f'(acquire); {exc}')
-                    continue
+                    self.management_log(f'Acquire Error: {exc}')
+                    break
 
                 finally:
                     i += 1
@@ -128,6 +130,7 @@ class SpinCamera:
             mean_fps, std_fps = self.analyze_timestamps(frame_times)
             self.logger.debug(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
             self.logger.debug(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
+            self.management_log(f'Number of frames taken: {i}, Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
             if self.is_realtime_mode:
                 self.predictor.save_predictions()
 
@@ -278,6 +281,9 @@ class SpinCamera:
         for name, device_id in config.camera_names.items():
             if self.device_id == device_id:
                 return name
+
+    def management_log(self, msg):
+        self.mqtt_client.publish_event(config.experiment_topic, f'>> Camera {self.name}: {msg}')
 
     @property
     def video_path(self):

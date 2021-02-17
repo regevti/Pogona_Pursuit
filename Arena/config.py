@@ -69,7 +69,7 @@ camera_names = {
     'left': '19506455',
     'stream': '19506481',
     'back': '19506475',
-    'top': '20349303'
+    # 'top': '20349303'
 }
 acquire_stop_options = {
     'num_frames': int,
