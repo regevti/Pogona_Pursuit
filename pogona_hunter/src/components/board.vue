@@ -260,7 +260,7 @@ export default {
             const startNewGameTimeout = setTimeout(() => {
               this.initBoard()
               clearTimeout(startNewGameTimeout)
-            }, this.bugsSettings.iti)
+            }, this.bugsSettings.iti * 1000)
           }
         }
         clearTimeout(bloodTimeout)
