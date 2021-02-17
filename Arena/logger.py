@@ -84,6 +84,7 @@ def reward(is_force=False):
 @app.task
 def led_light(state):
     if parport:
+        log(f'>> LED lights turned {state}')
         parport.led_lighting(state)
 
 
