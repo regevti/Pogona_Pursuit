@@ -20,7 +20,14 @@ export default {
       holeImgSrc: '',
       randomNoise: 0,
       frameCounter: 0,
-      framesUntilExitFromEntranceHole: 100
+      framesUntilExitFromEntranceHole: 100,
+      minDistFromObstacle: 300,
+      bordersAngles: {
+        top: 3 * Math.PI / 2,
+        bottom: Math.PI / 2,
+        left: Math.PI,
+        right: 0
+      }
     }
   },
   props: {
@@ -40,6 +47,9 @@ export default {
         return this.bugsSettings.speed
       }
       return this.bugTypeOptions[this.currentBugType].speed
+    },
+    currentAngle: function () {
+      return Math.atan2(this.vx, this.vy)
     },
     numImagesPerBug: function () {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
@@ -74,7 +84,7 @@ export default {
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
       this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      this.setNewAngle()
+      this.setNextAngle()
     },
     move() {
       if (this.isDead || this.isRetreated) {
@@ -99,15 +109,14 @@ export default {
       let radius = this.currentBugSize / 2
       if (this.x < radius || this.x > this.canvas.width - radius ||
           this.y < radius || this.y > this.canvas.height - radius) {
-        this.setNewAngle()
+        this.setNextAngle()
       // holes edges
       } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
-        // if (this.isHoleRetreatStarted) {
-        //   this.startRetreat()
-        // } else {
-        //   this.vx = -this.vx
-        //   this.vy = -this.vy
-        // }
+        if (this.isHoleRetreatStarted) {
+          this.startRetreat()
+        } else {
+          this.setNextAngle([])
+        }
       } else {
         return
       }
@@ -137,21 +146,27 @@ export default {
         console.error(e)
       }
     },
-    setNewAngle() {
-      let minDist = 300
-      let padAngle = Math.PI / 2
-      // A = [[angle, dist_from_borders],...]
-      let A = [
-          [3 * Math.PI / 2, this.y],
-          [0, this.canvas.width - this.x],
-          [Math.PI / 2, this.canvas.height - this.y],
-          [Math.PI, this.x]
-      ]
+    getAnglesOfCloseBorders() {
       let angles = []
-      for (let a of A) {
-        if (a[1] < minDist) {
-          angles.push(a[0])
+      let borderDistances = {
+        top: this.y,
+        bottom: this.canvas.height - this.y,
+        left: this.x,
+        right: this.canvas.width - this.x
+      }
+      for (const [key, angle] of Object.entries(this.bordersAngles)) {
+        if (borderDistances[key] < this.minDistFromObstacle) {
+          angles.push(angle)
         }
+      }
+      return angles
+    },
+    setNextAngle(angles = []) {
+      let padAngle = Math.PI / 4
+      // A = [[angle, dist_from_borders],...]
+      let borderAngles = this.getAnglesOfCloseBorders()
+      if (borderAngles) {
+        angles.push(...borderAngles)
       }
       let r = Math.random() * 2 * Math.PI
       if (angles.length > 0) {
@@ -188,7 +203,7 @@ export default {
       let t = setTimeout(() => {
         this.isChangingDirection = false
         clearTimeout(t)
-      }, 200)
+      }, 1000)
     },
     isHit(x, y) {
       return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
