@@ -74,13 +74,73 @@ export default {
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
       this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      this.setEntranceDirection()
-      // this.vx = this.currentSpeed / Math.sqrt(2)
-      // this.vy = plusOrMinus() * this.currentSpeed / Math.sqrt(2)
+      this.setNewAngle()
     },
-    setEntranceDirection() {
+    move() {
+      if (this.isDead || this.isRetreated) {
+        this.draw()
+        return
+      }
+      this.frameCounter++
+      this.edgeDetection()
+      this.checkHoleRetreat()
+      let randNoise = this.getRandomNoise()
+      this.dx = this.vx + 0.5 * randNoise
+      this.dy = this.vy + 0.5 * randNoise
+      this.x += this.dx
+      this.y += this.dy
+      this.draw()
+    },
+    edgeDetection() {
+      if (this.isChangingDirection) {
+        return
+      }
+      // borders
+      let radius = this.currentBugSize / 2
+      if (this.x < radius || this.x > this.canvas.width - radius ||
+          this.y < radius || this.y > this.canvas.height - radius) {
+        this.setNewAngle()
+      // holes edges
+      } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
+        // if (this.isHoleRetreatStarted) {
+        //   this.startRetreat()
+        // } else {
+        //   this.vx = -this.vx
+        //   this.vy = -this.vy
+        // }
+      } else {
+        return
+      }
+      this.changeDirectionTimeout()
+    },
+    draw() {
+      let imgIndex = Math.floor(this.step / this.stepsPerImage)
+      this.bugImgSrc = this.getImageSrc(`/${this.currentBugType}${imgIndex}.png`)
+      this.drawBug()
+      this.step++
+      if (this.step > (this.numImagesPerBug - 1) * this.stepsPerImage) {
+        this.step = 0
+      }
+    },
+    drawBug() {
+      if (this.isRetreated) {
+        return
+      }
+      try {
+        let bugImage = this.isDead ? this.getDeadImage() : this.$refs.bugImg
+        this.ctx.setTransform(1, 0, 0, 1, this.x, this.y)
+        this.ctx.rotate(this.getAngleRadians())
+        // drawImage(image, dx, dy, dWidth, dHeight)
+        this.ctx.drawImage(bugImage, -this.currentBugSize / 2, -this.currentBugSize / 2, this.currentBugSize, this.currentBugSize)
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+      } catch (e) {
+        console.error(e)
+      }
+    },
+    setNewAngle() {
       let minDist = 300
-      let padAngle = Math.PI / 4
+      let padAngle = Math.PI / 2
+      // A = [[angle, dist_from_borders],...]
       let A = [
           [3 * Math.PI / 2, this.y],
           [0, this.canvas.width - this.x],
@@ -113,80 +173,6 @@ export default {
       this.vx = this.currentSpeed * Math.cos(r)
       this.vy = this.currentSpeed * Math.sin(r)
     },
-    move() {
-      if (this.isDead || this.isRetreated) {
-        this.draw()
-        return
-      }
-      this.frameCounter++
-      this.edgeDetection()
-      this.checkHoleRetreat()
-      let randNoise = this.getRandomNoise()
-      this.dx = this.vx + 0.5 * randNoise
-      this.dy = this.vy + 0.5 * randNoise
-      this.x += this.dx
-      this.y += this.dy
-      this.draw()
-    },
-    edgeDetection() {
-      if (this.isChangingDirection) {
-        return
-      }
-      // vertical edges
-      let radius = this.currentBugSize / 2
-      if (this.x < radius || this.x > this.canvas.width - radius) {
-        this.vx = -this.vx
-      // horizontal edges
-      } else if (this.y < radius || this.y > this.canvas.height - radius) {
-        this.vy = -this.vy
-      // holes edges
-      } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
-        if (this.isHoleRetreatStarted) {
-          this.startRetreat()
-        } else {
-          this.vx = -this.vx
-          this.vy = -this.vy
-        }
-      } else {
-        return
-      }
-      this.changeDirectionTimeout()
-    },
-    draw() {
-      // this.ctx.beginPath()
-      // this.drawHoles()
-      let imgIndex = Math.floor(this.step / this.stepsPerImage)
-      this.bugImgSrc = this.getImageSrc(`/${this.currentBugType}${imgIndex}.png`)
-      this.drawBug()
-      this.step++
-      if (this.step > (this.numImagesPerBug - 1) * this.stepsPerImage) {
-        this.step = 0
-      }
-      // this.ctx.fill()
-      // this.ctx.closePath()
-    },
-    drawBug() {
-      if (this.isRetreated) {
-        return
-      }
-      try {
-        let bugImage = this.isDead ? this.getDeadImage() : this.$refs.bugImg
-        this.ctx.setTransform(1, 0, 0, 1, this.x, this.y)
-        this.ctx.rotate(this.getAngleRadians())
-        // drawImage(image, dx, dy, dWidth, dHeight)
-        this.ctx.drawImage(bugImage, -this.currentBugSize / 2, -this.currentBugSize / 2, this.currentBugSize, this.currentBugSize)
-        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
-      } catch (e) {
-        console.error(e)
-      }
-    },
-    // drawHoles() {
-    //   this.holeImgSrc = this.getImageSrc(`/hole2.png`)
-    //   this.ctx.drawImage(this.$refs.holeImg,
-    //       this.exitHolePos[0], this.exitHolePos[1], this.holeSize[0], this.holeSize[1])
-    //   this.ctx.drawImage(this.$refs.holeImg,
-    //       this.entranceHolePos[0], this.entranceHolePos[1], this.holeSize[0], this.holeSize[1])
-    // },
     startRetreat() {
       let fadeTimeout = setTimeout(() => {
         this.isRetreated = true
@@ -202,7 +188,7 @@ export default {
       let t = setTimeout(() => {
         this.isChangingDirection = false
         clearTimeout(t)
-      }, 100)
+      }, 200)
     },
     isHit(x, y) {
       return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
