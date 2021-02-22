@@ -48,7 +48,7 @@ def main(origin, target_experiments_dir):
                 path_id = "/".join(block_dir.parts[-3:])  # e.g. 9/20210220/block3
                 try:
                     target = Path(target_experiments_dir) / path_id
-                    if not re.match(r'block\d+', day_dir.name) or path_id in cached or target.exists():
+                    if not re.match(r'block\d+', block_dir.name) or path_id in cached or target.exists():
                         continue
 
                     tmp_block_dir = Path(TMP_DIR) / path_id
