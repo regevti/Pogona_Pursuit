@@ -31,37 +31,48 @@ def add_to_cache(exp_dir):
         f.write(exp_dir)
 
 
-def main(origin, target):
+def main(origin, target_experiments_dir):
     logger.info('Start backup of experiments')
     cached = load_cache()
     subprocess.run(['mkdir', '-p', TMP_DIR])
     experiments = Path(origin).glob('*')
-    for exp_dir in experiments:
-        try:
-            if not re.match(r'\w+_\d{8}T\d{6}', exp_dir.name) or exp_dir.name in cached or \
-                    Path(f'{target}/{exp_dir.name}').exists():
+    for animal_dir in experiments:
+
+        if animal_dir.name.startswith('delete'):
+            shutil.rmtree(animal_dir.as_posix())
+
+        for day_dir in animal_dir.glob('*'):
+            if not re.match(r'\d+', day_dir.name):
                 continue
-            if exp_dir.name.startswith('delete'):
-                shutil.rmtree(exp_dir.as_posix())
-
-            tmp_exp = f'{TMP_DIR}/{exp_dir.name}'
-            subprocess.run(['cp', '-r', exp_dir.as_posix(), TMP_DIR])
-            for video_path in Path(tmp_exp).glob('**/*.avi'):
+            for block_dir in day_dir.glob('*'):
+                path_id = "/".join(block_dir.parts[-3:])  # e.g. 9/20210220/block3
                 try:
-                    vid_tmp = video_path.absolute().as_posix()
-                    subprocess.run(['ffmpeg', '-i', vid_tmp, '-c:v', 'libx265',
-                                    '-preset', 'fast', '-crf', '28', '-tag:v', 'hvc1',
-                                    '-c:a', 'eac3', '-b:a', '224k', vid_tmp.replace('.avi', '.mp4')])
-                    subprocess.run(['rm', '-f', vid_tmp])
+                    target = Path(target_experiments_dir) / path_id
+                    if not re.match(r'block\d+', day_dir.name) or path_id in cached or target.exists():
+                        continue
+
+                    tmp_block_dir = Path(TMP_DIR) / path_id
+                    tmp_block_dir.parent.mkdir(exist_ok=True, parents=True)
+                    target.parent.mkdir(exist_ok=True, parents=True)
+
+                    subprocess.run(['cp', '-r', block_dir.as_posix(), tmp_block_dir.parent.as_posix()])
+
+                    for video_path in tmp_block_dir.glob('**/*.avi'):
+                        try:
+                            vid_tmp = video_path.absolute().as_posix()
+                            subprocess.run(['ffmpeg', '-i', vid_tmp, '-c:v', 'libx265',
+                                            '-preset', 'fast', '-crf', '28', '-tag:v', 'hvc1',
+                                            '-c:a', 'eac3', '-b:a', '224k', vid_tmp.replace('.avi', '.mp4')])
+                            subprocess.run(['rm', '-f', vid_tmp])
+                        except Exception as exc:
+                            logger.error(f'Error converting video: {video_path.name}; {exc}')
+
+                    subprocess.run(['cp', '-r', tmp_block_dir.as_posix(), target.parent.as_posix()])
+                    add_to_cache(path_id + '\n')
+                    logger.info(f'{path_id} successfully copied to sil2')
+
                 except Exception as exc:
-                    logger.error(f'Error converting video: {video_path.name}')
-
-            subprocess.run(['cp', '-r', tmp_exp, target])
-            add_to_cache(exp_dir.name + '\n')
-            logger.info(f'{exp_dir.name} successfully copied to sil2')
-
-        except Exception as exc:
-            logger.error(f'Error with {exp_dir}; {exc}')
+                    logger.error(f'Error with {path_id}; {exc}')
 
 
 if __name__ == "__main__":
