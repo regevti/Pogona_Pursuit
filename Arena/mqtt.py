@@ -1,5 +1,5 @@
 import json
-from logger import save_to_csv, handle_hit, end_app_wait, end_experiment, reward, led_light, gaze_external
+from logger import save_to_csv, handle_hit, end_app_wait, end_experiment, reward, led_light, gaze_external, block_log
 import paho.mqtt.client as mqtt
 import config
 
@@ -38,7 +38,7 @@ class MQTTClient:
             end_app_wait.delay()
 
         elif msg.topic == config.subscription_topics['block_log']:
-            pass
+            block_log.delay()
 
         elif msg.topic.startswith(config.log_topic_prefix):
             topic = msg.topic.replace(config.log_topic_prefix, '')
