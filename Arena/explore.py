@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from flask import Flask, render_template, Response, request
+from flask import Flask, render_template, Response, request, jsonify
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +32,12 @@ def experiment_results():
     # return Response(df.to_html(classes='table-responsive'))
 
 
+@app.route('/animal_ids', methods=['POST'])
+def animal_ids():
+    experiment_dir = request.json.get('experiment_dir')
+    return jsonify([d.name for d in Path(experiment_dir).glob('*') if not d.name.startswith('.')])
+
+
 class NoDataException(Exception):
     """No data"""
 
@@ -41,7 +47,7 @@ class ExperimentAnalyzer:
     start_date: datetime
     end_date: datetime
     bug_types: str = None
-    animal_id: int = None
+    animal_id: str = None
     movement_type: str = None
     num_of_strikes: int = 0
     block_type: str = None
@@ -57,23 +63,26 @@ class ExperimentAnalyzer:
     def get_experiments(self) -> pd.DataFrame:
         res_df = []
         print(f'experiments folder: {self.experiment_dir}')
-        for exp_path in Path(self.experiment_dir).glob('*'):
-            try:
-                info_path = exp_path / 'experiment.yaml'
-                if not info_path.exists() or not self.is_in_date_range(exp_path):
+        animal_dirs = [Path(self.experiment_dir) / self.animal_id] if self.animal_id is not None else \
+            Path(self.experiment_dir).glob('*')
+        for animal_dir in animal_dirs:
+            for day_dir in animal_dir.glob('*'):
+                if not self.is_in_date_range(day_dir.name):
                     continue
-                info = self.get_experiment_info(info_path)
-                if not self.is_experiment_match_conditions(info):
-                    continue
+                for block_dir in day_dir.glob('block*'):
+                    try:
+                        info_path = block_dir / 'info.yaml'
+                        if not info_path.exists():
+                            continue
+                        info = self.get_block_info(info_path)
+                        trial_data = self.get_trials_data(block_dir, info)
+                        res_df.append(trial_data)
 
-                trial_data = self.get_trials_data(exp_path, info)
-                res_df.append(trial_data)
+                    except NoDataException:
+                        pass
 
-            except NoDataException:
-                pass
-
-            except Exception as exc:
-                self.log(f'Error loading {exp_path.name}; {exc}')
+                    except ImportError as exc:
+                        self.log(f'Error loading {block_dir.name}; {exc}')
 
         if len(res_df) > 0:
             res_df = pd.concat(res_df)
@@ -83,114 +92,8 @@ class ExperimentAnalyzer:
 
         return res_df
 
-    def get_trials_data(self, exp_path: Path, info: dict) -> pd.DataFrame:
-        experiment_info = {k: v for k, v in info.items() if not re.match(r'block\d+', k)}
-        trials = []
-        for trial_path in exp_path.rglob('trial*'):
-            if not trial_path.is_dir():
-                continue
-            if self.exists_folder_labels(trial_path):
-                continue
-            try:
-                block_id, block_data = self.get_trial_block(trial_path, info)
-                if not block_data:
-                    print(f'block{block_id} has no info data')
-                    continue
-                if not self.is_block_match_conditions(block_data):
-                    continue
-
-                trial_df = self.get_screen_touches(trial_path)
-                trial_meta = dict()
-                trial_meta['trial'] = int(re.match(r'trial(\d+)', trial_path.stem)[1])
-                trial_meta['block'] = block_id
-                trial_meta['temperature'] = self.get_temperature(trial_path)
-                trial_meta['trial_start'] = self.get_trial_start(trial_path, info, trial_meta['trial'])
-                trial_meta['block_type'] = block_data.get('block_type', 'bugs')
-                for k, v in trial_meta.items():
-                    trial_df[k] = v if len(trial_df) > 1 else [v]
-                for key, value in block_data.items():
-                    if key in trial_df.columns:
-                        continue
-                    elif isinstance(value, list):
-                        value = ','.join(value)
-                    trial_df[key] = value
-                trials.append(trial_df)
-            except Exception as exc:
-                self.log(f'Error loading trial {trial_path}; {exc}')
-
-        if len(trials) < 1:
-            raise NoDataException('No trials to concatenate')
-        trials = pd.concat(trials)
-
-        for key, value in experiment_info.items():
-            trials[key] = value
-
-        return trials
-
-    @staticmethod
-    def get_trial_block(trial_path: Path, info: dict):
-        block_id = 1
-        m_block = re.match(r'block(\d+)', trial_path.parent.name)
-        if m_block:
-            block_id = int(m_block[1])
-        return block_id, info.get(f'block{block_id}', {})
-
-    @staticmethod
-    def get_screen_touches(trial_path: Path) -> pd.DataFrame:
-        res = pd.DataFrame()
-        touches_path = trial_path / 'screen_touches.csv'
-        if touches_path.exists():
-            res = pd.read_csv(touches_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
-        return res
-
-    @staticmethod
-    def get_temperature(trial_path: Path) -> pd.DataFrame:
-        res = pd.DataFrame()
-        temp_path = trial_path / 'temperature.csv'
-        if not temp_path.exists():
-            return np.nan
-        res = pd.read_csv(temp_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
-        temperature = res['0'].mean()
-        return temperature
-
-    def get_trial_start(self, trial_path: Path, info: dict, trial_id: int) -> (datetime, None):
-        """Get start time for a trial based on trajectory csv's first record or if not exists, based on calculating
-        trial start using meta data such as trial_duration, ITI, etc.."""
-        def _calculate_trial_start_from_meta():
-            extra_time_recording = info.get('extra_time_recording', 0)
-            block_id, block_data = self.get_trial_block(trial_path, info)
-            time2block = 0
-            for i in range(1, block_id):
-                prev_block_data = info.get(f'block{i}', {})
-                n_trials = prev_block_data.get('num_trials', 1)
-                time2block += prev_block_data['trial_duration'] * n_trials + prev_block_data['iti'] * (n_trials - 1) + \
-                    extra_time_recording * n_trials * 2
-            if 'trial_duration' not in block_data:
-                print(block_data)
-            time2trials = block_data['trial_duration'] * (trial_id - 1) + block_data['iti'] * (trial_id - 1) + \
-                          extra_time_recording * trial_id + extra_time_recording * (trial_id - 1) + time2block
-            exp_time = self.get_experiment_time(info)
-            return exp_time + timedelta(seconds=time2trials)
-
-        traj_path = trial_path / 'bug_trajectory.csv'
-        if not traj_path.exists():
-            self.log(f'No trajectory file in {trial_path}')
-        try:
-            res = pd.read_csv(traj_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
-            assert len(res) > 0
-        except Exception:
-            return _calculate_trial_start_from_meta()
-
-        if res['time'].dtype.name == 'object':
-            res['time'] = pd.to_datetime(res['time'], unit='ms')
-        return res['time'][0]
-
-    def exists_folder_labels(self, trial_path: Path):
-        file_labels = ['climbing', 'no_video', 'bad']
-        for label in file_labels:
-            if (trial_path / label).exists() or (trial_path / 'videos' / label).exists():
-                self.log(f'trial {trial_path} is labelled as {label}')
-                return True
+    def get_trials_data(self, block_path: Path, info: dict) -> pd.DataFrame:
+        pass
 
     @staticmethod
     def group_by_experiment_and_trial(res_df: pd.DataFrame) -> pd.DataFrame:
@@ -229,8 +132,7 @@ class ExperimentAnalyzer:
 
     def is_in_date_range(self, exp_path):
         try:
-            exp_date = str(exp_path).split('_')[-1]
-            exp_date = date_parser.parse(exp_date)
+            exp_date = date_parser.parse(exp_path)
             return self.start_date <= exp_date <= self.end_date
         except Exception as exc:
             self.log(f'Error parsing experiment {exp_path}; {exc}')
@@ -239,26 +141,8 @@ class ExperimentAnalyzer:
     def get_experiment_time(info: dict) -> datetime:
         return date_parser.parse(info.get('name').split('_')[-1])
 
-    def is_experiment_match_conditions(self, info):
-        return self._is_match_conditions(['animal_id'], info)
-
-    def is_block_match_conditions(self, block_info):
-        return self._is_match_conditions(['bug_types', 'movement_type', 'block_type'], block_info)
-
-    def _is_match_conditions(self, attrs2check, info):
-        for attr in attrs2check:
-            req_value = getattr(self, attr)
-            if not req_value:
-                continue
-            info_value = info.get(attr)
-            if not info_value or \
-                    (isinstance(req_value, (int, float)) and req_value != to_integer(info_value)) or \
-                    (isinstance(req_value, str) and req_value not in info_value):
-                return False
-        return True
-
     @staticmethod
-    def get_experiment_info(p: Path):
+    def get_block_info(p: Path):
         with p.open('r') as f:
             data = yaml.load(f, Loader=yaml.FullLoader)
         return data
@@ -310,6 +194,136 @@ class ExperimentAnalyzer:
         if errors:
             html += f'<br/><h4>Errors:</h4><pre>{errors}</pre>'
         return html
+
+
+class TrialsAnalyzerV1:
+    def __init__(self, block_path: Path, info: dict):
+        self.block_path = block_path
+        self.info = info
+        self.errors = []
+
+    def get_data(self):
+        """Main function for getting all data from block trials"""
+        experiment_info = {k: v for k, v in self.info.items() if not re.match(r'block\d+', k)}
+        trials = []
+        for trial_path in self.block_path.rglob('trial*'):
+            if not trial_path.is_dir() or self.exists_folder_labels(trial_path):
+                continue
+            try:
+                if not self.is_block_match_conditions():
+                    continue
+
+                trial_df = self.get_screen_touches(trial_path)
+                trial_meta = dict()
+                trial_meta['trial'] = int(re.match(r'trial(\d+)', trial_path.stem)[1])
+                trial_meta['block'] = int(re.match(r'block(\d+)', self.block_path.stem)[1])
+                trial_meta['temperature'] = self.get_temperature(trial_path)
+                trial_meta['trial_start'] = self.get_trial_start(trial_path, self.info, trial_meta['trial'])
+                trial_meta['block_type'] = self.info.get('block_type', 'bugs')
+                for k, v in trial_meta.items():
+                    trial_df[k] = v if len(trial_df) > 1 else [v]
+                for key, value in self.info.items():
+                    if key in trial_df.columns:
+                        continue
+                    elif isinstance(value, list):
+                        value = ','.join(value)
+                    trial_df[key] = value
+                trials.append(trial_df)
+            except ImportError as exc:
+                self.log(f'Error loading trial {trial_path}; {exc}')
+
+        if len(trials) < 1:
+            raise NoDataException('No trials to concatenate')
+        trials = pd.concat(trials)
+
+        for key, value in experiment_info.items():
+            if isinstance(value, list):
+                value = ','.join(value)
+            trials[key] = value
+
+        return trials
+
+    def exists_folder_labels(self, trial_path: Path):
+        """Look for bad labels of a trial"""
+        file_labels = ['climbing', 'no_video', 'bad']
+        for label in file_labels:
+            if (trial_path / label).exists() or (trial_path / 'videos' / label).exists():
+                self.log(f'trial {trial_path} is labelled as {label}')
+                return True
+
+    def get_trial_start(self, trial_path: Path, info: dict, trial_id: int) -> (datetime, None):
+        """Get start time for a trial based on trajectory csv's first record or if not exists, based on calculating
+        trial start using meta data such as trial_duration, ITI, etc.."""
+        def _calculate_trial_start_from_meta():
+            extra_time_recording = info.get('extra_time_recording', 0)
+            block_id, block_data = self.get_trial_block(trial_path, info)
+            time2block = 0
+            for i in range(1, block_id):
+                prev_block_data = info.get(f'block{i}', {})
+                n_trials = prev_block_data.get('num_trials', 1)
+                time2block += prev_block_data['trial_duration'] * n_trials + prev_block_data['iti'] * (n_trials - 1) + \
+                    extra_time_recording * n_trials * 2
+            if 'trial_duration' not in block_data:
+                print(block_data)
+            time2trials = block_data['trial_duration'] * (trial_id - 1) + block_data['iti'] * (trial_id - 1) + \
+                          extra_time_recording * trial_id + extra_time_recording * (trial_id - 1) + time2block
+            exp_time = self.get_experiment_time(info)
+            return exp_time + timedelta(seconds=time2trials)
+
+        traj_path = trial_path / 'bug_trajectory.csv'
+        if not traj_path.exists():
+            self.log(f'No trajectory file in {trial_path}')
+        try:
+            res = pd.read_csv(traj_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
+            assert len(res) > 0
+        except Exception:
+            return
+            # return _calculate_trial_start_from_meta()
+
+        if res['time'].dtype.name == 'object':
+            res['time'] = pd.to_datetime(res['time'], unit='ms')
+        return res['time'][0]
+
+    @staticmethod
+    def get_screen_touches(trial_path: Path) -> pd.DataFrame:
+        res = pd.DataFrame()
+        touches_path = trial_path / 'screen_touches.csv'
+        if touches_path.exists():
+            res = pd.read_csv(touches_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
+        return res
+
+    @staticmethod
+    def get_temperature(trial_path: Path) -> pd.DataFrame:
+        res = pd.DataFrame()
+        temp_path = trial_path / 'temperature.csv'
+        if not temp_path.exists():
+            return np.nan
+        res = pd.read_csv(temp_path, parse_dates=['time'], index_col=0).reset_index(drop=True)
+        temperature = res['0'].mean()
+        return temperature
+
+    def log(self, msg):
+        self.errors.append(msg)
+        print(msg)
+
+    def is_block_match_conditions(self):
+        return self._is_match_conditions(['bug_types', 'movement_type', 'block_type'], self.info)
+
+    def _is_match_conditions(self, attrs2check, info):
+        for attr in attrs2check:
+            req_value = getattr(self, attr)
+            if not req_value:
+                continue
+            info_value = info.get(attr)
+            if not info_value or \
+                    (isinstance(req_value, (int, float)) and req_value != to_integer(info_value)) or \
+                    (isinstance(req_value, str) and req_value not in info_value):
+                return False
+        return True
+
+
+class TrialAnalyzerV2(TrialsAnalyzerV1):
+    pass
 
 
 def render(df):

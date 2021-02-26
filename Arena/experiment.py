@@ -148,7 +148,11 @@ class Block:
         for block_type, block_type_fields in config.experiment_types.items():
             if block_type != self.block_type:
                 non_relevant_fields += block_type_fields
-        return {k: getattr(self, k) for k in get_arguments(self) if k not in non_relevant_fields}
+        info = {k: getattr(self, k) for k in get_arguments(self) if k not in non_relevant_fields}
+        info['start_time'] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        info['version'] = config.version
+
+        return info
 
     def start(self):
         log(f'>> Block #{self.block_id} started')

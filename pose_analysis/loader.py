@@ -165,7 +165,7 @@ class Loader:
         return videos[0]
 
     def get_experiment_info(self):
-        info = ExperimentAnalyzer.get_experiment_info(self.experiment_path / 'experiment.yaml')
+        info = ExperimentAnalyzer.get_block_info(self.experiment_path / 'experiment.yaml')
         info.update(info.get(f'block{self.block_id or 1}', {}))
         info['trial_id'] = self.trial_id
         return info

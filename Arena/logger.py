@@ -89,12 +89,25 @@ def led_light(state):
 
 
 @app.task
+def block_log(msg):
+    try:
+        block_path = Path(cache.get(CacheColumns.EXPERIMENT_BLOCK_PATH))
+        if block_path.exists():
+            with (block_path / 'block.log').open('a') as f:
+                f.write(f'{datetime.now().isoformat()} - {msg}\n')
+    except Exception as exc:
+        print(f'Error writing block_log; {exc}')
+
+
+@app.task
 def save_to_csv(topic, payload):
     try:
         if topic not in ['trajectory', 'video_frames']:
             payload = [payload]
         df = pd.DataFrame(payload)
-        if topic in ['trajectory', 'touch', 'video_frames']:
+        if topic in ['trial_times']:
+            pass
+        elif 'time' in df.columns:
             try:
                 df['time'] = pd.to_datetime(df['time'], unit='ms').dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem')
             except Exception as exc:

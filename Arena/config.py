@@ -3,7 +3,7 @@ env = Env()
 env.read_env()
 
 # General
-version = '2.0'
+version = '2.1'
 is_debug_mode = env.bool('DEBUG', False)
 is_use_parport = env.bool('IS_USE_PARPORT', False)
 
@@ -40,7 +40,8 @@ logger_files = {
     'prediction': 'predictions.csv',
     'trajectory': 'bug_trajectory.csv',
     'temperature': 'temperature.csv',
-    'video_frames': 'video_frames.csv'
+    'video_frames': 'video_frames.csv',
+    'trial_times': 'trial_times.csv'
 }
 subscription_topics = {
     'reward': 'event/command/reward',
@@ -53,7 +54,9 @@ subscription_topics = {
     'prediction': 'event/log/prediction',
     'trajectory': 'event/log/trajectory',
     'temperature': 'event/log/temperature',
-    'video_frames': 'event/log/video_frames'
+    'video_frames': 'event/log/video_frames',
+    'trial_times': 'event/log/trial_times',
+    'block_log': experiment_topic
 }
 
 # Arena

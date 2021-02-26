@@ -75,6 +75,7 @@ export default {
       isHandlingTouch: false,
       trajectoryLog: [],
       touchesCounter: 0,
+      trial_start: undefined,
       canvasParams: {
         width: window.innerWidth,
         height: window.innerHeight
@@ -150,6 +151,7 @@ export default {
   },
   methods: {
     initBoard(isLogTrajectory = false) {
+      this.trial_start = Date.now()
       if (this.animationHandler) {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
@@ -238,7 +240,8 @@ export default {
           is_hit: isHit,
           is_reward_bug: isRewardBug,
           bug_type: bug.currentBugType,
-          bug_size: bug.currentBugSize
+          bug_size: bug.currentBugSize,
+          trial: this.trial_id
         }))
       }
       this.isHandlingTouch = false
@@ -325,7 +328,15 @@ export default {
       this.touchesCounter++
       if (this.touchesCounter > 5) {
         console.log('climbing!')
+        this.$mqtt.publish('event/log/experiment', `screen climbing detected on trial${this.trial_id}`)
       }
+    },
+    logTrialTimes() {
+      this.$mqtt.publish('event/log/trial_times', JSON.stringify({
+        trial: this.trial_id,
+        start: this.trial_start,
+        end: Date.now()
+      }))
     }
   }
 }
