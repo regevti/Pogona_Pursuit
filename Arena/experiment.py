@@ -36,7 +36,8 @@ class Experiment:
 
     def __post_init__(self):
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
-        self.blocks = [Block(i, self.cameras, self.cache, self.experiment_path, **kwargs)
+        self.blocks = [Block(i, self.cameras, self.cache, self.experiment_path,
+                             extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
 
     @property
