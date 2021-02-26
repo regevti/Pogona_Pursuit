@@ -38,7 +38,7 @@ class MQTTClient:
             end_app_wait.delay()
 
         elif msg.topic == config.subscription_topics['block_log']:
-            block_log.delay()
+            block_log.delay(payload)
 
         elif msg.topic.startswith(config.log_topic_prefix):
             topic = msg.topic.replace(config.log_topic_prefix, '')
