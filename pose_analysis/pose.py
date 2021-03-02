@@ -95,21 +95,21 @@ class PoseAnalyzer:
             df.to_csv(self.output_video_path.parent / (self.output_video_path.stem + '.csv'))
             return df
 
-    def position_map(self, part='nose', is_plot=True):
-        range = [[180, 1100], [650, 980]]
-        df = self.run_pose(load_only=True)[part]
+    def position_map(self, part='nose', is_plot=True, yrange=None):
+        try:
+            df = self.run_pose(load_only=True)[part].copy()
+        except Exception:
+            return
+        starts, ends = self.loader.bug_phases()
+        if starts is not None and ends is not None:
+            start_frame = self.loader.get_frame_at_time(starts.time.iloc[0])
+            end_frame = self.loader.get_frame_at_time(ends.time.iloc[-1])
+            df = df.iloc[start_frame:end_frame].copy()
+
         df.dropna(inplace=True)
-        hist = np.histogram2d(df.x, df.y, bins=(20, 20), range=range)
-        if is_plot:
-            plt.figure(figsize=(10, 10))
-            plt.imshow(hist[0].T, extent=[x for sublist in range for x in sublist])
-            # plt.hist2d(df.x, df.y, range=[[0, 1000], [0, 950]], bins=50) # , cmap='BuPu'
-            plt.title(f"{self.loader.experiment_name}, trial{self.loader.trial_id}\nscreen here")
-            plt.colorbar()
-            plt.gca().invert_yaxis()
-            info_st = '\n'.join([f'{k}: {v}' for k, v in self.loader.info.items()])
-            plt.text(0, 0, str(info_st), wrap=True, ha='left', fontsize=14, color='w')
-        return hist[0].T
+        if yrange is not None:
+            df = df.query(f'{yrange[0]} <= y <= {yrange[1]}')
+        return df
 
     @property
     @lru_cache()
@@ -171,10 +171,11 @@ class PoseAnalyzer:
     def write_frame(self, frame: np.ndarray, frame_id: int, pred_df: pd.DataFrame):
         try:
             frame = self.put_text(f'frame: {frame_id}', frame, 50, 50)
-            bug_df = self.loader.bug_data_for_frame(frame_id)
-            bug_position = f'({bug_df.x:.0f}, {bug_df.y:.0f})' if bug_df is not None else '-'
-            frame = self.put_text(f'bug position: {bug_position}', frame, 50, 90)
             frame = self.plot_predictions(frame, frame_id, pred_df)
+            if self.loader.bug_traj_path.exists():
+                bug_df = self.loader.bug_data_for_frame(frame_id)
+                bug_position = f'({bug_df.x:.0f}, {bug_df.y:.0f})' if bug_df is not None else '-'
+                frame = self.put_text(f'bug position: {bug_position}', frame, 50, 90)
             
             self.video_out.write(frame)
         except Exception as exc:

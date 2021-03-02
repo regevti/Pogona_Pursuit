@@ -24,7 +24,7 @@ SCREEN_BOUNDARIES = {'x': (0, 1850), 'y': (0, 800)}
 
 class Loader:
     def __init__(self, experiment_name=None, trial_id=None, block_id=None, camera=None, video_path=None,
-                 experiment_dir=None, is_validate=True):
+                 experiment_dir=None, is_validate=True, hits_only=False):
         self.experiment_dir = experiment_dir or EXPERIMENTS_DIR
         if video_path:
             video_path = Path(video_path)
@@ -35,7 +35,7 @@ class Loader:
         self.camera = camera
         self.video_path = video_path or self.get_video_path()
         if is_validate:
-            self.validate()
+            self.validate(hits_only)
         self.info = self.get_experiment_info()
 
     def __str__(self):
@@ -114,21 +114,23 @@ class Loader:
 
     def first30_traj(self):
         try:
-            starts = self.traj_df.loc[0, :]
-            cidx = closest_index(self.traj_time, starts.time.tz_convert('utc').tz_localize(None) + timedelta(seconds=30))
-            ends = self.traj_df.loc[cidx, :]
+            starts = self.frames_ts[0]
+            ends = self.traj_df.loc[0, :]
+            start_time = starts.time.tz_convert('utc').tz_localize(None) - timedelta(seconds=30)
+            cidx = closest_index(self.frames_ts, start_time, 0.1)
             return starts.to_frame().transpose(), ends.to_frame().transpose()
         except Exception as exc:
             print(f'Error in first 30: {exc}')
             return None, None
 
-    def validate(self):
+    def validate(self, hits_only):
         assert self.experiment_path.exists(), 'experiment dir not exist'
         assert self.trial_path.exists(), 'no trial dir'
         assert self.bug_traj_path.exists(), 'no bug trajectory file'
-        assert self.screen_touches_path.exists(), 'no screen touches file'
         assert self.video_path.exists(), 'no video file'
         assert self.timestamps_path.exists(), 'no timestamps file'
+        if hits_only:
+            assert self.screen_touches_path.exists(), 'no screen touches file'
 
     @staticmethod
     def parse_video_path(video_path: Path):

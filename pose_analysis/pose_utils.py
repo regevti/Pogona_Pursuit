@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import matplotlib.collections as mcoll
 
 
+def flatten(l):
+    return [item for sublist in l if sublist for item in sublist]
+
+
 def pixels2cm(x):
     return x * 0.01833304668870419
 
