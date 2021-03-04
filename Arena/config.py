@@ -3,7 +3,7 @@ env = Env()
 env.read_env()
 
 # General
-version = '2.1'
+version = '2.2'
 is_debug_mode = env.bool('DEBUG', False)
 is_use_parport = env.bool('IS_USE_PARPORT', False)
 
@@ -41,7 +41,7 @@ logger_files = {
     'trajectory': 'bug_trajectory.csv',
     'temperature': 'temperature.csv',
     'video_frames': 'video_frames.csv',
-    'trial_times': 'trial_times.csv'
+    'trials_times': 'trials_times.csv'
 }
 subscription_topics = {
     'reward': 'event/command/reward',
@@ -55,7 +55,7 @@ subscription_topics = {
     'trajectory': 'event/log/trajectory',
     'temperature': 'event/log/temperature',
     'video_frames': 'event/log/video_frames',
-    'trial_times': 'event/log/trial_times',
+    'trials_times': 'event/log/trials_times',
     'block_log': experiment_topic
 }
 

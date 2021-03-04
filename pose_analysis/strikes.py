@@ -4,10 +4,11 @@ from functools import lru_cache
 import pandas as pd
 import pickle
 import cv2
-from pose import PoseAnalyzer, BODY_PARTS
+from pose import PoseAnalyzer
 from scipy.signal import find_peaks
 from loader import Loader, closest_index
 from pose_utils import *
+
 
 NUM_FRAMES_TO_PLOT = 5
 NUM_POSE_FRAMES_PER_STRIKE = 30
@@ -234,7 +235,7 @@ class StrikeSummary:
     @property
     @lru_cache()
     def leap_frame(self):
-        if self.nose_df is None:
+        if self.nose_df is None or len(self.nose_df) < 1:
             return
         y = self.nose_df.y
         dy = y.diff()
@@ -270,14 +271,18 @@ class StrikeSummary:
                 strike_frame_idx = y[peaks_idx].idxmax()
             else:
                 yrange = np.arange(self.strike_frame - max_diff_strike_frame, self.strike_frame + max_diff_strike_frame)
-                strike_frame_idx = y[yrange].idxmax()
+                yrange = [idx for idx in yrange if idx in y.dropna().index]
+                if len(yrange) > 0:
+                    strike_frame_idx = y[yrange].idxmax()
         except Exception as exc:
-            print(exc)
+            print(f'Error in calc_strike_frame: {exc}')
         return strike_frame_idx
 
     @property
     @lru_cache()
     def pd(self):
+        if self.leap_frame is None:
+            return
         leap_bug_traj = self.loader.bug_data_for_frame(self.leap_frame)
         if leap_bug_traj is None:
             return
@@ -287,10 +292,11 @@ class StrikeSummary:
     @property
     @lru_cache()
     def nose_df(self):
-        if self.pose_df is None:
+        if self.pose_df is None or self.strike_frame is None:
             return
         n_pose_frames = 2
         selected_frames = np.arange(self.strike_frame - n_pose_frames, self.strike_frame + n_pose_frames)
+        selected_frames = [idx for idx in selected_frames if idx in self.pose_df.nose.index]
         return self.pose_df.nose.loc[selected_frames, :].copy()
 
     @property
@@ -308,7 +314,7 @@ class StrikeSummary:
         try:
             return self.loader.get_bug_trajectory_before_strike(self.strike_idx, n_records=120, max_dist=0.4)
         except Exception as exc:
-            self.log(str(exc))
+            self.log(f'Error loading bug traj: {exc}')
 
     @property
     @lru_cache()

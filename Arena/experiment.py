@@ -119,6 +119,7 @@ class Block:
     exit_hole: str = None
     reward_type: str = 'always'
     reward_bugs: list = None
+    reward_any_touch_prob: float = 0.0
 
     media_url: str = ''
 
@@ -303,7 +304,8 @@ class Block:
             'isLogTrajectory': True,
             'bugSize': self.bug_size,
             'backgroundColor': self.background_color,
-            'exitHole': self.exit_hole
+            'exitHole': self.exit_hole,
+            'rewardAnyTouchProb': self.reward_any_touch_prob
         })
 
     @property

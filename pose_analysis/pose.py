@@ -8,17 +8,13 @@ import shutil
 from functools import lru_cache
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
+from scipy.signal import medfilt
 from dlclive import DLCLive, Processor
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 from loader import Loader
-from pose_utils import colorline, calc_total_trajectory
+from pose_utils import colorline, calc_total_trajectory, distance
+import pose_config as config
 
-DLC_PATH = '/data/pose_estimation/deeplabcut/projects/pogona_pursuit_realtime'
-DLC_CONFIG_FILE = DLC_PATH + '/config.yaml'
-ITERATION = 3
-EXPORTED_MODEL_PATH = DLC_PATH + f'/exported-models/DLC_pogona_pursuit_resnet_50_iteration-{ITERATION}_shuffle-1'
-PROBABILITY_THRESH = 0.85
-BODY_PARTS = ['nose', 'left_ear', 'right_ear']
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 
@@ -30,8 +26,8 @@ class PoseAnalyzer:
         else:
             self.loader = loader
             self.video_path = loader.video_path
-        if Path(EXPORTED_MODEL_PATH).exists():
-            self.dlc_live = DLCLive(EXPORTED_MODEL_PATH, processor=Processor())
+        if Path(config.EXPORTED_MODEL_PATH).exists():
+            self.dlc_live = DLCLive(config.EXPORTED_MODEL_PATH, processor=Processor())
         else:
             self.dlc_live = None
         self.is_dlc_live_initiated = False
@@ -55,12 +51,12 @@ class PoseAnalyzer:
             if self.pose_df is not None:
                 return self.pose_df
             elif load_only:
-                raise Exception(f'cannot find video for {self.loader.experiment_name}, trial{self.loader.trial_id}')
+                raise Exception(f'cannot find video for {self.loader.day_dir}, trial{self.loader.trial_id}')
 
         cap = cv2.VideoCapture(self.video_path.as_posix())
         res = []
         num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        print(f'start pose estimation for {self.loader.experiment_name} trial{self.loader.trial_id}')
+        print(f'start pose estimation for {self.loader.day_dir} trial{self.loader.trial_id}')
         for frame_id in tqdm(range(num_frames)):
             ret, frame = cap.read()
             if selected_frames and frame_id not in selected_frames:
@@ -95,21 +91,21 @@ class PoseAnalyzer:
             df.to_csv(self.output_video_path.parent / (self.output_video_path.stem + '.csv'))
             return df
 
-    def position_map(self, part='nose', is_plot=True):
-        range = [[180, 1100], [650, 980]]
-        df = self.run_pose(load_only=True)[part]
+    def position_map(self, part='nose', is_plot=True, yrange=None):
+        try:
+            df = self.run_pose(load_only=True)[part].copy()
+        except Exception:
+            return
+        starts, ends = self.loader.bug_phases()
+        if starts is not None and ends is not None:
+            start_frame = self.loader.get_frame_at_time(starts.time.iloc[0])
+            end_frame = self.loader.get_frame_at_time(ends.time.iloc[-1])
+            df = df.iloc[start_frame:end_frame].copy()
+
         df.dropna(inplace=True)
-        hist = np.histogram2d(df.x, df.y, bins=(20, 20), range=range)
-        if is_plot:
-            plt.figure(figsize=(10, 10))
-            plt.imshow(hist[0].T, extent=[x for sublist in range for x in sublist])
-            # plt.hist2d(df.x, df.y, range=[[0, 1000], [0, 950]], bins=50) # , cmap='BuPu'
-            plt.title(f"{self.loader.experiment_name}, trial{self.loader.trial_id}\nscreen here")
-            plt.colorbar()
-            plt.gca().invert_yaxis()
-            info_st = '\n'.join([f'{k}: {v}' for k, v in self.loader.info.items()])
-            plt.text(0, 0, str(info_st), wrap=True, ha='left', fontsize=14, color='w')
-        return hist[0].T
+        if yrange is not None:
+            df = df.query(f'{yrange[0]} <= y <= {yrange[1]}')
+        return df
 
     @property
     @lru_cache()
@@ -171,14 +167,42 @@ class PoseAnalyzer:
     def write_frame(self, frame: np.ndarray, frame_id: int, pred_df: pd.DataFrame):
         try:
             frame = self.put_text(f'frame: {frame_id}', frame, 50, 50)
-            bug_df = self.loader.bug_data_for_frame(frame_id)
-            bug_position = f'({bug_df.x:.0f}, {bug_df.y:.0f})' if bug_df is not None else '-'
-            frame = self.put_text(f'bug position: {bug_position}', frame, 50, 90)
             frame = self.plot_predictions(frame, frame_id, pred_df)
+            if self.loader.bug_traj_path.exists():
+                bug_df = self.loader.bug_data_for_frame(frame_id)
+                bug_position = f'({bug_df.x:.0f}, {bug_df.y:.0f})' if bug_df is not None else '-'
+                frame = self.put_text(f'bug position: {bug_position}', frame, 50, 90)
             
             self.video_out.write(frame)
         except Exception as exc:
             print(f'Error writing frame {frame_id}; {exc}')
+
+    def attention(self, attention_range=(70, 110), max_dist_ear_nose=120, median_kernel=21) -> np.ndarray:
+        """Calculate in which frames the animal is attended and return array of frame indices"""
+        xf = self.pose_df[['nose', 'left_ear', 'right_ear']]
+        mxf = xf.apply(lambda x: medfilt(x, kernel_size=median_kernel)).reset_index(drop=True)
+
+        for i in mxf.index:
+            # if the y value of nose is smaller than one of the y-values of the ears or if the distance of one of
+            # the ears from nose is greater than threshold, set the x of nose to be NaN, so there will be no angle
+            # associated with this frame
+            if mxf.nose.y[i] < mxf.right_ear.y[i] or mxf.nose.y[i] < mxf.left_ear.y[i] \
+                    or distance(mxf.nose.x[i], mxf.nose.y[i], mxf.right_ear.x[i], mxf.right_ear.y[i]) > max_dist_ear_nose \
+                    or distance(mxf.nose.x[i], mxf.nose.y[i], mxf.left_ear.x[i], mxf.left_ear.y[i]) > max_dist_ear_nose:
+                mxf.loc[i, ('nose', 'x')] = np.nan
+            else:
+                # in cases in which one of the ears is NaN and the relevant foreleg2 is not NaN, assign leg location to ear
+                if np.isnan(mxf.right_ear.x[i]) and not np.isnan(self.pose_df.forelegR2.x[i]):
+                    mxf.loc[i, ('right_ear', 'x')] = self.pose_df.forelegR2.x[i]
+                    mxf.loc[i, ('right_ear', 'y')] = self.pose_df.forelegR2.y[i]
+                if np.isnan(mxf.left_ear.x[i]) and not np.isnan(self.pose_df.forelegL2.x[i]):
+                    mxf.loc[i, ('left_ear', 'x')] = self.pose_df.forelegL2.x[i]
+                    mxf.loc[i, ('left_ear', 'y')] = self.pose_df.forelegL2.y[i]
+
+        theta = np.arctan2(mxf.nose.y - (mxf.left_ear.y + mxf.right_ear.y) / 2,
+                           mxf.nose.x - (mxf.left_ear.x + mxf.right_ear.x) / 2)
+        theta = np.rad2deg(theta)
+        return np.where((theta >= attention_range[0]) & (theta <= attention_range[1]))[0]
 
     @staticmethod
     def put_text(text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, font=cv2.FONT_HERSHEY_SIMPLEX):
@@ -210,7 +234,7 @@ class PoseAnalyzer:
 
     def create_pred_df(self, pred, frame_id: int) -> pd.DataFrame:
         zf = pd.DataFrame(pred, index=self.dlc_config['bodyparts'], columns=['x', 'y', 'prob']) #.loc[BODY_PARTS, :]
-        zf.loc[zf['prob'] < PROBABILITY_THRESH, ['x', 'y']] = np.nan
+        zf.loc[zf['prob'] < config.PROBABILITY_THRESH, ['x', 'y']] = np.nan
         s = pd.DataFrame(pd.concat([zf['x'], zf['y']]), columns=[frame_id]).T
         s.columns = pd.MultiIndex.from_product([['x', 'y'], zf.index]).swaplevel(0, 1)
         s.sort_index(axis=1, level=0, inplace=True)
@@ -234,9 +258,9 @@ class PoseAnalyzer:
 
     @staticmethod
     def load_dlc_config():
-        if not Path(DLC_CONFIG_FILE).exists():
+        if not Path(config.DLC_CONFIG_FILE).exists():
             return
-        return yaml.load(open(DLC_CONFIG_FILE), Loader=yaml.FullLoader)
+        return yaml.load(open(config.DLC_CONFIG_FILE), Loader=yaml.FullLoader)
 
     def save_cache(self, df):
         pass
@@ -258,4 +282,4 @@ class PoseAnalyzer:
 
     @property
     def model_name(self):
-        return Path(DLC_PATH).name + f'_iteration{ITERATION}'
+        return Path(config.DLC_PATH).name + f'_iteration{config.ITERATION}'

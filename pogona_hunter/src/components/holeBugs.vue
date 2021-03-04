@@ -20,6 +20,7 @@ export default {
       holeImgSrc: '',
       randomNoise: 0,
       frameCounter: 0,
+      trialStart: undefined,
       framesUntilExitFromEntranceHole: 100,
       minDistFromObstacle: 300,
       bordersAngles: {
@@ -33,7 +34,8 @@ export default {
   props: {
     bugsSettings: Object,
     exitHolePos: Array,
-    entranceHolePos: Array
+    entranceHolePos: Array,
+    trialId: Number
   },
   computed: {
     holeSize: function () {
@@ -79,6 +81,7 @@ export default {
       this.isRetreated = false
       this.isHoleRetreatStarted = false
       this.isChangingDirection = false
+      this.trialStart = Date.now()
       this.currentBugSize = this.getRadiusSize()
       this.x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
@@ -112,10 +115,10 @@ export default {
         this.setNextAngle()
       // holes edges
       } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
-        if (this.isHoleRetreatStarted) {
-          this.startRetreat()
+        if (this.isHoleRetreatStarted && this.isInsideExitHoleBoundaries()) {
+          this.hideBug()
         } else {
-          this.setNextAngle([])
+          this.setNextAngle()
         }
       } else {
         return
@@ -146,7 +149,7 @@ export default {
         console.error(e)
       }
     },
-    getAnglesOfCloseBorders() {
+    getNotBlockedAngles() {
       let angles = []
       let borderDistances = {
         top: this.y,
@@ -155,42 +158,35 @@ export default {
         right: this.canvas.width - this.x
       }
       for (const [key, angle] of Object.entries(this.bordersAngles)) {
-        if (borderDistances[key] < this.minDistFromObstacle) {
+        if (borderDistances[key] > this.minDistFromObstacle) {
+          // push to angles array the radian angles of the walls that are far, so these can be used
+          // to determine the range of next possible angles
           angles.push(angle)
         }
       }
       return angles
     },
-    setNextAngle(angles = []) {
-      let padAngle = Math.PI / 4
-      // A = [[angle, dist_from_borders],...]
-      let borderAngles = this.getAnglesOfCloseBorders()
-      if (borderAngles) {
-        angles.push(...borderAngles)
-      }
-      let r = Math.random() * 2 * Math.PI
-      if (angles.length > 0) {
-        angles = angles.sort()
-        angles = [angles[0] - padAngle, angles[angles.length - 1] + padAngle]
-        for (let i = 0; i < 100; i++) {
-          if (angles[0] < 0) {
-            if (!(r > 2 * Math.PI + angles[0] || (r >= 0 && r < angles[1]))) {
-              break
-            }
-          } else {
-            if (!(r > angles[0] && r < angles[1])) {
-              break
-            }
-          }
-          r = Math.random() * 2 * Math.PI
+    setNextAngle() {
+      let openAngles = this.getNotBlockedAngles()
+      openAngles = openAngles.sort()
+      for (let i = 0; i < openAngles.length - 1; i++) {
+        // in order to maintain the continuity in angles range, in cases of missing angles add 2π to the angles
+        // right before the missing ones.
+        if ((openAngles[i + 1] - openAngles[i]) > (Math.PI / 2)) {
+          openAngles[i] += 2 * Math.PI
         }
       }
-      this.vx = this.currentSpeed * Math.cos(r)
-      this.vy = this.currentSpeed * Math.sin(r)
+      openAngles = openAngles.sort()
+      let nextAngle = Math.random() * (openAngles[openAngles.length - 1] - openAngles[0]) + openAngles[0]
+      this.vx = this.currentSpeed * Math.cos(nextAngle)
+      this.vy = this.currentSpeed * Math.sin(nextAngle)
     },
-    startRetreat() {
+    hideBug() {
+      // hide bug when exit hole reached
       let fadeTimeout = setTimeout(() => {
         this.isRetreated = true
+        this.$emit('bugRetreated')
+        this.logTrialTimes()
         let initTimeout = setTimeout(() => {
           this.initBug()
           clearTimeout(initTimeout)
@@ -203,7 +199,7 @@ export default {
       let t = setTimeout(() => {
         this.isChangingDirection = false
         clearTimeout(t)
-      }, 1000)
+      }, 300)
     },
     isHit(x, y) {
       return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
@@ -272,6 +268,16 @@ export default {
         this.vy = Math.sign(yd) * Math.sqrt((this.currentSpeed ** 2) - (this.vx ** 2))
         this.isHoleRetreatStarted = true
       }
+    },
+    logTrialTimes() {
+      let endTime = Date.now()
+      this.$mqtt.publish('event/log/trials_times', JSON.stringify({
+        trial: this.trialId,
+        start: this.trialStart,
+        bug_type: this.currentBugType,
+        duration: (endTime - this.trialStart) / 1000,
+        end: endTime
+      }))
     }
   }
 }

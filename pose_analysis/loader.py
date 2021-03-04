@@ -6,40 +6,34 @@ import pandas as pd
 import numpy as np
 from functools import lru_cache
 from pose_utils import distance, fit_circle, closest_index
-from datetime import timedelta
+from datetime import timedelta, datetime
 sys.path += ['../Arena']
 from explore import ExperimentAnalyzer
+import pose_config as config
 
-ROOT_DIR = '/data'
-EXPERIMENTS_DIR = ROOT_DIR + '/Pogona_Pursuit/Arena/experiments'
-CAMERAS = {
-    'realtime': '19506468',
-    'right': '19506475',
-    'left': '19506455',
-    'back': '19506481',
-}
-SCREEN_BOUNDARIES = {'x': (0, 1850), 'y': (0, 800)}
+
 # SCREEN_BOUNDARIES = {'x': (0, 1918), 'y': (443, 1075)}
 
 
 class Loader:
-    def __init__(self, experiment_name=None, trial_id=None, block_id=None, camera=None, video_path=None,
-                 experiment_dir=None, is_validate=True):
-        self.experiment_dir = experiment_dir or EXPERIMENTS_DIR
+    def __init__(self, animal_id=None, day=None, trial_id=None, block_id=None, camera=None, video_path=None,
+                 experiment_dir=None, is_validate=True, hits_only=False):
+        self.experiments_dir = experiment_dir or config.EXPERIMENTS_DIR
         if video_path:
             video_path = Path(video_path)
-            experiment_name, trial_id, block_id, camera = self.parse_video_path(video_path)
-        self.experiment_name = experiment_name
+            animal_id, day, trial_id, block_id, camera = self.parse_video_path(video_path)
+        self.animal_id = animal_id
+        self.day_dir = day
         self.trial_id = trial_id
         self.block_id = block_id
         self.camera = camera
         self.video_path = video_path or self.get_video_path()
         if is_validate:
-            self.validate()
+            self.validate(hits_only)
         self.info = self.get_experiment_info()
 
     def __str__(self):
-        return f'{self.experiment_name}/block{self.block_id or 1}/trial{self.trial_id}'
+        return f'{self.day_dir}/block{self.block_id or 1}/trial{self.trial_id}'
 
     @property
     @lru_cache()
@@ -95,7 +89,7 @@ class Loader:
 
     def bug_phases(self):
         def out(a):
-            return (self.traj_df[a] < SCREEN_BOUNDARIES[a][0]) | (SCREEN_BOUNDARIES[a][1] < self.traj_df[a])
+            return (self.traj_df[a] < config.SCREEN_BOUNDARIES[a][0]) | (config.SCREEN_BOUNDARIES[a][1] < self.traj_df[a])
 
         try:
             in_indices = self.traj_df[~(out('x') | out('y'))].reset_index()['index']
@@ -114,58 +108,57 @@ class Loader:
 
     def first30_traj(self):
         try:
-            starts = self.traj_df.loc[0, :]
-            cidx = closest_index(self.traj_time, starts.time.tz_convert('utc').tz_localize(None) + timedelta(seconds=30))
-            ends = self.traj_df.loc[cidx, :]
+            starts = self.frames_ts[0]
+            ends = self.traj_df.loc[0, :]
+            start_time = starts.time.tz_convert('utc').tz_localize(None) - timedelta(seconds=30)
+            cidx = closest_index(self.frames_ts, start_time, 0.1)
             return starts.to_frame().transpose(), ends.to_frame().transpose()
         except Exception as exc:
             print(f'Error in first 30: {exc}')
             return None, None
 
-    def validate(self):
-        assert self.experiment_path.exists(), 'experiment dir not exist'
+    def validate(self, hits_only):
+        assert self.block_path.exists(), 'experiment dir not exist'
         assert self.trial_path.exists(), 'no trial dir'
         assert self.bug_traj_path.exists(), 'no bug trajectory file'
-        assert self.screen_touches_path.exists(), 'no screen touches file'
         assert self.video_path.exists(), 'no video file'
         assert self.timestamps_path.exists(), 'no timestamps file'
+        if hits_only:
+            assert self.screen_touches_path.exists(), 'no screen touches file'
 
     @staticmethod
     def parse_video_path(video_path: Path):
         assert video_path.exists(), f'provided video path: {video_path} does not exist'
         try:
             trial_id = int(video_path.parts[-3].split('trial')[1])
-            m_block = re.match(r'block(\d+)', video_path.parts[-4])
-            if m_block:
-                block_id = m_block[1]
-                experiment_name = video_path.parts[-5]
-            else:
-                block_id = None
-                experiment_name = video_path.parts[-4]
+            block_id = re.match(r'block(\d+)', video_path.parts[-4])[1]
+            day_dir = video_path.parts[-5]
+            animal_id = video_path.parts[-6]
 
             camera = None
-            for name, serial in CAMERAS.items():
+            for name, serial in config.CAMERAS.items():
                 if name in video_path.name or serial in video_path.name:
                     camera = name
                     break
             if not camera:
                 raise Exception('unable to parse camera from video path')
-            return experiment_name, trial_id, block_id, camera
+            return animal_id, day_dir, trial_id, block_id, camera
         except Exception as exc:
             raise Exception(f'Error parsing video path: {exc}')
 
     def get_video_path(self) -> Path:
         assert isinstance(self.camera, str), 'no camera name provided or bad type'
         regex = self.camera + r'_\d{8}T\d{6}.(avi|mp4)'
-        videos = [v for v in (self.trial_path / 'videos').glob('*') if re.match(regex, v.name)]
+        vids_path = self.trial_path / 'videos'
+        videos = [v for v in vids_path.glob('*') if re.match(regex, v.name)]
         if not videos:
-            raise Exception('cannot find video')
+            raise Exception(f'cannot find videos in {vids_path}')
         elif len(videos) > 1:
-            raise Exception('found more than one video')
+            raise Exception(f'found more than one video in {vids_path}')
         return videos[0]
 
     def get_experiment_info(self):
-        info = ExperimentAnalyzer.get_block_info(self.experiment_path / 'experiment.yaml')
+        info = ExperimentAnalyzer.get_block_info(self.block_path / 'info.yaml')
         info.update(info.get(f'block{self.block_id or 1}', {}))
         info['trial_id'] = self.trial_id
         return info
@@ -220,25 +213,22 @@ class Loader:
             return np.concatenate(X), np.concatenate(y), infos
         return None, None, None
 
+    def is_v1(self):
+        return self.version == '1'
+
     @property
     def day(self):
-        s = self.experiment_name.split('_')[-1]
-        dt = parser.parse(s)
-        return dt.strftime('%d/%m/%y')
+        return self.day_dir
 
     @property
-    def animal_id(self):
-        return self.info.get('animal_id')
-
-    @property
-    def experiment_path(self):
-        return self.experiment_dir / Path(self.experiment_name)
+    def block_path(self):
+        return self.experiments_dir / Path(self.animal_id) / self.day_dir / f'block{self.block_id}'
 
     @property
     def trial_path(self):
-        if self.block_id:
-            return self.experiment_path / f'block{self.block_id}' / f'trial{self.trial_id}'
-        return self.experiment_path / f'trial{self.trial_id}'
+        if self.is_v1():
+            return self.block_path / f'trial{self.trial_id}'
+        return self.block_path
 
     @property
     def bug_traj_path(self):
@@ -250,22 +240,27 @@ class Loader:
 
     @property
     def timestamps_path(self):
-        return self.trial_path / 'videos' / 'timestamps' / f'{CAMERAS[self.camera]}.csv'
+        return self.trial_path / 'videos' / 'timestamps' / f'{config.CAMERAS[self.camera]}.csv'
+
+    @property
+    def version(self):
+        version = self.info.get('version', '2.0')
+        return re.match(r'(\d).\d+', version)[1]
 
 
 def get_experiments(*args, is_validate=True, **kwargs):
     """Get experiment using explore"""
     df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
     loaders = []
-    for experiment, block, trial in df.index:
+    for animal_id, day, block, trial in df.index:
+        day_dir = datetime.strptime(day, '%d.%m.%y').strftime('%Y%m%d')
         try:
-            experiment_dir = kwargs.get('experiment_dir') or EXPERIMENTS_DIR
-            if not Path(f'{experiment_dir}/{experiment}/block{block}').exists():
-                block = None
-            ld = Loader(experiment, int(trial), block, 'realtime', experiment_dir=experiment_dir, is_validate=is_validate)
+            experiments_dir = kwargs.get('experiment_dir') or config.EXPERIMENTS_DIR
+            ld = Loader(animal_id, day_dir, int(trial), block, 'realtime',
+                        experiment_dir=experiments_dir, is_validate=is_validate)
             loaders.append(ld)
         except Exception as exc:
-            print(f'Error loading {experiment} trial{trial}; {exc}')
+            print(f'Error loading {animal_id}/{day_dir}/block{block}/trial{trial}; {exc}')
             continue
     print(f'num loaders: {len(loaders)}')
     return loaders

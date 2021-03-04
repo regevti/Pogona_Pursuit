@@ -99,21 +99,28 @@ def block_log(msg):
         print(f'Error writing block_log; {exc}')
 
 
+def ms2datetime(x):
+    try:
+        x = pd.to_datetime(x, unit='ms').tz_localize('utc').tz_convert('Asia/Jerusalem')
+    except Exception as exc:
+        logger.warning(f'Unable to convert ms time to local; {exc}')
+    return x
+
 @app.task
 def save_to_csv(topic, payload):
     try:
         if topic not in ['trajectory', 'video_frames']:
             payload = [payload]
         df = pd.DataFrame(payload)
-        if topic in ['trial_times']:
-            pass
+        # Time conversions
+        if topic == 'trials_times':
+            df[['start', 'end']] = df[['start', 'end']].applymap(ms2datetime)
+            df.set_index('trial', inplace=True)
         elif 'time' in df.columns:
-            try:
-                df['time'] = pd.to_datetime(df['time'], unit='ms').dt.tz_localize('utc').dt.tz_convert('Asia/Jerusalem')
-            except Exception as exc:
-                logger.warning(f'Unable to convert trajectory time to local; {exc}')
+            df['time'] = df['time'].map(ms2datetime)
         else:
             df['time'] = datetime.now()
+
         filename = get_csv_filename(topic)
         if filename.exists():
             df.to_csv(filename, mode='a', header=False)

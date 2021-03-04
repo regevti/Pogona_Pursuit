@@ -1,7 +1,9 @@
 <template>
   <div class="board-canvas-wrapper" oncontextmenu="return false;" v-on:mousedown="logTouch">
     <div id="bugs-board" v-if="!isMedia">
-      <audio ref="audio1"><source src="@/assets/sounds/2.mp3" type="audio/mpeg"></audio>
+      <audio ref="audio1">
+        <source src="@/assets/sounds/2.mp3" type="audio/mpeg">
+      </audio>
       <p style="float: right">SCORE: {{ $store.state.score }}</p>
       <slide-menu v-on:init="initBoard"
                   v-bind:bugSettings="bugsSettings"
@@ -17,14 +19,16 @@
                    :bugsSettings="bugsSettings"
                    :exit-hole-pos="exitHolePos"
                    :entrance-hole-pos="entranceHolePos"
-              ref="bugChild"></hole-bugs>
-<!--        <bug v-for="(value, index) in bugsProps"-->
-<!--             :key="index"-->
-<!--             :x0="value.x"-->
-<!--             :y0="value.y"-->
-<!--             :bugsSettings="bugsSettings"-->
-<!--             ref="bugChild">-->
-<!--        </bug>-->
+                   :trial-id="trial_id"
+                   ref="bugChild"
+                   v-on:bugRetreated="trial_id++"></hole-bugs>
+        <!--        <bug v-for="(value, index) in bugsProps"-->
+        <!--             :key="index"-->
+        <!--             :x0="value.x"-->
+        <!--             :y0="value.y"-->
+        <!--             :bugsSettings="bugsSettings"-->
+        <!--             ref="bugChild">-->
+        <!--        </bug>-->
       </canvas>
     </div>
     <media v-if="isMedia" :url="mediaUrl" ref="mediaElement"></media>
@@ -58,6 +62,7 @@ export default {
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
         backgroundColor: '#e8eaf6',
+        rewardAnyTouchProb: 0,
         holeSize: [200, 200],
         exitHole: 'bottomRight',
         entranceHole: null
@@ -73,9 +78,11 @@ export default {
       pad: 100, // padding for holes
       isMedia: false,
       isHandlingTouch: false,
+      isRewardGiven: false,
+      isClimbing: false,
+      afterRewardTimeout: 40 * 1000,
       trajectoryLog: [],
       touchesCounter: 0,
-      trial_start: undefined,
       canvasParams: {
         width: window.innerWidth,
         height: window.innerHeight
@@ -126,6 +133,14 @@ export default {
     },
     'event/command/reload_app'(options) {
       location.reload()
+    },
+    'event/command/reward'() {
+      console.log('reward was given')
+      this.isRewardGiven = true
+      let rewardTimeout = setTimeout(() => {
+        this.isRewardGiven = false
+        clearTimeout(rewardTimeout)
+      }, 20 * 1000)
     }
   },
   computed: {
@@ -133,7 +148,7 @@ export default {
       let bugType = Array.isArray(this.bugsSettings.bugTypes) ? this.bugsSettings.bugTypes[0] : this.bugsSettings.bugTypes
       return this.configOptions.bugTypes[bugType]
     },
-    holesPositions: function() {
+    holesPositions: function () {
       let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
       let [holeW, holeH] = this.bugsSettings.holeSize
       return {
@@ -151,7 +166,6 @@ export default {
   },
   methods: {
     initBoard(isLogTrajectory = false) {
-      this.trial_start = Date.now()
       if (this.animationHandler) {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
@@ -195,7 +209,7 @@ export default {
     },
     animate() {
       if (!this.$refs.bugChild) {
-          return
+        return
       }
       try {
         this.animationHandler = requestAnimationFrame(this.animate)
@@ -216,20 +230,22 @@ export default {
     },
     handleTouchEvent(x, y) {
       console.log(x, y)
-      if (this.isHandlingTouch || !this.$refs.bugChild) { return }
+      if (this.isHandlingTouch || !this.$refs.bugChild) {
+        return
+      }
       this.isHandlingTouch = true
       x -= this.canvas.offsetLeft
       y -= this.canvas.offsetTop
       for (let i = 0; i < this.$refs.bugChild.length; i++) {
-        let isHit = false
         let bug = this.$refs.bugChild[i]
-        if (bug.isDead) {
+        if (bug.isDead || bug.isRetreated) {
           continue
         }
         let isRewardBug = this.bugsSettings.rewardBugs.includes(bug.currentBugType)
-        if (bug.isHit(x, y)) {
+        let isHit = bug.isHit(x, y)
+        let isRewardAnyTouch = Math.random() < this.bugsSettings.rewardAnyTouchProb
+        if ((isHit || isRewardAnyTouch) && !this.isClimbing) {
           this.destruct(i, x, y, isRewardBug)
-          isHit = true
         }
         this.$mqtt.publish('event/log/touch', JSON.stringify({
           time: Date.now(),
@@ -238,7 +254,9 @@ export default {
           bug_x: bug.x,
           bug_y: bug.y,
           is_hit: isHit,
+          is_reward_any_touch: isRewardAnyTouch,
           is_reward_bug: isRewardBug,
+          is_climbing: this.isClimbing,
           bug_type: bug.currentBugType,
           bug_size: bug.currentBugSize,
           trial: this.trial_id
@@ -247,27 +265,38 @@ export default {
       this.isHandlingTouch = false
     },
     destruct(bugIndex, x, y, isRewardBug) {
-      this.$refs.bugChild[bugIndex].isDead = true
+      let currentBugs = this.$refs.bugChild
+      currentBugs[bugIndex].isDead = true
+      currentBugs[bugIndex].logTrialTimes()
       if (isRewardBug) {
         this.$refs.audio1.play()
         this.$store.commit('increment')
       }
       const bloodTimeout = setTimeout(() => {
-        this.$refs.bugChild = this.$refs.bugChild.filter((items, index) => bugIndex !== index)
+        this.$refs.bugChild = currentBugs.filter((items, index) => bugIndex !== index)
         if (this.$refs.bugChild.length === 0) {
-          this.trial_id++
-          if (this.bugsSettings.numTrials && this.trial_id > this.bugsSettings.numTrials) {
-            this.$mqtt.publish('event/command/end_app_wait', '')
-            this.clearBoard()
-          } else {
-            const startNewGameTimeout = setTimeout(() => {
-              this.initBoard()
-              clearTimeout(startNewGameTimeout)
-            }, this.bugsSettings.iti * 1000)
-          }
+          this.endTrial()
         }
         clearTimeout(bloodTimeout)
       }, this.bugsSettings.bloodDuration)
+    },
+    endTrial() {
+      this.trial_id++
+      if (this.bugsSettings.numTrials && this.trial_id > this.bugsSettings.numTrials) {
+        // numTrials was given and you reached the last trial -> end block
+        this.$mqtt.publish('event/command/end_app_wait', '')
+        this.clearBoard()
+      } else {
+        // start new trial
+        let iti = this.bugsSettings.iti * 1000
+        if (this.isRewardGiven) {
+          iti = Math.max(...[iti, this.afterRewardTimeout])
+        }
+        const startNewGameTimeout = setTimeout(() => {
+          this.initBoard()
+          clearTimeout(startNewGameTimeout)
+        }, iti)
+      }
     },
     spawnBugs(noOfBugs) {
       const minDistance = 100
@@ -320,23 +349,21 @@ export default {
     logTouch(event) {
       if (this.touchesCounter === 0) {
         let that = this
-        let t = setTimeout(() => {
+        let touchesCounterTimeout = setTimeout(() => {
           that.touchesCounter = 0
-          clearTimeout(t)
+          clearTimeout(touchesCounterTimeout)
         }, 4000)
       }
       this.touchesCounter++
-      if (this.touchesCounter > 5) {
+      if (this.touchesCounter > 5 && !this.isClimbing) {
         console.log('climbing!')
+        this.isClimbing = true
+        let climbingTimout = setTimeout(() => {
+          this.isClimbing = false
+          clearTimeout(climbingTimout)
+        }, 10000)
         this.$mqtt.publish('event/log/experiment', `screen climbing detected on trial${this.trial_id}`)
       }
-    },
-    logTrialTimes() {
-      this.$mqtt.publish('event/log/trial_times', JSON.stringify({
-        trial: this.trial_id,
-        start: this.trial_start,
-        end: Date.now()
-      }))
     }
   }
 }

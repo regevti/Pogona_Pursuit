@@ -214,7 +214,8 @@ const blockFields = {
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
     bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false}),
     background_color: new FieldObject('backgroundColor', Field),
-    exit_hole: new FieldObject('exitHolePositionSelect', Field)
+    exit_hole: new FieldObject('exitHolePositionSelect', Field),
+    reward_any_touch_prob: new FieldObject('rewardAnyTouchProb', NumericalField)
   },
   media: {
     media_url: new FieldObject('media-url', Field)

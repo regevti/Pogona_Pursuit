@@ -46,6 +46,11 @@
         </div>
 
         <div class="mt-3">
+            <input id="isFirstDay" type="checkbox" class="form-check-input"/>
+            <label for="isFirstDay" class="form-check-label">First Day Only</label>
+        </div>
+
+        <div class="mt-3">
             <label for="experimentDir">Experiments Folder</label>
             <textarea id="experimentDir" class="form-control col-sm-12">{{experiment_dir}}</textarea>
         </div>
@@ -94,7 +99,8 @@
           num_of_strikes: Number($("#minStrikes").val()),
           movement_type: $("#movementType").val(),
           experiment_dir: $("#experimentDir").val(),
-          block_type: $("#blockType").val()
+          block_type: $("#blockType").val(),
+          is_first_day: $("#isFirstDay").is(':checked')
         }),
         contentType: "application/json",
         beforeSend: function () {
@@ -109,6 +115,10 @@
       })
   })
   $('#experimentDir').change(function() {
+    let expDir = $('#experimentDir').val()
+    if (!expDir) {
+      return
+    }
     $.ajax({
         url: "/animal_ids",
         type: "POST",
@@ -117,13 +127,12 @@
         }),
         contentType: "application/json",
         success: function (animalIds) {
-          console.log(animalIds)
-          animalIds = animalIds.sort((a,b) => Number(a) - Number(b))
-            let $el = $("#animalId");
+            animalIds = animalIds.sort((a,b) => Number(a) - Number(b))
+            let $el = $("#animalId")
             $el.empty() // remove old options
+            $el.append($("<option></option>").attr("value", null).text('All'))
             $.each(animalIds, function(key, value) {
-              $el.append($("<option></option>")
-                 .attr("value", value).text(value))
+              $el.append($("<option></option>").attr("value", value).text(value))
             })
         },
         error: function (data) {
