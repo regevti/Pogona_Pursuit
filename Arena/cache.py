@@ -20,6 +20,7 @@ class CacheColumns:
     ALWAYS_REWARD = Column('ALWAYS_REWARD', bool, EXPERIMENTS_TIMEOUT)
     STREAM_CAMERA = Column('STREAM_CAMERA', str, 60)
     MANUAL_RECORD_STOP = Column('MANUAL_RECORD_STOP', bool, 5)
+    IS_REWARD_TIMEOUT = Column('IS_REWARD_TIMEOUT', bool, 30)
 
 
 class RedisCache:

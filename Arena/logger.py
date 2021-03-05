@@ -43,7 +43,7 @@ app = Celery('logger', broker=f'redis://{config.redis_host}:6379/0')
 
 @app.task
 def handle_hit(payload):
-    if is_always_reward() and payload.get('is_hit') and payload.get('is_reward_bug'):
+    if is_always_reward() and (payload.get('is_hit') or payload.get('is_reward_any_touch')) and payload.get('is_reward_bug'):
         # end_app_wait()
         return reward()
 
@@ -75,8 +75,9 @@ def gaze_external(state):
 
 @app.task
 def reward(is_force=False):
-    if parport and (is_force or is_always_reward()):
+    if parport and (is_force or is_always_reward()) and not cache.get(CacheColumns.IS_REWARD_TIMEOUT):
         parport.feed()
+        cache.set(CacheColumns.IS_REWARD_TIMEOUT, True)
         log('>> Reward was given')
         return True
 

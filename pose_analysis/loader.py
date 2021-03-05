@@ -27,10 +27,10 @@ class Loader:
         self.trial_id = trial_id
         self.block_id = block_id
         self.camera = camera
-        self.video_path = video_path or self.get_video_path()
+        self.info = self.get_experiment_info()
         if is_validate:
             self.validate(hits_only)
-        self.info = self.get_experiment_info()
+            self.video_path = video_path or self.get_video_path()
 
     def __str__(self):
         return f'{self.day_dir}/block{self.block_id or 1}/trial{self.trial_id}'
@@ -159,7 +159,7 @@ class Loader:
 
     def get_experiment_info(self):
         info = ExperimentAnalyzer.get_block_info(self.block_path / 'info.yaml')
-        info.update(info.get(f'block{self.block_id or 1}', {}))
+        # info.update(info.get(f'block{self.block_id or 1}', {}))
         info['trial_id'] = self.trial_id
         return info
 

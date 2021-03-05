@@ -176,7 +176,7 @@ class ExperimentAnalyzer:
         print(msg)
 
     def get_days(self, animal_dir: Path) -> list:
-        l = list(animal_dir.glob('*'))
+        l = [a for a in animal_dir.glob('*') if not a.name.startswith('.')]
         if self.is_first_day:
             l.sort(key=lambda x: x.name)
             return [l[0]]
