@@ -47,7 +47,7 @@ class PoseAnalyzer:
             selected_frames.sort()
         if not selected_frames:
             if self.output_video_path.exists():
-                self.compress_video()
+                Compressor(self.output_video_path).compress()
             if self.pose_df is not None:
                 return self.pose_df
             elif load_only:
@@ -85,7 +85,7 @@ class PoseAnalyzer:
 
         self.video_out.release()
         self.video_out = None
-        self.compress_video()
+        Compressor(self.output_video_path).compress()
         if res:
             df = pd.concat(res)
             df.to_csv(self.output_video_path.parent / (self.output_video_path.stem + '.csv'))
@@ -240,18 +240,6 @@ class PoseAnalyzer:
         s.sort_index(axis=1, level=0, inplace=True)
         return s
 
-    def compress_video(self):
-        """Run H265 compression on pose video and remove the input pose avi file"""
-        try:
-            print(f'start H265 compression for {self.output_video_path}')
-            vid_tmp = self.output_video_path.absolute().as_posix()
-            subprocess.run(['ffmpeg', '-i', vid_tmp, '-c:v', 'libx265',
-                            '-preset', 'fast', '-crf', '28', '-tag:v', 'hvc1',
-                            '-c:a', 'eac3', '-b:a', '224k', vid_tmp.replace('.avi', '.mp4')])
-            subprocess.run(['rm', '-f', vid_tmp])
-        except Exception as exc:
-            print(f'Error compressing video: {exc}')
-
     def validate_video(self):
         assert self.video_path.exists(), f'video {self.video_path.name} does not exist'
         assert self.video_path.suffix in ['.avi', '.mp4'], f'suffix {self.video_path.suffix} not supported'
@@ -283,3 +271,32 @@ class PoseAnalyzer:
     @property
     def model_name(self):
         return Path(config.DLC_PATH).name + f'_iteration{config.ITERATION}'
+
+
+class PoseCsvReader:
+    def __init__(self, path: (str, Path), camera='realtime'):
+        csv_files = [p for p in Path(path).rglob(f'{camera}.csv')]
+        assert len(csv_files) == 1, f'found {len(csv_files)} csv files in {path}, expected 1'
+        self.output_csv_path = csv_files[0]
+
+    def load(self):
+        df = pd.read_csv(self.output_csv_path, index_col=0, header=[0, 1])
+
+
+class Compressor:
+    def __init__(self, video_path: (str, Path), output_path=None):
+        assert Path(video_path).exists(), f'video path: {video_path} not exist'
+        self.input_video_path = Path(video_path)
+        self.output_video_path = Path(output_path or video_path.replace('.avi', '.mp4'))
+
+    def compress(self, is_delete=True):
+        """Run H265 compression on pose video and remove the input pose avi file"""
+        try:
+            print(f'start H265 compression for {self.input_video_path}')
+            subprocess.run(['ffmpeg', '-i', self.input_video_path.as_posix(), '-c:v', 'libx265',
+                            '-preset', 'fast', '-crf', '28', '-tag:v', 'hvc1',
+                            '-c:a', 'eac3', '-b:a', '224k', self.output_video_path.as_posix()])
+            if is_delete:
+                subprocess.run(['rm', '-f', self.input_video_path.as_posix()])
+        except Exception as exc:
+            print(f'Error compressing video: {exc}')
