@@ -28,7 +28,6 @@ class Experiment:
     cameras: str
     num_blocks: int = 1
     blocks: list = field(default_factory=list, repr=False)
-    name: str = field(default=datetime.now().strftime('%Y%m%d'))
     time_between_blocks: int = config.time_between_blocks
     is_use_predictions: bool = False
     cache: RedisCache = field(default_factory=RedisCache, repr=False)
@@ -39,6 +38,7 @@ class Experiment:
         self.blocks = [Block(i, self.cameras, self.cache, self.experiment_path,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
+        self.day = datetime.now().strftime('%Y%m%d')
 
     @property
     def first_block(self):
@@ -59,7 +59,7 @@ class Experiment:
 
     def start(self):
         """Main Function for starting an experiment"""
-        log(f'>> Experiment {self.name} started\n')
+        log(f'>> Experiment {self.day} started\n')
         self.init_experiment_cache()
         self.turn_screen('on')
 
@@ -88,12 +88,12 @@ class Experiment:
             print(f'error turning off screen: {exc}')
 
     def init_experiment_cache(self):
-        self.cache.set(CacheColumns.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
+        self.cache.set(CacheColumns.EXPERIMENT_NAME, self.day, timeout=self.experiment_duration)
         self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
 
     @property
     def experiment_path(self):
-        return f'{config.experiments_dir}/{self.animal_id}/{self.name}'
+        return f'{config.experiments_dir}/{self.animal_id}/{self.day}'
 
     @property
     def experiment_duration(self):
