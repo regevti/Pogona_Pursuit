@@ -1,14 +1,16 @@
 from strikes import TrialStrikes
 from pose import PoseAnalyzer
 from loader import Loader
-from pose_utils import flatten
+from pose_utils import plot_screen, legend_colors, pixels2cm
+from pose_config import COLORS
+
 from fpdf import FPDF
 import pandas as pd
 import numpy as np
 import pickle
 from icecream import ic
+from datetime import datetime
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 from matplotlib.cm import ScalarMappable
 import matplotlib.gridspec as gridspec
@@ -32,15 +34,9 @@ class MultiStrikesAnalyzer:
 
     def load_data(self):
         l = []
-        fields2drop = ['bug_traj', 'nose']
         for ld in self.loaders:
-            # data = TrialStrikes(ld).strikes_summary(is_plot=False, use_cache=True)
-            # for d in data:
-            #     [d.pop(f, None) for f in fields2drop]
-            #     d.update({k: v for k, v in ld.info.items() if not k.startswith('block')})
-            #     d['loader_id'] = loader_id
-            #     l.append(d)
-            l.append({k: v for k, v in ld.info.items() if not k.startswith('block')})
+            fields = {k: v for k, v in ld.info.items()}
+            l.append(fields)
 
         info_df = pd.DataFrame(l)
         return info_df
@@ -60,7 +56,8 @@ class MultiStrikesAnalyzer:
     def create_subplots(n_groups):
         cols = min([4, n_groups or 1])
         rows = int(np.ceil((n_groups or 1) / cols))
-        fig = plt.figure(figsize=(11,5))
+        w = min(cols * 8, 25)
+        fig = plt.figure(figsize=(w, 5 * rows), dpi=100)
         axes = fig.subplots(rows, cols)
         if isinstance(axes, np.ndarray):
             axes = axes.flatten()
@@ -71,9 +68,11 @@ class MultiStrikesAnalyzer:
     @staticmethod
     def group_plot(plot_func, glds, ax, xlim, ylim, is_invert_y, is_invert_x, cmaps=None):
         for i, ld in enumerate(glds):
-            cmap = cmaps[i] if cmaps else None
-            plot_func(ld, ax, cmap=cmap)
-        ax.axis('equal')
+            color = cmaps[i] if cmaps else 'b'
+            plot_func(ld, ax, color=color)
+        if cmaps is not None:
+            legend_colors(ax, cmaps, is_outside=True)
+        ax.set_aspect('equal', 'box')
         ax.set_xlim(list(xlim))
         ax.set_ylim(list(ylim))
         if is_invert_y:
@@ -85,20 +84,26 @@ class MultiStrikesAnalyzer:
     def agg_plot(plot_func, agg_func, glds, ax, xlim, ylim, is_invert_y, is_invert_x):
         res = []
         for i, ld in enumerate(glds):
-            res.append(agg_func(ld))
+            res.extend(agg_func(ld))
         plot_func(res, ax)
-        ax.set_xlim(list(xlim))
-        ax.set_ylim(list(ylim))
+        ax.set_aspect('equal', 'box')
+        if xlim:
+            ax.set_xlim(list(xlim))
+        if ylim:
+            ax.set_ylim(list(ylim))
         if is_invert_y:
             ax.invert_yaxis()
         if is_invert_x:
             ax.invert_xaxis()
 
     def subplot(self, plot_func, xlim=(0, 2300), ylim=(0, 900), is_invert_y=True, is_invert_x=False,
-                is_time_cmap=False, agg_func=None):
+                agg_func=None, cmaps=None):
         if not self.groupby:
             fig, axes = self.create_subplots(1)
-            self.group_plot(plot_func, self.loaders, axes[0], xlim, ylim, is_invert_y, is_invert_x)
+            if agg_func is not None:
+                self.agg_plot(plot_func, agg_func, self.loaders, axes[0], xlim, ylim, is_invert_y, is_invert_x)
+            else:
+                self.group_plot(plot_func, self.loaders, axes[0], xlim, ylim, is_invert_y, is_invert_x)
             return
 
         groupby = list(self.groupby.keys())
@@ -111,7 +116,6 @@ class MultiStrikesAnalyzer:
             groups = self.info_df[self.info_df[main_group] == main_group_value].groupby(groupby).groups
             groups = self.check_groups(groups, groupby)
             fig, axes = self.create_subplots(len(groups))
-            fig.suptitle(f'{main_group} = {main_group_value}', fontsize=15)
             for ia, (group_values, group_idx) in enumerate(groups.items()):
                 if len(groupby) == 1:
                     group_values = [group_values]
@@ -119,14 +123,16 @@ class MultiStrikesAnalyzer:
                 if agg_func is not None:
                     self.agg_plot(plot_func, agg_func, glds, axes[ia], xlim, ylim, is_invert_y, is_invert_x)
                 else:
-                    cmaps = self.time_cmap(glds, fig, axes[ia]) if is_time_cmap else None
                     self.group_plot(plot_func, glds, axes[ia], xlim, ylim, is_invert_y, is_invert_x, cmaps=cmaps)
                 if main_group != groupby[0]:
                     axes[ia].set_title(', '.join([f'{g}={v}' for g, v in zip(groupby, list(group_values))]))
+                    # axes[ia].set_title(f'bug speed: {list(group_values)[0]}cm/sec')
 
-            fig.tight_layout(w_pad=3)
+            fig.suptitle(f'{main_group} = {main_group_value}', fontsize=15)
+            fig.tight_layout(w_pad=0.03)
+            # fig.tight_layout(rect=[0, 0.03, 1, 0.95], w_pad=0.03, h_pad=0.2)
 
-        return fig
+        return
 
     @staticmethod
     def time_cmap(glds, fig, ax):
@@ -172,61 +178,109 @@ class MultiStrikesAnalyzer:
 
         pdf.output(filename, "F")
 
-    def plot_projected_strikes(self, xlim=(-200, 200), ylim=(-200, 200)):
+    def plot_projected_strikes(self, bug_type, xlim=(-200, 200), ylim=(-200, 200)):
         def _plot_projected_strikes(ld, ax, **kwargs):
             ts = TrialStrikes(ld)
             for s in ts.strikes:
-                if 'bug_type' in self.groupby and not ax.patches:
+                if s.bug_type != bug_type:
+                    continue
+                if not ax.patches:
                     ax.add_patch(plt.Circle((0, 0), s.bug_radius, color='lemonchiffon', alpha=0.4))
                 if s.bug_traj is None:
                     continue
                 s.plot_projected_strike(ax, is_plot_strike_only=True)
-                ax.plot([0, 0], ylim, 'k')
-                ax.plot(xlim, [0, 0], 'k')
+            ax.plot([0, 0], ylim, 'k')
+            ax.plot(xlim, [0, 0], 'k')
+            ax.set_xlabel('bug axis')
 
         self.subplot(_plot_projected_strikes, xlim=xlim, ylim=ylim, is_invert_y=False)
 
-    def plot_pd(self, xlim=(0, 15), ylim=(-2.5, 5)):
-        def _plot_pd(ld, ax, **kwargs):
+    def plot_pd(self, xlim=(2.5, 12.5), ylim=(0, 3)):
+        def _plot_pd(res: list, ax):
+            if not res:
+               return
+            df = pd.concat(res)
+            df = df.query('pd <= 2.5 & bug_speed > 2.5')
+            # ax.scatter(df.bug_speed, df.pd, color='b')
+            sns.regplot(x='bug_speed', y='pd', data=df, ax=ax, logx=True)
+            ax.set_xlabel('bug speed [cm/sec]')
+            ax.set_ylabel('PD [cm]')
+
+        def _agg_pd(ld: Loader):
+            l = []
             ts = TrialStrikes(ld)
             for s in ts.strikes:
                 if not s.pd or not s.bug_speed:
                     continue
-                ax.scatter(s.bug_speed, s.pd, color='b')
-                ax.set_xlabel('bug speed [cm/sec]')
-                ax.set_ylabel('PD [cm]')
+                l.append({'bug_speed': s.bug_speed, 'pd': s.pd})
+            if l:
+                l = [pd.DataFrame(l)]
+            return l
 
-        self.subplot(_plot_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
+        self.subplot(_plot_pd, agg_func=_agg_pd, xlim=xlim, ylim=ylim, is_invert_y=False)
+
+    def plot_engagement(self, xlim=None, ylim=None):
+        def _plot_engagement(res: list, ax):
+            if not res:
+               return
+            df = pd.DataFrame(res)
+            m = df.groupby('day').mean().reset_index()
+            with sns.axes_style("whitegrid"):
+                sns.barplot(x='day', y='num_hits', data=m, ax=ax)
+                x_dates = [datetime.strptime(d, '%Y%m%d').strftime('%d.%m.%y') for d in m.day.values]
+                ax.set_xticklabels(labels=x_dates, rotation=45, ha='right')
+            # ax.set_xlabel('bug speed [cm/sec]')
+            ax.set_ylabel('Mean Strikes')
+
+        def _agg_engagement(ld: Loader):
+            num_hits = 0
+            if ld.hits_df is not None and not ld.hits_df.empty:
+                num_hits = len(ld.hits_df)
+            return [{'day': ld.day, 'num_hits': num_hits}]
+
+        self.subplot(_plot_engagement, agg_func=_agg_engagement, xlim=xlim, ylim=ylim, is_invert_y=False)
 
     def plot_arena_trajectory(self, xlim=(0, 1200), ylim=(0, 1100), **kwargs):
-        def _plot_arena_trajectory(ld, ax, cmap):
+        def _plot_arena_trajectory(ld, ax, color):
             a = PoseAnalyzer(ld)
-            a.arena_trajectories(ax=ax, cmap=cmap, **kwargs)
+            a.arena_trajectories(ax=ax, color=color, label=str(ld), **kwargs)
+            plot_screen(ax)
+        return self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=False, is_invert_x=True)
 
-            rect = patches.Rectangle((200, 1000), 850, 50, linewidth=1, edgecolor='k', facecolor='k')
-            ax.add_patch(rect)
-
-        return self.subplot(_plot_arena_trajectory, xlim=xlim, ylim=ylim, is_invert_y=False, is_invert_x=True, is_time_cmap=True)
-
-    def plot_arena_hist2d(self, xlim=(0, 1200), ylim=(0, 1100), **kwargs):
+    def plot_arena_hist2d(self, mode, xlim=(0, 1200), ylim=(0, 1100), **kwargs):
         def _plot_arena_hist2d(res: list, ax):
             if not res:
                 return
-            rect = patches.Rectangle((200, 1000), 850, 50, linewidth=1, edgecolor='k', facecolor='k')
-            ax.add_patch(rect)
+            plot_screen(ax)
             df = pd.concat(res)
-            # g = sns
-            # SeabornFig2Grid(g3, fig, gs[2])
             sns.histplot(data=df, x='x', y='y', ax=ax,
-                         bins=(30, 10), stat='probability', pthresh=.2, cmap='Greens',
+                         bins=(30, 30), cmap='Greens', stat='probability', pthresh=.0,
                          cbar=True, cbar_kws=dict(shrink=.75, label='Probability'))
 
         def _agg_arena_hist2d(ld: Loader):
             a = PoseAnalyzer(ld)
-            return a.position_map(is_plot=False, yrange=(500, 1100))
+            return a.position_phases(mode)
 
         return self.subplot(_plot_arena_hist2d, xlim=xlim, ylim=ylim, is_invert_y=False, is_invert_x=True,
-                     is_time_cmap=True, agg_func=_agg_arena_hist2d)
+                            agg_func=_agg_arena_hist2d)
+
+    def plot_strikes_dist(self, xlim=(0, 2500), ylim=(0, 1100), **kwargs):
+        def _plot_strikes_dist(res: list, ax):
+            if not res:
+                return
+            df = pd.concat(res)
+            sns.histplot(data=df, x='x', y='y', ax=ax,
+                         bins=(60, 30), cmap='Blues', stat='probability', pthresh=.0,
+                         cbar=True, cbar_kws=dict(shrink=.40, label='Probability'))
+
+        def _agg_strikes_dist(ld: Loader):
+            if ld.hits_df is None or ld.hits_df.empty:
+                return []
+
+            return [ld.hits_df[['x', 'y']]]
+
+        return self.subplot(_plot_strikes_dist, xlim=xlim, ylim=ylim, # is_invert_y=False, is_invert_x=True,
+                            agg_func=_agg_strikes_dist)
 
 
 class SeabornFig2Grid():

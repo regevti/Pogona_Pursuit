@@ -10,12 +10,9 @@ from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from scipy.signal import medfilt
 from dlclive import DLCLive, Processor
-from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 from loader import Loader
-from pose_utils import colorline, calc_total_trajectory, distance
+from pose_utils import colorline, calc_total_trajectory, distance, legend_colors
 import pose_config as config
-
-COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 
 class PoseAnalyzer:
@@ -91,91 +88,76 @@ class PoseAnalyzer:
             df.to_csv(self.output_video_path.parent / (self.output_video_path.stem + '.csv'))
             return df
 
-    def position_map(self, part='nose', is_plot=True, yrange=None):
-        try:
-            df = self.run_pose(load_only=True)[part].copy()
-        except Exception:
-            return
-        starts, ends = self.loader.bug_phases()
-        if starts is not None and ends is not None:
-            start_frame = self.loader.get_frame_at_time(starts.time.iloc[0])
-            end_frame = self.loader.get_frame_at_time(ends.time.iloc[-1])
-            df = df.iloc[start_frame:end_frame].copy()
-
-        df.dropna(inplace=True)
-        if yrange is not None:
-            df = df.query(f'{yrange[0]} <= y <= {yrange[1]}')
-        return df
-
     @property
     @lru_cache()
-    def pose_df(self):
+    def pose_df(self) -> pd.DataFrame:
         if self.output_video_path.with_suffix('.mp4').exists() and self.output_csv_path.exists():
             return pd.read_csv(self.output_csv_path, index_col=0, header=[0, 1])
 
-    def arena_trajectories(self, is_plot=True, ax=None, cmap=None, is_only_first=False, yrange=None,
-                           min_total_traj=None, mode='bug_phases'):
-        assert mode in ['bug_phases', 'first30']
-        if self.pose_df is None:
-            return
-        if mode == 'bug_phases':
-            starts, ends = self.loader.bug_phases()
-        elif mode == 'first30':
-            starts, ends = self.loader.first30_traj()
-        if starts is None:
-            print('No bug phases were found')
-            return
-        arena_trajs = []
-        for start_t, end_t in zip(starts.time, ends.time):
-            start_frame = self.loader.get_frame_at_time(start_t)
-            end_frame = self.loader.get_frame_at_time(end_t)
-            if start_frame and end_frame:
-                try:
-                    traj = self.pose_df.nose.loc[np.arange(start_frame, end_frame), :].copy()
-                    if yrange is not None and len(traj.y[(yrange[0] <= traj.y) & (traj.y <= yrange[1])]) == 0:
-                        # drop trajectories which are out of yrange
-                        continue
-                    if min_total_traj is not None and calc_total_trajectory(traj) < min_total_traj:
-                        continue
+    @lru_cache()
+    def med_pose(self, part='nose', median_kernel=21):
+        """Run median filter on pose df"""
+        if self.pose_df is not None:
+            pf = self.pose_df[part].reset_index(drop=True)
+            pad = (median_kernel // 4) + 1
+            pf.loc[pad:len(pf) - pad, :] = pf.loc[pad:len(pf) - pad, :].apply(
+                lambda x: medfilt(x, kernel_size=median_kernel)
+            )
+            return pf
 
-                except Exception as exc:
-                    print(exc)
-                    continue
-                arena_trajs.append(traj)
-                if is_only_first:
-                    break
+    def position_phases(self, mode='all_show', part='nose', median_kernel=21) -> list:
+        """Get the positions map of the lizard in one of the bug_phases mode"""
+        if self.pose_df is None or part not in self.pose_df.columns:
+            return []
+        phases = self.loader.bug_phases(mode=mode)
+        dfs = []
+        mxf = self.med_pose(part, median_kernel)
+        for start, end in phases:
+            start_frame = self.loader.get_frame_at_time(start)
+            end_frame = self.loader.get_frame_at_time(end)
+            dfs.append(mxf.iloc[start_frame:end_frame].copy())
+
+        return dfs
+
+    def arena_trajectories(self, mode='all_show', ax=None, yrange=None, is_only_first=False,
+                           min_total_traj=None, is_plot=True, color=None, label=None) -> list:
+        """
+        Plot function for lizard's trajectories in the arena
+        :param mode: phase mode, check loader function bug_phases
+        :param ax: The axis to plot onto
+        :param yrange: Array of 2, if phase has no y-value in this range, drop this phase.
+        :param is_only_first: take only the 1st phase (useful only in mode="bug_on_screen")
+        :param min_total_traj: The minimum trajectory for phase
+        :param is_plot: Plot trajectories
+        :param color: If None, use COLORS, else use given color for all trajectories.
+        :return: The filtered trajectories (phases)
+        """
+        arena_trajs = []
+        for phase_df in self.position_phases(mode):
+            # phase_df has the columns [x, y] and indices are the frame_ids
+            if yrange is not None and phase_df.query(f'{yrange[0]}<=y<={yrange[1]}').empty:
+                # drop trajectories which are out of yrange
+                continue
+            if min_total_traj is not None and calc_total_trajectory(phase_df) < min_total_traj:
+                continue
+            arena_trajs.append(phase_df)
+            if is_only_first:
+                break
 
         if is_plot:
             if ax is None:
-                _, ax = plt.subplots(figsize=(15, 15))
+                _, ax = plt.subplots(figsize=(10, 10))
+                ax.set_title(f'Arena Trajectories for animal_id: {self.loader.animal_id} - {self.loader}')
             for i, traj in enumerate(arena_trajs):
-                if not cmap:
-                    cmap = 'Blues'
-                    if i == 0:
-                        cmap = 'Oranges'
-                    elif i == len(arena_trajs) - 1:
-                        cmap = 'Greys'
-                cl = colorline(ax, traj.x.to_numpy(), traj.y.to_numpy(), alpha=1, cmap=plt.get_cmap(cmap))
-                # print(len(ax.get_figure().axes))
-                # if len(ax.collections) == 1:
-                #     plt.colorbar(cl, ax=ax, orientation='vertical')
+                cmap = color or config.COLORS[i]
+                cl = colorline(ax, traj.x.to_numpy(), traj.y.to_numpy(), alpha=1, cmap=cmap, set_ax_lim=False)
+                cl.set_label(f'{label or i+1} ({len(traj)})')
+            if color is None:
+                legend_colors(ax, config.COLORS)
             ax.set_xlim([0, 2400])
             ax.set_ylim([0, 1000])
 
         return arena_trajs
-
-    def write_frame(self, frame: np.ndarray, frame_id: int, pred_df: pd.DataFrame):
-        try:
-            frame = self.put_text(f'frame: {frame_id}', frame, 50, 50)
-            frame = self.plot_predictions(frame, frame_id, pred_df)
-            if self.loader.bug_traj_path.exists():
-                bug_df = self.loader.bug_data_for_frame(frame_id)
-                bug_position = f'({bug_df.x:.0f}, {bug_df.y:.0f})' if bug_df is not None else '-'
-                frame = self.put_text(f'bug position: {bug_position}', frame, 50, 90)
-            
-            self.video_out.write(frame)
-        except Exception as exc:
-            print(f'Error writing frame {frame_id}; {exc}')
 
     def attention(self, attention_range=(70, 110), max_dist_ear_nose=120, median_kernel=21) -> np.ndarray:
         """Calculate in which frames the animal is attended and return array of frame indices"""
@@ -204,6 +186,19 @@ class PoseAnalyzer:
         theta = np.rad2deg(theta)
         return np.where((theta >= attention_range[0]) & (theta <= attention_range[1]))[0]
 
+    def write_frame(self, frame: np.ndarray, frame_id: int, pred_df: pd.DataFrame):
+        try:
+            frame = self.put_text(f'frame: {frame_id}', frame, 50, 50)
+            frame = self.plot_predictions(frame, frame_id, pred_df)
+            if self.loader.bug_traj_path.exists():
+                bug_df = self.loader.bug_data_for_frame(frame_id)
+                bug_position = f'({bug_df.x:.0f}, {bug_df.y:.0f})' if bug_df is not None else '-'
+                frame = self.put_text(f'bug position: {bug_position}', frame, 50, 90)
+
+            self.video_out.write(frame)
+        except Exception as exc:
+            print(f'Error writing frame {frame_id}; {exc}')
+
     @staticmethod
     def put_text(text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, font=cv2.FONT_HERSHEY_SIMPLEX):
         """
@@ -228,7 +223,7 @@ class PoseAnalyzer:
                 
             cX = df[part]['x'][frame_id]
             cY = df[part]['y'][frame_id]
-            color = tuple(int(COLORS[i][j:j+2], 16) for j in (1, 3, 5))
+            color = tuple(int(config.COLORS[i][j:j+2], 16) for j in (1, 3, 5))
             cv2.circle(frame, (cX, cY), 5, color, -1)
         return frame
 

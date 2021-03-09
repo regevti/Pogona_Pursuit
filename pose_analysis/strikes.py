@@ -314,7 +314,8 @@ class StrikeSummary:
         try:
             return self.loader.get_bug_trajectory_before_strike(self.strike_idx, n_records=120, max_dist=0.4)
         except Exception as exc:
-            self.log(f'Error loading bug traj: {exc}')
+            pass
+            # self.log(f'Error loading bug traj: {exc}')
 
     @property
     @lru_cache()

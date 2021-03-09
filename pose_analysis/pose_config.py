@@ -1,9 +1,12 @@
 from environs import Env
+from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 
 env = Env()
 env.read_env()
 
 MAIN_PATH = env('MAIN_PATH', '/data')
+
+COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', MAIN_PATH + '/Pogona_Pursuit/Arena/experiments')
 CAMERAS = {

@@ -1,7 +1,10 @@
 import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
+import colorsys
 import matplotlib.collections as mcoll
+import matplotlib.patches as patches
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap, to_rgb
 
 
 def flatten(l):
@@ -74,7 +77,8 @@ def project(cx, cy, x, y) -> np.ndarray:
     return v
 
 
-def colorline(ax, x, y, z=None, cmap=plt.get_cmap('jet'), norm=plt.Normalize(0.0, 1.0), linewidth=3, alpha=1.0):
+def colorline(ax, x, y, z=None, cmap=plt.get_cmap('jet'), norm=plt.Normalize(0.0, 1.0), linewidth=3, alpha=1.0,
+              set_ax_lim=True):
     """
     http://nbviewer.ipython.org/github/dpsanders/matplotlib-examples/blob/master/colorline.ipynb
     http://matplotlib.org/examples/pylab_examples/multicolored_line.html
@@ -88,12 +92,19 @@ def colorline(ax, x, y, z=None, cmap=plt.get_cmap('jet'), norm=plt.Normalize(0.0
     # Special case if a single number:
     if not hasattr(z, "__iter__"):  # to check for numerical input -- this is a hack
         z = np.array([z])
-
     z = np.asarray(z)
     segments = make_segments(x, y)
+
+    if not isinstance(cmap, LinearSegmentedColormap):
+        rgb = to_rgb(cmap)
+        h, s, v = colorsys.rgb_to_hsv(*rgb)
+        cmap = ListedColormap([colorsys.hsv_to_rgb(h, s=s, v=v * scale) for scale in np.linspace(1, 0, min(100, len(x)))])
+
     lc = mcoll.LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha)
     ax.add_collection(lc)
-
+    if set_ax_lim:
+        ax.set_xlim([min(min(x), ax.get_xlim()[0]), max(max(x), ax.get_xlim()[1])])
+        ax.set_ylim([min(min(y), ax.get_ylim()[0]), max(max(y), ax.get_xlim()[1])])
     return lc
 
 
@@ -111,3 +122,20 @@ def make_segments(x, y):
 def calc_total_trajectory(df):
     assert 'x' in df.columns and 'y' in df.columns
     return np.sqrt(df.x.diff() ** 2 + df.y.diff() ** 2).sum()
+
+
+def legend_colors(ax, colors, is_outside=False):
+    if is_outside:
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        # Put a legend to the right of the current axis
+        leg = ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), ncol=2)
+    else:
+        leg = ax.legend()
+    for i, handle in enumerate(leg.legendHandles):
+        handle.set_color(colors[i])
+
+
+def plot_screen(ax):
+    rect = patches.Rectangle((200, 1000), 800, 50, linewidth=1, edgecolor='k', facecolor='k')
+    ax.add_patch(rect)

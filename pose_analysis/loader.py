@@ -17,7 +17,7 @@ import pose_config as config
 
 class Loader:
     def __init__(self, animal_id=None, day=None, trial_id=None, block_id=None, camera=None, video_path=None,
-                 experiment_dir=None, is_validate=True, hits_only=False):
+                 experiment_dir=None, is_validate=True, hits_only=False, label=None):
         self.experiments_dir = experiment_dir or config.EXPERIMENTS_DIR
         if video_path:
             video_path = Path(video_path)
@@ -27,10 +27,11 @@ class Loader:
         self.trial_id = trial_id
         self.block_id = block_id
         self.camera = camera
+        self.label = label
         self.info = self.get_experiment_info()
         if is_validate:
-            self.validate(hits_only)
             self.video_path = video_path or self.get_video_path()
+            self.validate(hits_only)
 
     def __str__(self):
         return f'{self.day_dir}/block{self.block_id or 1}/trial{self.trial_id}'
@@ -38,9 +39,8 @@ class Loader:
     @property
     @lru_cache()
     def hits_df(self):
-        df = pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
-        # df = df.query('is_hit == 1')
-        return df
+        if self.screen_touches_path.exists():
+            return pd.read_csv(self.screen_touches_path, index_col=0, parse_dates=['time']).reset_index(drop=True)
 
     @property
     @lru_cache()
@@ -87,35 +87,49 @@ class Loader:
         if cidx is not None:
             return self.traj_df.loc[cidx, :]
 
-    def bug_phases(self):
+    def bug_phases(self, mode='bug_on_screen') -> list:
+        """get the start and end times on which bug was on screen.
+           :return List of tuples with 2 elements (start_time, end_time) which are np.datetime64"""
         def out(a):
             return (self.traj_df[a] < config.SCREEN_BOUNDARIES[a][0]) | (config.SCREEN_BOUNDARIES[a][1] < self.traj_df[a])
 
+        modes = ['bug_on_screen', 'all_show', 'before_show', 'after_show', 'all_trial', 'after_reward_hit']
+        assert mode in modes, f'bad mode for position_map: {mode}. options are: {modes}'
+        res = []
         try:
             in_indices = self.traj_df[~(out('x') | out('y'))].reset_index()['index']
-            if in_indices is None or len(in_indices) == 0:
-                return None, None
-            starts = self.traj_df.loc[in_indices[in_indices.diff() != 1], :]
-            ends_indices = in_indices[in_indices[in_indices.diff() > 1].index - 1]
-            # add the last in-index as an end_index
-            ends_indices = ends_indices.append(pd.Series(in_indices[in_indices.index[-1]], index=[in_indices.index[-1]]))
-            ends = self.traj_df.loc[ends_indices, :]
-            assert len(starts) == len(ends), 'bad bug_phases analysis, starts != ends'
-            return starts, ends
+            if in_indices is not None and len(in_indices) > 0:
+                starts = self.traj_time[in_indices[in_indices.diff() != 1]]
+                ends_indices = in_indices[in_indices[in_indices.diff() > 1].index - 1]
+                # add the last in-index as an end_index
+                ends_indices = ends_indices.append(pd.Series(in_indices[in_indices.index[-1]],
+                                                             index=[in_indices.index[-1]]))
+                ends = self.traj_time[ends_indices]
+                assert len(starts) == len(ends), 'bad bug_phases analysis, starts != ends'
+                if mode == 'bug_on_screen':
+                    return list(zip(starts, ends))
+                elif mode == 'all_show':
+                    return [(starts.iloc[0], ends.iloc[-1])]
+                elif mode == 'before_show' and starts.iloc[0] >= self.frames_ts.iloc[0]:
+                    return [(self.frames_ts.iloc[0], starts.iloc[0])]
+                elif mode == 'after_show' and self.frames_ts.iloc[-1] >= ends.iloc[-1]:
+                    return [(ends.iloc[-1], self.frames_ts.iloc[-1])]
+                elif mode == 'all_trial':
+                    return [(self.frames_ts.iloc[0], self.frames_ts.iloc[-1])]
+                elif mode == 'after_reward_hit':
+                    hit_reward_time = self.get_reward_hit_time()
+                    if hit_reward_time:
+                        return [(hit_reward_time, self.frames_ts.iloc[-1])]
+
         except Exception as exc:
             print(f'Error in bug_phases: {exc}')
-            return None, None
 
-    def first30_traj(self):
-        try:
-            starts = self.frames_ts[0]
-            ends = self.traj_df.loc[0, :]
-            start_time = starts.time.tz_convert('utc').tz_localize(None) - timedelta(seconds=30)
-            cidx = closest_index(self.frames_ts, start_time, 0.1)
-            return starts.to_frame().transpose(), ends.to_frame().transpose()
-        except Exception as exc:
-            print(f'Error in first 30: {exc}')
-            return None, None
+        return res
+
+    def get_reward_hit_time(self):
+        if self.hits_df is not None:
+            q = self.hits_df.query('is_reward_bug==True')
+            return q.time.dt.tz_convert('utc').dt.tz_localize(None).iloc[-1] if not q.empty else None
 
     def validate(self, hits_only):
         assert self.block_path.exists(), 'experiment dir not exist'
@@ -256,8 +270,9 @@ def get_experiments(*args, is_validate=True, **kwargs):
         day_dir = datetime.strptime(day, '%d.%m.%y').strftime('%Y%m%d')
         try:
             experiments_dir = kwargs.get('experiment_dir') or config.EXPERIMENTS_DIR
+            label = df.loc[(animal_id, day, block, trial), 'bad_label']
             ld = Loader(animal_id, day_dir, int(trial), block, 'realtime',
-                        experiment_dir=experiments_dir, is_validate=is_validate)
+                        experiment_dir=experiments_dir, is_validate=is_validate, label=label)
             loaders.append(ld)
         except Exception as exc:
             print(f'Error loading {animal_id}/{day_dir}/block{block}/trial{trial}; {exc}')
