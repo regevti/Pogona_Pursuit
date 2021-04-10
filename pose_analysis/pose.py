@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -24,7 +25,7 @@ class PoseAnalyzer:
             self.loader = loader
             self.video_path = loader.video_path
 
-        self.dlc_live = self.load_model(model_path)
+        self.dlc_live, self.model_name = self.load_model(model_path)
         self.is_dlc_live_initiated = False
         self.saved_frames = {}
         self.video_out = None
@@ -36,8 +37,11 @@ class PoseAnalyzer:
         model_path = Path(model_path or config.EXPORTED_MODEL_PATH)
         assert model_path.exists(), f'model path {model_path} does not exist'
         assert model_path.is_dir(), f'model path {model_path} is not a directory'
-        assert config.DLC_PROJECTS_PATH in model_path.as_posix(), 'model must reside in deeplabcut projects dir'
-        return DLCLive(model_path, processor=Processor())
+        assert model_path.as_posix().startswith(config.DLC_PROJECTS_PATH), 'model must reside in deeplabcut projects dir'
+        assert model_path.parent == 'exported-models', 'model not reside in exported-models'
+        iteration = re.search(r'iteration-(/d+)', model_path.name).group(1)
+        model_name = model_path.parts[5] + f'_iteration{iteration}'
+        return DLCLive(model_path, processor=Processor()), model_name
 
     def run_pose(self, selected_frames=None, is_save_frames=False, load_only=False) -> pd.DataFrame:
         """
@@ -268,10 +272,6 @@ class PoseAnalyzer:
     @property
     def output_video_path(self):
         return self.output_dir / f'{self.loader.camera}.avi'
-
-    @property
-    def model_name(self):
-        return Path(config.DLC_PATH).name + f'_iteration{config.ITERATION}'
 
 
 class PoseCsvReader:
