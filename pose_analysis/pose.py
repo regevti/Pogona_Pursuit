@@ -41,7 +41,7 @@ class PoseAnalyzer:
         assert model_path.parent.name == 'exported-models', 'model not reside in exported-models'
         iteration = re.search(r'iteration-(\d+)', model_path.name).group(1)
         model_name = model_path.parts[5] + f'_iteration{iteration}'
-        return DLCLive(model_path, processor=Processor()), model_name
+        return DLCLive(model_path.as_posix(), processor=Processor()), model_name
 
     def run_pose(self, selected_frames=None, is_save_frames=False, load_only=False) -> pd.DataFrame:
         """
