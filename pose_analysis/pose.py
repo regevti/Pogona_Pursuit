@@ -38,7 +38,7 @@ class PoseAnalyzer:
         assert model_path.exists(), f'model path {model_path} does not exist'
         assert model_path.is_dir(), f'model path {model_path} is not a directory'
         assert model_path.as_posix().startswith(config.DLC_PROJECTS_PATH), 'model must reside in deeplabcut projects dir'
-        assert model_path.parent == 'exported-models', 'model not reside in exported-models'
+        assert model_path.parent.name == 'exported-models', 'model not reside in exported-models'
         iteration = re.search(r'iteration-(/d+)', model_path.name).group(1)
         model_name = model_path.parts[5] + f'_iteration{iteration}'
         return DLCLive(model_path, processor=Processor()), model_name
