@@ -25,7 +25,7 @@ class PoseAnalyzer:
             self.loader = loader
             self.video_path = loader.video_path
 
-        self.dlc_live, self.model_name = self.load_model(model_path)
+        self.dlc_live, self.model_name, self.model_path = self.load_model(model_path)
         self.is_dlc_live_initiated = False
         self.saved_frames = {}
         self.video_out = None
@@ -41,7 +41,7 @@ class PoseAnalyzer:
         assert model_path.parent.name == 'exported-models', 'model not reside in exported-models'
         iteration = re.search(r'iteration-(\d+)', model_path.name).group(1)
         model_name = model_path.parts[5] + f'_iteration{iteration}'
-        return DLCLive(model_path.as_posix(), processor=Processor()), model_name
+        return DLCLive(model_path.as_posix(), processor=Processor()), model_name, model_path
 
     def run_pose(self, selected_frames=None, is_save_frames=False, load_only=False) -> pd.DataFrame:
         """
@@ -249,11 +249,8 @@ class PoseAnalyzer:
         assert self.video_path.exists(), f'video {self.video_path.name} does not exist'
         assert self.video_path.suffix in ['.avi', '.mp4'], f'suffix {self.video_path.suffix} not supported'
 
-    @staticmethod
-    def load_dlc_config():
-        if not Path(config.DLC_CONFIG_FILE).exists():
-            return
-        return yaml.load(open(config.DLC_CONFIG_FILE), Loader=yaml.FullLoader)
+    def load_dlc_config(self):
+        return yaml.load(self.model_path.open(), Loader=yaml.FullLoader)
 
     def save_cache(self, df):
         pass
