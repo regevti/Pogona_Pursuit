@@ -17,7 +17,8 @@ CAMERAS = {
 }
 SCREEN_BOUNDARIES = {'x': (0, 1850), 'y': (0, 800)}
 
-DLC_PATH = MAIN_PATH + '/pose_estimation/deeplabcut/projects/pogona_pursuit_realtime'
+DLC_PROJECTS_PATH = MAIN_PATH + '/pose_estimation/deeplabcut/projects'
+DLC_PATH = DLC_PROJECTS_PATH + '/pogona_pursuit_realtime'
 DLC_CONFIG_FILE = DLC_PATH + '/config.yaml'
 ITERATION = 3
 EXPORTED_MODEL_PATH = DLC_PATH + f'/exported-models/DLC_pogona_pursuit_resnet_50_iteration-{ITERATION}_shuffle-1'

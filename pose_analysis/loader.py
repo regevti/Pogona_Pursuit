@@ -5,7 +5,7 @@ from dateutil import parser
 import pandas as pd
 import numpy as np
 from functools import lru_cache
-from pose_utils import distance, fit_circle, closest_index
+from pose_utils import distance, fit_circle, closest_index, pixels2cm
 from datetime import timedelta, datetime
 sys.path += ['../Arena']
 from explore import ExperimentAnalyzer
@@ -59,6 +59,15 @@ class Loader:
     @lru_cache()
     def frames_ts(self) -> pd.Series:
         return pd.to_datetime(pd.read_csv(self.timestamps_path, index_col=0).reset_index(drop=True)['0'])
+
+    @property
+    @lru_cache()
+    def calc_speed(self):
+        if self.traj_df is None or self.traj_df.empty:
+            return
+        tf = self.traj_df[['time', 'x', 'y']].diff().iloc[1:, :]
+        tf['v'] = np.sqrt((tf.x ** 2) + (tf.y ** 2)) / tf.time.dt.total_seconds()
+        return pixels2cm(tf.loc[np.abs(zscore(tf.v)) < 3, 'v'].mean())
 
     def get_frame_at_time(self, t: pd.Timestamp):
         assert isinstance(t, pd.Timestamp)

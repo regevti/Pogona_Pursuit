@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import optimize
+from scipy.stats import zscore
 import matplotlib.pyplot as plt
 import colorsys
 import matplotlib.collections as mcoll
@@ -139,3 +140,7 @@ def legend_colors(ax, colors, is_outside=False):
 def plot_screen(ax):
     rect = patches.Rectangle((200, 1000), 800, 50, linewidth=1, edgecolor='k', facecolor='k')
     ax.add_patch(rect)
+
+
+def remove_outliers(x, thresh=3):
+    return x[np.abs(zscore(x)) < thresh]

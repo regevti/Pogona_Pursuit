@@ -16,22 +16,28 @@ import pose_config as config
 
 
 class PoseAnalyzer:
-    def __init__(self, loader: (Loader, str)):
+    def __init__(self, loader: (Loader, str), model_path=None):
         if isinstance(loader, str):
             self.video_path = Path(loader)
             self.loader = Loader(video_path=loader, is_validate=False)
         else:
             self.loader = loader
             self.video_path = loader.video_path
-        if Path(config.EXPORTED_MODEL_PATH).exists():
-            self.dlc_live = DLCLive(config.EXPORTED_MODEL_PATH, processor=Processor())
-        else:
-            self.dlc_live = None
+
+        self.dlc_live = self.load_model(model_path)
         self.is_dlc_live_initiated = False
         self.saved_frames = {}
         self.video_out = None
         self.validate_video()
         self.dlc_config = self.load_dlc_config()
+
+    @staticmethod
+    def load_model(model_path):
+        model_path = Path(model_path or config.EXPORTED_MODEL_PATH)
+        assert model_path.exists(), f'model path {model_path} does not exist'
+        assert model_path.is_dir(), f'model path {model_path} is not a directory'
+        assert config.DLC_PROJECTS_PATH in model_path.as_posix(), 'model must reside in deeplabcut projects dir'
+        return DLCLive(model_path, processor=Processor())
 
     def run_pose(self, selected_frames=None, is_save_frames=False, load_only=False) -> pd.DataFrame:
         """
