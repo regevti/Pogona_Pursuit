@@ -157,7 +157,7 @@ class Loader:
             block_id = re.match(r'block(\d+)', video_path.parts[-4])[1]
             day_dir = video_path.parts[-5]
             animal_id = video_path.parts[-6]
-            experiment_dir = video_path.parts[-7]
+            experiment_dir = Path(*video_path.parts[:-6]).as_posix()
 
             camera = None
             for name, serial in config.CAMERAS.items():
