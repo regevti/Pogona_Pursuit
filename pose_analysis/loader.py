@@ -18,10 +18,10 @@ import pose_config as config
 class Loader:
     def __init__(self, animal_id=None, day=None, trial_id=None, block_id=None, camera=None, video_path=None,
                  experiment_dir=None, is_validate=True, hits_only=False, label=None):
-        self.experiments_dir = experiment_dir or config.EXPERIMENTS_DIR
         if video_path:
             video_path = Path(video_path)
-            animal_id, day, trial_id, block_id, camera = self.parse_video_path(video_path)
+            animal_id, day, trial_id, block_id, camera, experiment_dir = self.parse_video_path(video_path)
+        self.experiments_dir = experiment_dir or config.EXPERIMENTS_DIR
         self.animal_id = animal_id
         self.day_dir = day
         self.trial_id = trial_id
@@ -157,6 +157,7 @@ class Loader:
             block_id = re.match(r'block(\d+)', video_path.parts[-4])[1]
             day_dir = video_path.parts[-5]
             animal_id = video_path.parts[-6]
+            experiment_dir = video_path.parts[-7]
 
             camera = None
             for name, serial in config.CAMERAS.items():
@@ -165,7 +166,7 @@ class Loader:
                     break
             if not camera:
                 raise Exception('unable to parse camera from video path')
-            return animal_id, day_dir, trial_id, block_id, camera
+            return animal_id, day_dir, trial_id, block_id, camera, experiment_dir
         except Exception as exc:
             raise Exception(f'Error parsing video path: {exc}')
 
