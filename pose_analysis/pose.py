@@ -250,7 +250,8 @@ class PoseAnalyzer:
         assert self.video_path.suffix in ['.avi', '.mp4'], f'suffix {self.video_path.suffix} not supported'
 
     def load_dlc_config(self):
-        return yaml.load(self.model_path.open(), Loader=yaml.FullLoader)
+        config_path = self.model_path.parent.parent / 'config.yaml'
+        return yaml.load(config_path.open(), Loader=yaml.FullLoader)
 
     def save_cache(self, df):
         pass
