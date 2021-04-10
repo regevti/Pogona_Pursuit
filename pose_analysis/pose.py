@@ -286,7 +286,7 @@ class Compressor:
     def __init__(self, video_path: (str, Path), output_path=None):
         assert Path(video_path).exists(), f'video path: {video_path} not exist'
         self.input_video_path = Path(video_path)
-        self.output_video_path = Path(output_path or video_path.replace('.avi', '.mp4'))
+        self.output_video_path = Path(output_path or self.input_video_path.with_suffix('.mp4'))
 
     def compress(self, is_delete=True):
         """Run H265 compression on pose video and remove the input pose avi file"""
