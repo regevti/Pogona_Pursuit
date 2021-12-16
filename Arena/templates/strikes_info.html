@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Strikes Info</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-4.5.0/css/bootstrap.css')}}">
+    <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+</head>
+<body>
+<div class="col m-4 text-center">
+    <h2 class="mb-5">Strikes Info</h2>
+    <h5><b>Animal ID</b>: {{animal_id}}</h5>
+    <h5><b>Day</b>: {{day}}</h5>
+    <h5><b>Block</b>: {{block}}</h5>
+    <h5><b>Trial</b>: {{trial}}</h5>
+    {% for d in data %}
+    <h5 class="mt-5">Strike #{{ loop.index }}</h5>
+    <div class="row justify-content-md-center mb-2">
+        <label for="strike_label{{loop.index}}" class="col-xs-offset-10 col-form-label">Label</label>
+        <div class="col-sm-1">
+            <select id="strike_label{{loop.index}}" class="form-control">
+                {% for label in labels %}
+                {% if label == d['label'] %}
+                <option value="{{label}}" selected>{{label}}</option>
+                {% else %}}
+                <option value="{{label}}">{{label}}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <img src="{{ url_for('download_file', filename=d['save_image_path']) }}" alt="" class="mx-auto d-block"/>
+    {% endfor %}
+</div>
+</body>
+
+<script>
+  $(function () {
+    const numStrikes = Number("{{num_strikes}}")
+    for (let i = 1; i <= numStrikes; i++) {
+      let $strikeLabel = $(`#strike_label${i}`)
+      $strikeLabel.change(() => {
+        $.ajax({
+          url: "/strike_label",
+          type: "POST",
+          data: JSON.stringify({
+            animal_id: "{{animal_id}}",
+            day: "{{day_dir}}",
+            block_id: "{{block}}",
+            trial_id: "{{trial}}",
+            experiment_dir: "{{experiment_dir}}",
+            label: $strikeLabel.val(),
+            strike_id: i - 1
+          }),
+          contentType: "application/json",
+          success: function (res) {
+            alert(`changed label of strike ${i} to ${$strikeLabel.val()}`)
+          },
+          error: function (data) {
+            alert('error changing label')
+            console.error(data.responseText)
+          }
+        })
+      })
+    }
+  })
+</script>
+
+</html>

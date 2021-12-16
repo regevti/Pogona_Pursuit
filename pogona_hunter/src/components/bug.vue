@@ -41,14 +41,14 @@ export default {
     isNoisyLowHorizontal: function () {
       return this.bugsSettings.movementType === 'low_horizontal_noise'
     },
+    isStatic: function () {
+      return this.bugsSettings.movementType === 'static'
+    },
     bugHeight: function () {
       return this.bugsSettings.bugHeight ? Number(this.bugsSettings.bugHeight) : 100
     },
     numImagesPerBug: function () {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
-    },
-    isStatic: function () {
-      return this.bugTypeOptions[this.currentBugType].isStatic
     },
     stepsPerImage: function () {
       return this.bugTypeOptions[this.currentBugType].stepsPerImage
@@ -102,7 +102,7 @@ export default {
       this.currentBugSize = this.getRadiusSize()
     },
     move(particles) {
-      if (this.isDead || this.isStatic || this.isOutEdged) {
+      if (this.isDead || this.isOutEdged) {
         this.draw()
         return
       }
@@ -113,6 +113,11 @@ export default {
         this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
         this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.bugsSettings.isAntiClockWise ? -1 : 1)
         this.y = this.r0[1] + this.r * Math.sin(this.theta)
+      } else if (this.isStatic) {
+        this.x = this.canvas.width / 2
+        this.y = this.canvas.height / 2
+        this.dx = 0
+        this.dy = 0
       } else {
         let randNoise = this.getRandomNoise()
         let halfScreen = this.canvas.width
