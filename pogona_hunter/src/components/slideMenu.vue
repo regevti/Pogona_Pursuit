@@ -50,7 +50,7 @@
         </div>
 
         <div class="row">
-          <label for="radius-size">Bug Radius Size: </label>
+          <label for="radius-size">Bug Size: </label>
           <input v-model.number="bugSettings.bugSize" id="radius-size" type="number"
                  style="width: 3em">
         </div>
@@ -59,6 +59,12 @@
           <label for="speed">Speed: </label>
           <input v-model.number="bugSettings.speed" id="speed" type="number"
                  style="width: 3em">
+        </div>
+
+        <div class="row" v-if="bugSettings.movementType==='low_horizontal_noise'">
+          <label for="noiseStartFraction">Noise Start Fraction: </label>
+          <input v-model.number="bugSettings.noiseStartFraction" id="noiseStartFraction" type="number"
+                 style="width: 3em" min="0" max="1" step="0.1">
         </div>
 
         <p>Written by Reggev Eyal</p>

@@ -46,6 +46,7 @@ export default {
         rewardBugs: 'cockroach',
         movementType: 'circle',
         targetDrift: 'leftBottom',
+        noiseStartFraction: 0.5,
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bugHeight: 100, // relevant only for horizontal movements
