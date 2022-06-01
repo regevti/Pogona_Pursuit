@@ -17,7 +17,7 @@ services:
     - ../pogona_hunter:/pogona_hunter
     - /tmp/.X11-unix:/tmp/.X11-unix:ro
     - ${MEDIA_DIR-/tmp}:/arena/media
-    restart: always
+    restart: "no"
     runtime: nvidia
     command: "flask run --host=0.0.0.0"
     ports:
@@ -37,7 +37,7 @@ services:
     container_name: pogona_hunter
     depends_on:
       - mqtt
-    restart: always
+    restart: "no"
     command: "http-server dist"
 #    volumes:
 #    - ../pogona_hunter:/app
@@ -53,7 +53,7 @@ services:
     depends_on:
       - mqtt
       - cache
-    restart: always
+    restart: "no"
     command: 'celery -A logger worker --loglevel=INFO'
     devices:
       - ${PARPORT_DEVICE-/dev/parport0}
@@ -70,7 +70,7 @@ services:
     image: pogona_explore:${explore_tag-latest}
     container_name: explore
     command: 'flask run --host=0.0.0.0'
-    restart: always
+    restart: "no"
     ports:
       - 3352:5000
     volumes:
@@ -83,21 +83,21 @@ services:
       - LC_ALL=C.UTF-8
       - LANG=C.UTF-8
 
-  pose:
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile-pose
-    container_name: pose
-    image: pose
-    volumes:
-    - ${EXPLORE_DIR-../Arena/experiments}:/data/experiments
-    runtime: nvidia
+        # pose:
+        #build:
+        #context: ..
+        #dockerfile: ./docker/Dockerfile-pose
+        #container_name: pose
+        #image: pose
+        # volumes:
+        #- ${EXPLORE_DIR-../Arena/experiments}:/data/experiments
+        #runtime: nvidia
 
   mqtt:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile-mqtt
-    restart: always
+    restart: "no"
     image: pogona_mqtt:${mqtt_tag-latest}
     container_name: mqtt
     environment:
@@ -109,7 +109,7 @@ services:
   cache:
     image: redis
     container_name: cache
-    restart: always
+    restart: "no"
     ports:
     - 6379:6379
 
