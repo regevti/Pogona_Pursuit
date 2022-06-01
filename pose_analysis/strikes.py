@@ -251,8 +251,8 @@ class StrikeSummary:
                 break
             else:
                 grace_count = 0
-        if y[self.calc_strike_frame] - y[leap_frame_idx] < 10:
-            return
+        # if y[self.calc_strike_frame] - y[leap_frame_idx] < 10:
+        #     return
         return leap_frame_idx
 
     @property
@@ -303,9 +303,9 @@ class StrikeSummary:
     @lru_cache()
     def bug_speed(self):
         if self.bug_traj is None:
-            return
-        d = self.bug_traj.diff()
-        v = np.sqrt(d.x ** 2 + d.y ** 2) / d.time.dt.total_seconds()
+            return self.loader.calc_speed
+        d = self.bug_traj.diff().iloc[1:, :]
+        v = remove_outliers(np.sqrt(d.x ** 2 + d.y ** 2) / d.time.dt.total_seconds())
         return pixels2cm(v.mean())  # speed in cm/sec
 
     @property
@@ -314,7 +314,8 @@ class StrikeSummary:
         try:
             return self.loader.get_bug_trajectory_before_strike(self.strike_idx, n_records=120, max_dist=0.4)
         except Exception as exc:
-            self.log(f'Error loading bug traj: {exc}')
+            pass
+            # self.log(f'Error loading bug traj: {exc}')
 
     @property
     @lru_cache()

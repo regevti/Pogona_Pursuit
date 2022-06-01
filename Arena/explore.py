@@ -294,7 +294,7 @@ class TrialsAnalyzerV1:
         file_labels = ['climbing', 'no_video', 'bad']
         for label in file_labels:
             if (trial_path / label).exists() or (trial_path / 'videos' / label).exists():
-                self.log(f'trial {trial_path} is labelled as {label}')
+                # self.log(f'trial {trial_path} is labelled as {label}')
                 return label
 
     def get_trial_times(self, trial_id):
