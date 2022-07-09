@@ -1,4 +1,6 @@
 -r base.txt
 
-deeplabcut==2.1.8.2
-deeplabcut-live==0.0.2
+deeplabcut==2.2.1.1
+deeplabcut-live==1.0.2
+torch==1.11.0
+torchvision==0.12.0
