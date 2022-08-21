@@ -1,20 +1,22 @@
-from flask import Flask, render_template, Response, request, send_from_directory, jsonify
-import PySpin
-import cv2
 import json
 import os
-import re
-import config
+import atexit
+import time
 from pathlib import Path
-from utils import titlize, turn_display_on, turn_display_off
-from cache import RedisCache, CacheColumns
-from mqtt import MQTTPublisher
-from experiment import Experiment, ExperimentCache
-from arena import SpinCamera, record, capture_image, filter_cameras, display_info
+from flask import Flask, render_template, Response, request, send_from_directory, jsonify
 
+from loggers import init_loggers
+import config
+from cache import RedisCache, CacheColumns as cc
+from utils import titlize, turn_display_on, turn_display_off
+from experiment import ExperimentCache
+from arena import ArenaManager
+
+init_loggers()
 app = Flask(__name__)
 cache = RedisCache()
-mqtt_client = MQTTPublisher()
+arena_mgr = ArenaManager(redis_cache=cache)
+atexit.register(arena_mgr.stop_recording)
 
 
 @app.route('/')
@@ -24,10 +26,10 @@ def index():
     cached_experiments = [c.stem for c in Path(config.experiment_cache_path).glob('*.json')]
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
-    return render_template('index.html', cameras=config.camera_names.keys(), exposure=config.exposure_time,
+    return render_template('index.html', cameras=config.cameras.keys(), exposure=config.default_exposure,
                            config=app_config, acquire_stop={k: titlize(k) for k in config.acquire_stop_options.keys()},
                            reward_types=config.reward_types, experiment_types=config.experiment_types,
-                           media_files=list_media(), max_blocks=config.max_blocks, cached_experiments=cached_experiments,
+                           media_files=list_media(), max_blocks=config.api_max_blocks_to_show, cached_experiments=cached_experiments,
                            extra_time_recording=config.extra_time_recording)
 
 
@@ -36,16 +38,15 @@ def record_video():
     """Record video"""
     if request.method == 'POST':
         data = request.json
-        data.update({'cache': cache})
-        return Response(record(**data))
+        return Response(arena_mgr.record(**data))
 
 
 @app.route('/start_experiment', methods=['POST'])
 def start_experiment():
     """Set Experiment Name"""
     data = request.json
-    e = Experiment(**data)
-    return Response(e.start())
+    e = arena_mgr.start_experiment(**data)
+    return Response(e)
 
 
 @app.route('/save_experiment', methods=['POST'])
@@ -65,14 +66,14 @@ def load_experiment(name):
 
 @app.route('/get_experiment')
 def get_experiment():
-    return Response(cache.get(CacheColumns.EXPERIMENT_NAME))
+    return Response(cache.get_current_experiment())
 
 
 @app.route('/stop_experiment')
 def stop_experiment():
-    experiment_name = cache.get(CacheColumns.EXPERIMENT_NAME)
-    mqtt_client.publish_command('end_experiment')
+    experiment_name = cache.get_current_experiment()
     if experiment_name:
+        cache.stop_experiment()
         return Response(f'ending experiment {experiment_name}...')
     return Response('No available experiment')
 
@@ -99,13 +100,13 @@ def calibrate():
 @app.route('/reward')
 def reward():
     """Activate Feeder"""
-    mqtt_client.publish_event(config.subscription_topics['reward'], '')
+    cache.publish_command('reward')
     return Response('ok')
 
 
 @app.route('/led_light/<state>')
 def led_light(state):
-    mqtt_client.publish_event(config.subscription_topics['led_light'], state)
+    cache.publish_command('led_light', 'on')
     return Response('ok')
 
 
@@ -121,7 +122,7 @@ def display(state):
 @app.route('/cameras_info')
 def cameras_info():
     """Get cameras info"""
-    return Response(display_info())
+    return Response(arena_mgr.display_info(return_string=True))
 
 
 @app.route('/check_cameras')
@@ -129,52 +130,36 @@ def check_cameras():
     """Check all cameras are connected"""
     if config.is_debug_mode:
         return Response(json.dumps([]))
-    info = display_info()
-    cameras_ids = [str(c) for c in re.findall(r'(?m)^\d+', info or '')]
+    info_df = arena_mgr.display_info()
     missing_cameras = []
-    for cam_name, cam_id in config.camera_names.items():
-        if cam_id not in cameras_ids:
+    for cam_name, cam_config in config.cameras.items():
+        if cam_name not in info_df.index:
             missing_cameras.append(cam_name)
 
     return Response(json.dumps(missing_cameras))
 
 
-@app.route('/video_feed')
-def video_feed():
-    """Video streaming route. Put this in the src attribute of an img tag."""
-    vc = VideoStream()
-    return Response(gen(vc),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
 @app.route('/manual_record_stop')
 def manual_record_stop():
-    cache.set(CacheColumns.MANUAL_RECORD_STOP, True)
+    arena_mgr.stop_recording()
     return Response('Record stopped')
-
-
-@app.route('/set_stream_camera', methods=['POST'])
-def set_stream_camera():
-    if request.method == 'POST':
-        cache.set(CacheColumns.STREAM_CAMERA, request.form['camera'])
-        return Response(request.form['camera'])
 
 
 @app.route('/reload_app')
 def reload_app():
-    mqtt_client.publish_command('reload_app')
+    cache.publish_command('reload_app')
 
 
 @app.route('/init_bugs', methods=['POST'])
 def init_bugs():
     if request.method == 'POST':
-        mqtt_client.publish_event('event/command/init_bugs', request.data.decode())
+        cache.publish_command('init_bugs', request.data.decode())
     return Response('ok')
 
 
 @app.route('/hide_bugs')
 def hide_bugs():
-    mqtt_client.publish_event('event/command/hide_bugs', '')
+    cache.publish_command('hide_bugs', '')
     return Response('ok')
 
 
@@ -186,13 +171,13 @@ def start_media():
             return Response('Unable to find media url')
         payload = json.dumps({'url': f'{config.management_url}/media/{data["media_url"]}'})
         print(payload)
-        mqtt_client.publish_command('init_media', payload)
+        cache.publish_command('init_media', payload)
     return Response('ok')
 
 
 @app.route('/stop_media')
 def stop_media():
-    mqtt_client.publish_command('hide_media')
+    cache.publish_command('hide_media')
     return Response('ok')
 
 
@@ -209,40 +194,23 @@ def send_media(filename):
     return send_from_directory(config.static_files_dir, filename)
 
 
-class VideoStream:
-    def __init__(self, exposure_time=config.exposure_time):
-        self.system = PySpin.System.GetInstance()
-        self.cam_list = self.system.GetCameras()
-        filter_cameras(self.cam_list, cache.get(CacheColumns.STREAM_CAMERA))
-        if len(self.cam_list) == 0:
-            self.clear()
-            raise Exception('No cameras were found')
-
-        self.sc = SpinCamera(self.cam_list[0])
-        self.sc.begin_acquisition(exposure_time)
-
-    def get_frame(self):
-        image_result = self.sc.cam.GetNextImage()
-        img = image_result.GetNDArray()
-        return cv2.imencode(".jpg", img)
-
-    def clear(self):
-        self.cam_list.Clear()
-        del self.sc
-        # self.system.ReleaseInstance()
-
-    def __del__(self):
-        self.clear()
+@app.route('/set_stream_camera', methods=['POST'])
+def set_stream_camera():
+    if request.method == 'POST':
+        arena_mgr.set_streaming_camera(request.form['camera'])
+        return Response(request.form['camera'])
 
 
-def gen(vc: VideoStream):
-    """Video streaming generator function."""
-    print('start web streaming')
-    while True:
-        (flag, encodedImage) = vc.get_frame()
+@app.route('/stop_stream_camera', methods=['POST'])
+def stop_stream_camera():
+    if request.method == 'POST':
+        # cache.set(CacheColumns.STREAM_CAMERA, request.form['camera'])
+        arena_mgr.stop_stream()
+        return Response('ok')
 
-        if not flag:
-            continue
 
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
+@app.route('/video_feed')
+def video_feed():
+    """Video streaming route. Put this in the src attribute of an img tag."""
+    return Response(arena_mgr.stream(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')

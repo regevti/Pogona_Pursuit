@@ -90,58 +90,61 @@ export default {
       }
     }
   },
+  created() {
+    this.$socketClient.onOpen = () => {
+      console.log('WebSocket connected')
+    }
+    this.$socketClient.subscribe({
+      'cmd/visual_app/hide_bugs': (payload) => {
+        this.clearBoard()
+      },
+      'cmd/visual_app/init_bugs': (options) => {
+        options = JSON.parse(options)
+        console.log(options)
+        Object.assign(this.bugsSettings, options)
+        this.$store.commit('reset_score')
+        this.initBoard(!!options['isLogTrajectory'])
+      },
+      'cmd/visual_app/hide_media': (payload) => {
+        if (this.isMedia) {
+          this.$socketClient.publish('event/log/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
+          this.isMedia = false
+        }
+        location.reload()
+      },
+      'cmd/visual_app/init_media': (options) => {
+        options = JSON.parse(options)
+        this.clearBoard()
+        this.mediaUrl = options.url
+        console.log(this.mediaUrl)
+        this.isMedia = true
+      },
+      'cmd/visual_app/show_pogona': (numFrames) => {
+        showPogona(this.canvas, numFrames)
+      },
+      'cmd/visual_app/strike_predicted': (options) => {
+        handlePrediction(options, this.ctx, this.canvasParams)
+      },
+      'cmd/visual_app/reload_app': (payload) => {
+        location.reload()
+      },
+      'cmd/visual_app/reward_given': (payload) => {
+        console.log('reward was given in the arena')
+        this.isRewardGiven = true
+        let rewardTimeout = setTimeout(() => {
+          this.isRewardGiven = false
+          clearTimeout(rewardTimeout)
+        }, 20 * 1000)
+    }
+  })
+  },
   mounted() {
-    this.$mqtt.subscribe('event/log/prediction')
-    this.$mqtt.subscribe('event/command/+')
     this.canvas = document.getElementById('bugCanvas')
     this.ctx = this.canvas.getContext('2d')
     this.initBoard()
     window.addEventListener('keypress', e => {
       this.changeTrajectory(e.code)
     })
-  },
-  mqtt: {
-    'event/command/hide_bugs'(data) {
-      this.clearBoard()
-    },
-    'event/command/init_bugs'(options) {
-      options = JSON.parse(options)
-      console.log(options)
-      Object.assign(this.bugsSettings, options)
-      this.$store.commit('reset_score')
-      this.initBoard(!!options['isLogTrajectory'])
-    },
-    'event/command/hide_media'() {
-      if (this.isMedia) {
-        this.$mqtt.publish('event/log/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
-        this.isMedia = false
-      }
-      location.reload()
-    },
-    'event/command/init_media'(options) {
-      options = JSON.parse(options)
-      this.clearBoard()
-      this.mediaUrl = options.url
-      console.log(this.mediaUrl)
-      this.isMedia = true
-    },
-    'event/command/show_pogona'(numFrames) {
-      showPogona(this.canvas, numFrames)
-    },
-    'event/log/prediction'(options) {
-      handlePrediction(options, this.ctx, this.canvasParams)
-    },
-    'event/command/reload_app'(options) {
-      location.reload()
-    },
-    'event/command/reward'() {
-      console.log('reward was given')
-      this.isRewardGiven = true
-      let rewardTimeout = setTimeout(() => {
-        this.isRewardGiven = false
-        clearTimeout(rewardTimeout)
-      }, 20 * 1000)
-    }
   },
   computed: {
     currentBugOptions: function () {
@@ -175,6 +178,9 @@ export default {
       }
       this.drawHoles()
       this.spawnBugs(this.bugsSettings.numOfBugs)
+      if (this.bugsSettings.numOfBugs > 0) {
+        this.$socketClient.set('IS_VISUAL_APP_ON', 1)
+      }
       this.$nextTick(function () {
         console.log('start animation...')
         this.animate()
@@ -247,7 +253,7 @@ export default {
         if ((isHit || isRewardAnyTouch) && !this.isClimbing) {
           this.destruct(i, x, y, isRewardBug)
         }
-        this.$mqtt.publish('event/log/touch', JSON.stringify({
+        this.$socketClient.publish('event/log/touch', JSON.stringify({
           time: Date.now(),
           x: x,
           y: y,
@@ -284,7 +290,7 @@ export default {
       this.trial_id++
       if (this.bugsSettings.numTrials && this.trial_id > this.bugsSettings.numTrials) {
         // numTrials was given and you reached the last trial -> end block
-        this.$mqtt.publish('event/command/end_app_wait', '')
+        this.$socketClient.set('IS_VISUAL_APP_ON', 0)
         this.clearBoard()
       } else {
         // start new trial
@@ -342,7 +348,7 @@ export default {
     endLogTrajectory() {
       clearInterval(this.trajectoryLogInterval)
       this.trajectoryLogInterval = null
-      this.$mqtt.publish('event/log/trajectory', JSON.stringify(this.trajectoryLog))
+      this.$socketClient.publish('event/log/trajectory', JSON.stringify(this.trajectoryLog))
       console.log('sent trajectory through mqtt...')
       this.trajectoryLog = []
     },
@@ -362,7 +368,7 @@ export default {
           this.isClimbing = false
           clearTimeout(climbingTimout)
         }, 10000)
-        this.$mqtt.publish('event/log/experiment', `screen climbing detected on trial${this.trial_id}`)
+        this.$socketClient.publish('event/log/experiment', `screen climbing detected on trial${this.trial_id}`)
       }
     }
   }

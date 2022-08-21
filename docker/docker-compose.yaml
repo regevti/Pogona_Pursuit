@@ -1,33 +1,33 @@
 version: '2.3'
 
 services:
-  arena:
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile-arena
-    image: pogona_arena:${arena_tag-latest}
-    container_name: arena
-    privileged: true
-    depends_on:
-      - cache
-      - mqtt
-      - logger
-    volumes:
-    - ../Arena:/arena
-    - ../pogona_hunter:/pogona_hunter
-    - /tmp/.X11-unix:/tmp/.X11-unix:ro
-    - ${MEDIA_DIR-/tmp}:/arena/media
-    restart: "no"
-    runtime: nvidia
-    command: "flask run --host=0.0.0.0"
-    ports:
-      - 3350:8888
-      - 3351:5000
-    environment:
-      - FLASK_APP=api.py
-      - LC_ALL=C.UTF-8
-      - LANG=C.UTF-8
-      - PYTHONUNBUFFERED=1
+#  arena:
+#    build:
+#      context: ..
+#      dockerfile: ./docker/Dockerfile-arena
+#    image: pogona_arena:${arena_tag-latest}
+#    container_name: arena
+#    privileged: true
+#    depends_on:
+#      - cache
+#      - mqtt
+#      - logger
+#    volumes:
+#    - ../Arena:/arena
+#    - ../pogona_hunter:/pogona_hunter
+#    - /tmp/.X11-unix:/tmp/.X11-unix:ro
+#    - ${MEDIA_DIR-/tmp}:/arena/media
+#    restart: "no"
+#    runtime: nvidia
+#    command: "flask run --host=0.0.0.0"
+#    ports:
+#      - 3350:8888
+#      - 3351:5000
+#    environment:
+#      - FLASK_APP=api.py
+#      - LC_ALL=C.UTF-8
+#      - LANG=C.UTF-8
+#      - PYTHONUNBUFFERED=1
 
   app:
     build:
@@ -37,67 +37,57 @@ services:
     container_name: pogona_hunter
     depends_on:
       - mqtt
-    restart: "no"
+    restart: "unless-stopped"
     command: "http-server dist"
 #    volumes:
 #    - ../pogona_hunter:/app
     ports:
      - 8080:8080
 
-  logger:
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile-logger
-    image: pogona_logger:${logger_tag-latest}
-    container_name: logger
-    depends_on:
-      - mqtt
-      - cache
-    restart: "no"
-    command: 'celery -A logger worker --loglevel=INFO'
-    devices:
-      - ${PARPORT_DEVICE-/dev/parport0}
-    volumes:
-      - ../Arena:/logger
-    environment:
-      - PYTHONUNBUFFERED=1
-      - IS_USE_PARPORT=${IS_USE_PARPORT-1}
+#  logger:
+#    build:
+#      context: ..
+#      dockerfile: ./docker/Dockerfile-logger
+#    image: pogona_logger:${logger_tag-latest}
+#    container_name: logger
+#    depends_on:
+#      - mqtt
+#      - cache
+#    restart: "no"
+#    command: 'celery -A logger worker --loglevel=INFO'
+#    devices:
+#      - ${PARPORT_DEVICE-/dev/parport0}
+#    volumes:
+#      - ../Arena:/logger
+#    environment:
+#      - PYTHONUNBUFFERED=1
+#      - IS_USE_PARPORT=${IS_USE_PARPORT-1}
 
-  explore:
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile-explore
-    image: pogona_explore:${explore_tag-latest}
-    container_name: explore
-    command: 'flask run --host=0.0.0.0'
-    restart: "no"
-    ports:
-      - 3352:5000
-    volumes:
-      - ../Arena:/explore
-      - ${EXPLORE_DIR-../Arena/experiments}:/explore/experiments
-    environment:
-      - PYTHONUNBUFFERED=1
-      - EXPLORE_EXPERIMENT_DIR=/explore/experiments
-      - FLASK_APP=explore.py
-      - LC_ALL=C.UTF-8
-      - LANG=C.UTF-8
-
-        # pose:
-        #build:
-        #context: ..
-        #dockerfile: ./docker/Dockerfile-pose
-        #container_name: pose
-        #image: pose
-        # volumes:
-        #- ${EXPLORE_DIR-../Arena/experiments}:/data/experiments
-        #runtime: nvidia
+#  explore:
+#    build:
+#      context: ..
+#      dockerfile: ./docker/Dockerfile-explore
+#    image: pogona_explore:${explore_tag-latest}
+#    container_name: explore
+#    command: 'flask run --host=0.0.0.0'
+#    restart: "no"
+#    ports:
+#      - 3352:5000
+#    volumes:
+#      - ../Arena:/explore
+#      - ${EXPLORE_DIR-../Arena/experiments}:/explore/experiments
+#    environment:
+#      - PYTHONUNBUFFERED=1
+#      - EXPLORE_EXPERIMENT_DIR=/explore/experiments
+#      - FLASK_APP=explore.py
+#      - LC_ALL=C.UTF-8
+#      - LANG=C.UTF-8
 
   mqtt:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile-mqtt
-    restart: "no"
+    restart: "unless-stopped"
     image: pogona_mqtt:${mqtt_tag-latest}
     container_name: mqtt
     environment:
@@ -107,27 +97,20 @@ services:
       - 0.0.0.0:9001:9001
 
   cache:
-    image: redis
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-cache
+    image: pogona_cache:${cache_tag-latest}
     container_name: cache
-    restart: "no"
+    restart: "unless-stopped"
     ports:
     - 6379:6379
+    - 6380:6380
 
-#  rabbitmq:
-#    image: rabbitmq:3-management
-#    container_name: rabbitmq
-#    restart: always
-#    ports:
-#      - 5672:5672
-#      - 15672:15672
-
-#  mongo:
-#    image: mongo
-#    restart: always
-#
-#  mongo-express:
-#    image: mongo-express
-#    restart: always
-#    ports:
-#      - 27017:27017
-#      - 8081:8081
+  db:
+    image: timescale/timescaledb-ha:pg14-latest
+    restart: "unless-stopped"
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_PASSWORD=password

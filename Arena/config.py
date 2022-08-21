@@ -1,4 +1,6 @@
 from environs import Env
+from enum import Enum, auto
+
 env = Env()
 env.read_env()
 
@@ -12,6 +14,7 @@ experiments_dir = env('EXPERIMENTS_DIR', "experiments")
 explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', experiments_dir)
 extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
 time_between_blocks = env.int('time_between_blocks', 300)
+experiments_timeout = env.int('EXPERIMENTS_TIMEOUT', 60 * 60)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
@@ -26,76 +29,106 @@ reward_types = [
 # API
 static_files_dir = env('STATIC_FILES_DIR', 'static')
 management_url = env('MANAGEMENT_URL', 'http://localhost:3351')
-max_blocks = 20
+api_max_blocks_to_show = 20
 
 # Cache (Redis)
 redis_host = env('REDIS_HOST', 'cache')
+console_topic = "log/console"
+experiment_metrics = {
+    'touch': {
+        'is_write_csv': True,
+        'is_write_db': True,
+        'csv_file': 'screen_touches.csv',
+        'is_overall_experiment': False
+    },
+    'trajectory': {
+        'is_write_csv': True,
+        'is_write_db': False,
+        'csv_file': 'bug_trajectory.csv',
+        'is_overall_experiment': False
+    },
+    'temperature': {
+        'is_write_csv': False,
+        'is_write_db': True,
+        'is_overall_experiment': True
+    },
+    'video_frames': {
+        'is_write_csv': True,
+        'is_write_db': False,
+        'csv_file': 'video_frames.csv',
+        'is_overall_experiment': False
+    },
+    'trials_times': {
+        'is_write_csv': False,
+        'is_write_db': True,
+        'is_overall_experiment': False
+    },
+}
+commands_topics = {
+    'reward': 'cmd/arena/reward',
+    'led_light': 'cmd/arena/led_light',
 
-# MQTT
-mqtt_host = env('MQTT_HOST', 'mqtt')
-experiment_topic = "event/log/experiment"
-log_topic_prefix = "event/log/"
-logger_files = {
-    'touch': 'screen_touches.csv',
-    'prediction': 'predictions.csv',
-    'trajectory': 'bug_trajectory.csv',
-    'temperature': 'temperature.csv',
-    'video_frames': 'video_frames.csv',
-    'trials_times': 'trials_times.csv'
+    'start_recording': 'cmd/management/start_recording',
+    'stop_recording': 'cmd/management/stop_recording',
+    'arena_shutdown': 'cmd/management/arena_shutdown',
+
+    'init_bugs': 'cmd/visual_app/init_bugs',
+    'init_media': 'cmd/visual_app/init_media',
+    'hide_bugs': 'cmd/visual_app/hide_bugs',
+    'hide_media': 'cmd/visual_app/hide_media',
+    'reload_app': 'cmd/visual_app/reload_app',
 }
 subscription_topics = {
-    'reward': 'event/command/reward',
-    'led_light': 'event/command/led_light',
-    'end_app_wait': 'event/command/end_app_wait',
-    'end_experiment': 'event/command/end_experiment',
-    'gaze_external': 'event/command/gaze_external',
-    'touch': 'event/log/touch',
-    'hit': 'event/log/hit',
-    'prediction': 'event/log/prediction',
-    'trajectory': 'event/log/trajectory',
-    'temperature': 'event/log/temperature',
-    'video_frames': 'event/log/video_frames',
-    'trials_times': 'event/log/trials_times',
-    'block_log': experiment_topic
+    'arena_operations': 'cmd/arena/*',
+    'metrics_logger': 'log/metric/*',
 }
+metric_channel_prefix = 'log/metric'
+subscription_topics.update({k: f'{metric_channel_prefix}/{k}' for k in experiment_metrics.keys()})
+subscription_topics.update(commands_topics)
 
 # Arena
+default_exposure = 10000
+cameras = {
+    'color': {
+        'id': 'DEV_1AB22C017E6D',
+        'module': 'allied_vision',
+        'fps': 80,
+        'exposure': 12000,
+        'image_size': [1088, 1456, 3],
+        'listeners': ['video_writer']
+    },
+    'left': {
+        'id': 'DEV_1AB22C017E70',
+        'module': 'allied_vision',
+        'fps': 80,
+        'exposure': default_exposure,
+        'image_size': [1088, 1456, 3],
+        'listeners': ['video_writer']
+    }
+}
+arena_modules = {
+    'cameras': {
+        'allied_vision': ('cameras.allied_vision', 'AlliedVisionCamera'),
+    },
+    'video_writer': ('image_handlers.video_writer', 'VideoWriter')
+}
+arena_manager_address = env('ARENA_MANAGER_ADDRESS', '127.0.0.1')
+arena_manager_port = env.int('ARENA_MANAGER_PORT', 50000)
+arena_manager_password = env('ARENA_MANAGER_PASSWORD', '123456')
+output_dir = env('OUTPUT_DIR', 'output')
+shm_buffer_dtype = 'uint8'
 pixels2cm = 0.01833304668870419
 default_num_frames = 1000
 default_max_throughput = 94578303
-exposure_time = env.int('EXPOSURE_TIME', 8000)
-fps = env.int('FPS', 60)
-output_dir = env('OUTPUT_DIR', 'output')
-saved_frame_resolution = env.list('SAVED_FRAME_RESOLUTION', [1440, 1088])
-camera_names = {
-    'realtime': '19506468',
-    'left': '19506455',
-    'stream': '19506481',
-    'back': '19506475',
-    # 'top': '20349303'
-}
-acquire_stop_options = {
-    'num_frames': int,
-    'record_time': int,
-    'manual_stop': 'cache',
-    'trial_alive': 'cache',
-    'thread_event': 'event'
-}
-info_fields = [
-    'AcquisitionFrameRate',
-    'AcquisitionMode',
-    'TriggerSource',
-    'TriggerMode',
-    'TriggerSelector',
-    'PayloadSize',
-    'EventSelector',
-    'LineStatus',
-    'ExposureTime',
-    'DeviceLinkCurrentThroughput',
-    'DeviceLinkThroughputLimit',
-    'DeviceMaxThroughput',
-    'DeviceLinkSpeed',
-]
+
+# Database
+db_name = env('DB_NAME', 'arena')
+db_host = env('DB_HOST', 'localhost')
+db_port = env.int('DB_PORT', 5432)
+db_engine = env('DB_ENGINE', 'postgresql+psycopg2')
+db_user = env('DB_USER', 'postgres')
+db_password = env('DB_PASSWORD', 'password')
+sqlalchemy_url = f'{db_engine}://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
 
 # Real-time Predictor
 detector_thresh = env.float('DETECTOR_THRESH', 0.9)

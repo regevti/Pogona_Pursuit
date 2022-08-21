@@ -1,6 +1,7 @@
 import argparse
 import inspect
 import json
+import threading
 import time
 import re
 from datetime import datetime
@@ -9,17 +10,15 @@ from multiprocessing.pool import ThreadPool
 from threading import Event
 from pathlib import Path
 import yaml
-
 import requests
 import pandas as pd
 
 import config
-from arena import record
-from cache import CacheColumns, RedisCache
-from mqtt import MQTTPublisher
+from loggers import get_logger
+from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, Serializer, to_integer
 
-mqtt_client = MQTTPublisher()
+cache = RedisCache()
 
 
 @dataclass
@@ -27,18 +26,25 @@ class Experiment:
     animal_id: str
     cameras: str
     num_blocks: int = 1
+    name: str = ''
     blocks: list = field(default_factory=list, repr=False)
     time_between_blocks: int = config.time_between_blocks
     is_use_predictions: bool = False
-    cache: RedisCache = field(default_factory=RedisCache, repr=False)
     extra_time_recording: int = config.extra_time_recording
 
     def __post_init__(self):
+        self.name = str(self)
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
-        self.blocks = [Block(i, self.cameras, self.cache, self.experiment_path,
+        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
-        self.day = datetime.now().strftime('%Y%m%d')
+        self.start_time = datetime.now()
+        self.day = self.start_time.strftime('%Y%m%d')
+        self.logger = get_logger(f'Experiment {str(self)}')
+        self.run_thread = None
+
+    def __str__(self):
+        return self.day
 
     @property
     def first_block(self):
@@ -59,37 +65,40 @@ class Experiment:
 
     def start(self):
         """Main Function for starting an experiment"""
-        log(f'>> Experiment {self.day} started\n')
-        self.init_experiment_cache()
-        self.turn_screen('on')
+        def _start():
+            self.logger.info('Experiment started')
+            self.init_experiment_cache()
+            self.turn_screen('on')
 
-        try:
-            for i, block in enumerate(self.blocks):
-                if i > 0:
-                    time.sleep(self.time_between_blocks)
-                block.start()
-        except EndExperimentException as exc:
-            log('>> Experiment stopped externally')
+            try:
+                for i, block in enumerate(self.blocks):
+                    if i > 0:
+                        time.sleep(self.time_between_blocks)
+                    block.start()
+            except EndExperimentException as exc:
+                self.logger.warning('Experiment stopped externally')
 
-        self.turn_screen('off')
-        time.sleep(3)
-        mqtt_client.publish_command('end_experiment')
+            self.turn_screen('off')
+            time.sleep(3)
+            cache.publish_command('end_experiment')
+
+        self.run_thread = threading.Thread(target=_start)
+        self.run_thread.start()
         return str(self)
 
     def save(self, data):
         """Save experiment arguments"""
 
-    @staticmethod
-    def turn_screen(val):
+    def turn_screen(self, val):
         """val must be on or off"""
         try:
             requests.get(f'http://localhost:5000/display/{val}')
         except Exception as exc:
-            print(f'error turning off screen: {exc}')
+            self.logger.exception(f'Error turning off screen: {exc}')
 
     def init_experiment_cache(self):
-        self.cache.set(CacheColumns.EXPERIMENT_NAME, self.day, timeout=self.experiment_duration)
-        self.cache.set(CacheColumns.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
+        cache.set(cc.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
+        cache.set(cc.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
 
     @property
     def experiment_path(self):
@@ -104,7 +113,7 @@ class Experiment:
 class Block:
     block_id: int
     cameras: str
-    cache: RedisCache
+    experiment_name: str
     experiment_path: str
     extra_time_recording: int = config.extra_time_recording
 
@@ -135,12 +144,13 @@ class Block:
     threads_event: Event = field(default_factory=Event, repr=False)
 
     def __post_init__(self):
+        self.logger = get_logger(f'{self.experiment_name} - Block {self.block_id}')
         if isinstance(self.bug_types, str):
             self.bug_types = self.bug_types.split(',')
         if isinstance(self.reward_bugs, str):
             self.reward_bugs = self.reward_bugs.split(',')
         elif not self.reward_bugs:
-            log(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
+            self.logger.warning(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
 
     @property
@@ -153,108 +163,106 @@ class Block:
         info = {k: getattr(self, k) for k in get_arguments(self) if k not in non_relevant_fields}
         info['start_time'] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
         info['version'] = config.version
-
         return info
 
     def start(self):
-        log(f'>> Block #{self.block_id} started')
         mkdir(self.block_path)
         if self.is_always_reward:
-            self.cache.set(CacheColumns.ALWAYS_REWARD, True, timeout=self.block_duration)
-        self.clear_app_content()
+            cache.set(cc.IS_ALWAYS_REWARD, True, timeout=self.block_duration)
+        self.hide_visual_app_content()
         try:
             self.run_block()
         except EndExperimentException as exc:
-            self.clear_app_content()
+            self.hide_visual_app_content()
             self.end_block()
-            log(f'>> block{self.block_id} was stopped externally')
+            self.logger.warning('block stopped externally')
             raise exc
 
-        log(self.block_summary)
+        self.logger.info(self.block_summary)
 
     def run_block(self):
         """Run block flow"""
         self.init_block()
-        self.pool = self.start_threads()
+        cache.publish_command('start_recording')
         self.wait(self.extra_time_recording)
 
-        self.start_app()
-        self.wait(self.block_duration, check_app_on=True)
+        self.start_trials()
+        self.wait(self.block_duration, check_visual_app_on=True)
 
-        self.end_app()
+        self.end_trials()
         self.wait(self.extra_time_recording)
         self.end_block()
+        cache.publish_command('stop_recording')
 
-    def start_threads(self) -> ThreadPool:
-        """Start cameras recording and temperature recording on a separate processes"""
-        self.threads_event.set()
-
-        def _start_recording():
-            self.block_log('recording started')
-            mqtt_client.publish_command('gaze_external', 'on')
-            if not config.is_debug_mode:
-                acquire_stop = {'record_time': self.block_duration, 'thread_event': self.threads_event}
-                try:
-                    record(cameras=self.cameras, output=self.videos_path, cache=self.cache,
-                           is_use_predictions=self.is_use_predictions, **acquire_stop)
-                except Exception as exc:
-                    print(f'Error in start_recording: {exc}')
-            else:
-                self.wait(self.block_duration)
-            mqtt_client.publish_command('gaze_external', 'off')
-            self.block_log('recording ended')
-
-        def _read_temp():
-            ser = Serializer()
-            print('read_temp started')
-            while self.threads_event.is_set():
-                try:
-                    line = ser.read_line()
-                    if line and isinstance(line, bytes):
-                        m = re.search(r'Temperature is: ([\d.]+)', line.decode())
-                        if m:
-                            mqtt_client.publish_event(config.subscription_topics['temperature'], m[1])
-                except Exception as exc:
-                    print(f'Error in read_temp: {exc}')
-                time.sleep(5)
-
-        pool = ThreadPool(processes=2)
-        pool.apply_async(_start_recording)
-        pool.apply_async(_read_temp)
-
-        return pool
+    # def start_threads(self) -> ThreadPool:
+    #     """Start cameras recording and temperature recording on a separate processes"""
+    #     self.threads_event.set()
+    #
+    #     def _start_recording():
+    #         self.logger.info('recording started')
+    #         cache.publish_command('gaze_external', 'on')
+    #         if not config.is_debug_mode:
+    #             acquire_stop = {'record_time': self.block_duration, 'thread_event': self.threads_event}
+    #             try:
+    #                 record(cameras=self.cameras, output=self.videos_path, cache=cache,
+    #                        is_use_predictions=self.is_use_predictions, **acquire_stop)
+    #             except Exception as exc:
+    #                 print(f'Error in start_recording: {exc}')
+    #         else:
+    #             self.wait(self.block_duration)
+    #         cache.publish_command('gaze_external', 'off')
+    #         self.logger.info('recording ended')
+    #
+    #     def _read_temp():
+    #         ser = Serializer()
+    #         print('read_temp started')
+    #         while self.threads_event.is_set():
+    #             try:
+    #                 line = ser.read_line()
+    #                 if line and isinstance(line, bytes):
+    #                     m = re.search(r'Temperature is: ([\d.]+)', line.decode())
+    #                     if m:
+    #                         cache.publish(config.subscription_topics['temperature'], m[1])
+    #             except Exception as exc:
+    #                 print(f'Error in read_temp: {exc}')
+    #             time.sleep(5)
+    #
+    #     pool = ThreadPool(processes=2)
+    #     pool.apply_async(_start_recording)
+    #     pool.apply_async(_read_temp)
+    #
+    #     return pool
 
     def init_block(self):
         mkdir(self.block_path)
         self.save_block_log()
-        mqtt_client.publish_command('led_light', 'on')
-        self.cache.set(CacheColumns.EXPERIMENT_BLOCK_ON, True, timeout=self.overall_block_duration)
-        self.cache.set(CacheColumns.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
+        cache.publish_command('led_light', 'on')
+        cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
+        cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
 
-    def end_block(self):
-        mqtt_client.publish_command('led_light', 'off')
-        self.terminate_pool()
-        self.cache.delete(CacheColumns.EXPERIMENT_BLOCK_ON)
-        self.cache.delete(CacheColumns.EXPERIMENT_BLOCK_PATH)
+    @staticmethod
+    def end_block():
+        cache.publish_command('led_light', 'off')
+        cache.delete(cc.EXPERIMENT_BLOCK_ID)
+        cache.delete(cc.EXPERIMENT_BLOCK_PATH)
 
-    def start_app(self):
+    def start_trials(self):
         if self.is_media_experiment:
-            mqtt_client.publish_command('init_media', self.media_options)
+            cache.publish_command('init_media', self.media_options)
         else:
-            mqtt_client.publish_command('init_bugs', self.bug_options)
+            cache.publish_command('init_bugs', self.bug_options)
 
-        self.cache.set(CacheColumns.APP_ON, True)
-        self.block_log(f'{self.block_type} initiated')
+        cache.set(cc.IS_VISUAL_APP_ON, True)
+        self.logger.info(f'{self.block_type} initiated')
 
-    def end_app(self):
-        self.clear_app_content()
-        mqtt_client.publish_command('end_app_wait')
+    def end_trials(self):
+        self.hide_visual_app_content()
 
-    def clear_app_content(self):
+    def hide_visual_app_content(self):
         if self.is_media_experiment:
-            mqtt_client.publish_command('hide_media')
+            cache.publish_command('hide_media')
         else:
-            mqtt_client.publish_command('hide_bugs')
+            cache.publish_command('hide_bugs')
 
     def save_block_log(self):
         with open(f'{self.block_path}/info.yaml', 'w') as f:
@@ -262,31 +270,25 @@ class Block:
         with open(f'{self.block_path}/config.yaml', 'w') as f:
             yaml.dump(config_log(), f)
 
-    def wait(self, duration, check_app_on=False):
+    def wait(self, duration, check_visual_app_on=False):
         """Sleep while checking for experiment end"""
+        self.logger.info(f'waiting for {duration} seconds...')
         t0 = time.time()
         while time.time() - t0 < duration:
-            if not self.cache.get(CacheColumns.EXPERIMENT_NAME):
+            # check for external stop of the experiment
+            if not cache.get(cc.EXPERIMENT_NAME):
                 raise EndExperimentException()
-            if check_app_on and not self.cache.get(CacheColumns.APP_ON):
-                self.block_log('Trials ended')
+            # check for visual app finish (due to bug catch, etc...)
+            if check_visual_app_on and not cache.get(cc.IS_VISUAL_APP_ON):
+                self.logger.info('Trials ended')
                 return
-            time.sleep(2)
-
-    def terminate_pool(self):
-        self.threads_event.clear()
-        time.sleep(3)
-        self.pool.close()
-        self.pool.join()
+            time.sleep(0.1)
 
     @property
     def media_options(self):
         return json.dumps({
             'url': f'{config.management_url}/media/{self.media_url}'
         })
-
-    def block_log(self, msg):
-        log(f'>> Block {self.block_id} {msg}')
 
     @property
     def bug_options(self):
@@ -311,7 +313,7 @@ class Block:
     @property
     def block_summary(self):
         log_string = f'Summary of Block {self.block_id}:\n'
-        touches_file = Path(self.block_path) / config.logger_files.get("touch", '')
+        touches_file = Path(self.block_path) / config.metrics_files.get("touch", '')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)
@@ -326,7 +328,7 @@ class Block:
         log_string += 2 * '\n'
 
         if num_hits and self.reward_type == 'end_trial':
-            mqtt_client.publish_event(config.subscription_topics['reward'], '')
+            cache.publish(config.subscription_topics['reward'], '')
 
         return log_string
 
@@ -382,11 +384,6 @@ class ExperimentCache:
 
 class EndExperimentException(Exception):
     """End Experiment"""
-
-
-def log(msg):
-    print(msg)
-    mqtt_client.publish_event(config.experiment_topic, msg)
 
 
 def config_log():

@@ -1,6 +1,6 @@
+import re
 from datetime import datetime, timedelta
 from flask import Flask, render_template, Response, request, jsonify
-import re
 from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,8 +10,8 @@ import seaborn as sns
 from dateutil import parser as date_parser
 import yaml
 
-import config
-from utils import to_integer
+import Arena.config as config
+from Arena.utils import to_integer
 
 app = Flask(__name__)
 

@@ -128,10 +128,12 @@
     });
 
     $("#stopStream").click(function () {
-      $("#stream_img").attr("src", "{{ url_for('static', filename='video_placeholder.jpg') }}")
-      const sCamera = $("#selectStreamCamera");
-      $(`input[value=${sCamera.val()}]`).prop("disabled", false);
-      sCamera.prop("disabled", false);
+        $.post('/stop_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
+            $("#stream_img").attr("src", "{{ url_for('static', filename='video_placeholder.jpg') }}")
+            const sCamera = $("#selectStreamCamera");
+            $(`input[value=${sCamera.val()}]`).prop("disabled", false);
+            sCamera.prop("disabled", false);
+        })
     });
 
     $("#stopExperiment").click(function () {
@@ -390,11 +392,12 @@
     }
 
     #footer {
-        position: fixed;
+        position: absolute;
         right: 0;
         bottom: 0;
         text-align: center;
         padding: 1em;
+        z-index: -5;
     }
 
     #controls-panel {

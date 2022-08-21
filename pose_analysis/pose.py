@@ -11,9 +11,9 @@ from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from scipy.signal import medfilt
 from dlclive import DLCLive, Processor
-from loader import Loader
-from pose_utils import colorline, calc_total_trajectory, distance, legend_colors
-import pose_config as config
+from pose_analysis.loader import Loader
+from pose_analysis.pose_utils import colorline, calc_total_trajectory, distance, legend_colors
+import pose_analysis.pose_config as config
 
 
 class PoseAnalyzer:

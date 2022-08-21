@@ -1,14 +1,11 @@
-from strikes import TrialStrikes
-from pose import PoseAnalyzer
-from loader import Loader
-from pose_utils import plot_screen, legend_colors, pixels2cm
-from pose_config import COLORS
+from pose_analysis.strikes import TrialStrikes
+from pose_analysis.pose import PoseAnalyzer
+from pose_analysis.loader import Loader
+from pose_analysis.pose_utils import plot_screen, legend_colors, pixels2cm
 
 from fpdf import FPDF
 import pandas as pd
 import numpy as np
-import pickle
-from icecream import ic
 from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap

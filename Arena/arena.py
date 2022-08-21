@@ -1,467 +1,367 @@
 #!/usr/bin/env python
-
 import time
-import re
 import cv2
-import json
-import argparse
-
-import pandas as pd
+import re
+import importlib
+import threading
+import multiprocessing as mp
+from multiprocessing.shared_memory import SharedMemory
+from multiprocessing.managers import SharedMemoryManager, SyncManager
 import numpy as np
-from multiprocessing.dummy import Pool
-import PySpin
+
 import config
-from cache import CacheColumns
-from mqtt import MQTTPublisher
-from utils import get_logger, calculate_fps, mkdir, get_log_stream, datetime_string
+from cache import RedisCache, CacheColumns as cc
+from utils import mkdir, datetime_string, Serializer
+from loggers import get_logger
+from experiment import Experiment
+from subscribers import Subscriber, MetricsLogger, ArenaOperations
 
-################################################ Predictor ################################################
-
-IS_PREDICTOR_READY = False
-if not config.is_disable_predictor:
-    try:
-        from Prediction import predictor
-        IS_PREDICTOR_READY = True
-    except Exception as exc:
-        print(f'Error loading detector: {exc}')
-
-################################################ End Predictor ################################################
+cache = RedisCache()
 
 
-class SpinCamera:
-    def __init__(self, cam: PySpin.Camera, acquire_stop=None, dir_path=None, cache=None, log_stream=None,
-                 is_use_predictions=False):
-        self.cam = cam
-        self.acquire_stop = acquire_stop or {'num_frames': config.default_num_frames}
-        self.dir_path = dir_path
-        self.cache = cache
-        self.is_use_predictions = is_use_predictions
-        self.thread_event = None
-        self.validate_acquire_stop()
+class ArenaProcess(mp.Process):
+    def __init__(self, shm: SharedMemory, lock: mp.Lock, name: str,
+                 cam_ready: mp.Event, image_unloaded: mp.Event, start_event: mp.Event,
+                 stop_event: mp.Event, frame_timestamp: mp.Value, cam_config: dict,
+                 output_dir: str):
+        super().__init__()
+        self.shm = shm
+        self.lock = lock
+        self.name = name
+        self.log = get_logger(str(self))
+        self.stop_event = stop_event
+        self.start_event = start_event
+        self.cam_ready = cam_ready
+        self.image_unloaded = image_unloaded
+        self.frame_timestamp = frame_timestamp
+        self.cam_config = cam_config
+        self.output_dir = output_dir
 
-        self.is_ready = False  # ready for acquisition
-        self.video_out = None
-        self.start_acquire_time = None
-        self.mqtt_client = MQTTPublisher()
+    def run(self):
+        raise NotImplemented('')
 
-        self.cam.Init()
-        self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
-        self.name = self.get_camera_name()
-        if self.is_realtime_mode:
-            self.logger.info('Working in realtime mode')
-            self.predictor_experiment_ids = []
-            self.predictor = predictor.gen_hit_predictor(self.logger, dir_path)
 
-    def begin_acquisition(self, exposure):
-        """Main function for running camera acquisition in trigger mode"""
-        try:
-            self.configure_camera(exposure)
-            self.cam.BeginAcquisition()
-            self.is_ready = True
-            self.logger.debug('Entering to trigger mode')
-        except Exception as exc:
-            self.logger.error(f'(run); {exc}')
+class Camera(ArenaProcess):
+    def __str__(self):
+        return f'Camera {self.name}'
+
+
+class ImageHandler(ArenaProcess):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.durations = []
+
+    def __str__(self):
+        return f'Image Handler {self.name}'
+
+    def run(self):
+        if self.start_event is not None:
+            self.start_event.wait()
+        self.cam_ready.wait(timeout=3)
+        self.log.info('Start frame handling')
+        while True:
+            if self.stop_event.is_set():
+                self.log.info('stop event detected')
+                break
+
+            if self.image_unloaded.is_set():
+                continue
+
+            with self.lock:
+                t0 = time.time()
+                frame = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
+                timestamp = self.frame_timestamp.value
+                self.durations.append(time.time() - t0)
+                self.image_unloaded.set()
+
+            self.handle(frame, timestamp)
+
+        self._on_end()
+
+    def handle(self, frame, timestamp):
+        raise NotImplemented('No handle method')
+
+    def _on_start(self):
+        pass
+
+    def _on_end(self):
+        pass
+
+
+class CameraUnit:
+    def __init__(self, name, cam_cls, start_event, global_stop, cam_config, output_dir, num_frames):
+        self.name = name
+        self.start_event = start_event
+        self.global_stop = global_stop
+        self.processes = []
+        self.shm_manager = SharedMemoryManager()
+        self.cam_image_unloaded = mp.Event()
+        self.cam_ready = mp.Event()
+        self.shm = None
+        self.stop_signal = mp.Event()
+        self.n_frames = mp.Value('i', 0)
+        self.listen_stop_events()
+        self.cam_config = cam_config
+        self.processes_cls = self.get_process_classes(cam_cls)
+        self.output_dir = output_dir
+        self.num_frames = num_frames
+
+    def get_process_classes(self, cam_cls):
+        listeners = [cam_cls]
+        for lst in self.cam_config['listeners']:
+            module_path, class_name = config.arena_modules[lst]
+            listeners.append(getattr(importlib.import_module(module_path), class_name))
+        return listeners
 
     def __del__(self):
-        if self.is_realtime_mode:
-            self.predictor.reset()
-        if self.cam.IsStreaming():
-            self.cam.EndAcquisition()
-        self.cam.DeInit()
+        self.stop()
 
-    def configure_camera(self, exposure):
-        """Configure camera for trigger mode before acquisition"""
-        try:
-            # self.cam.AcquisitionFrameRate.SetValue(FPS)
-            self.cam.AcquisitionFrameRateEnable.SetValue(False)
-            self.cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
-            self.cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
-            self.cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
-            self.cam.LineSelector.SetValue(PySpin.LineSelector_Line1)
-            self.cam.LineMode.SetValue(PySpin.LineMode_Input)
-            self.cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
-            self.cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput())
-            self.cam.ExposureTime.SetValue(exposure)
-            self.logger.info(f'Finished Configuration')
-            self.log_info()
+    def start(self):
+        self.shm_manager.start()
+        self.shm = self.shm_manager.SharedMemory(size=int(np.prod(self.cam_config['image_size'])))
+        lock = mp.Lock()
 
-        except PySpin.SpinnakerException as exc:
-            self.logger.error(f'(configure_images); {exc}')
+        cam_frame_timestamp = mp.Value("d", 0.0)
 
-    def acquire(self):
-        """Acquire images and measure FPS"""
-        if self.is_ready:
-            frame_times = list()
-            image_handler_times = list()
-            i = 0
-            err_count = 0
-            while self.is_acquire_allowed(i):
-                try:
-                    image_result = self.cam.GetNextImage(2000)  # Retrieve next received image
-                    if i == 0:
-                        self.start_acquire_time = time.time()
-                        self.logger.info('Acquisition Started')
+        for proc_cls in self.processes_cls:
+            proc = proc_cls(self.shm, lock, self.name, self.cam_ready, self.cam_image_unloaded,
+                            self.start_event, self.stop_signal, cam_frame_timestamp, self.cam_config, self.output_dir)
+            proc.start()
+            self.processes.append(proc)
 
-                    if image_result.IsIncomplete():  # Ensure image completion
-                        sts = image_result.GetImageStatus()
-                        self.logger.warning(f'Image incomplete with image status {sts}')
-                        if sts == 9:
-                            self.logger.warning(f'Breaking after status 9')
-                            image_result.Release()
-                            break
-                    else:
-                        frame_times.append(image_result.GetTimeStamp())
-                        t0 = time.time()
-                        self.image_handler(image_result, i)
-                        image_handler_times.append(time.time() - t0)
+    def stop(self):
+        self.stop_signal.set()
+        [proc.join() for proc in self.processes]
+        self.shm_manager.shutdown()
 
-                    image_result.Release()  # Release image
-
-                except PySpin.SpinnakerException as exc:
-                    self.logger.error(f'(acquire); {exc}')
-                    self.management_log(f'Acquire Error: {exc}')
+    def listen_stop_events(self):
+        def listener():
+            while not self.stop_signal.is_set():
+                if self.global_stop.is_set():
+                    self.stop()
                     break
+                time.sleep(0.01)
 
-                finally:
-                    i += 1
+        t = threading.Thread(target=listener)
+        t.start()
 
-            self.logger.info(f'Number of frames taken: {i}')
-            mean_fps, std_fps = self.analyze_timestamps(frame_times)
-            self.logger.debug(f'Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
-            self.logger.debug(f'Average image handler time: {np.mean(image_handler_times):.4f} seconds')
-            self.management_log(f'Number of frames taken: {i}, Calculated FPS: {mean_fps:.3f} ± {std_fps:.3f}')
-            if self.is_realtime_mode:
-                self.predictor.save_predictions()
-
-        self.cam.EndAcquisition()  # End acquisition
-        if self.video_out:
-            self.logger.info(f'Video path: {self.video_path}')
-            self.video_out.release()
-        self.is_ready = False
-
-    def image_handler(self, image_result: PySpin.ImagePtr, i: int):
-        img = image_result.GetNDArray()
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        if self.is_realtime_mode:
-            self.handle_prediction(img, i)
-
-        if not self.is_realtime_mode or config.is_predictor_experiment:
-            if self.dir_path and self.video_out is None:
-                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-                h, w = img.shape[:2]
-                self.video_out = cv2.VideoWriter(self.video_path, fourcc, config.fps, (w, h), True)
-
-            self.video_out.write(img)
-
-        # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
-
-    def validate_acquire_stop(self):
-        for key, value in self.acquire_stop.items():
-            assert key in config.acquire_stop_options, f'unknown acquire_stop: {key}'
-            if config.acquire_stop_options[key] == 'cache':
-                assert self.cache is not None
-            elif config.acquire_stop_options[key] == 'event':
-                assert value is not None
-                self.thread_event = value
-            else:
-                assert isinstance(value, int), f'acquire stop {key}: expected type int, received {type(value)}'
-
-    def is_acquire_allowed(self, iteration):
-        """Check all given acquire_stop conditions"""
-        for stop_key in self.acquire_stop.keys():
-            if not getattr(self, f'check_{stop_key}')(iteration):
-                return False
-        return True
-
-    def check_num_frames(self, iteration):
-        return iteration <= self.acquire_stop['num_frames']
-
-    def check_record_time(self, iteration):
-        if iteration == 0:
-            return True
-        return time.time() < self.start_acquire_time + self.acquire_stop['record_time']
-
-    def check_manual_stop(self, iteration):
-        return not self.cache.get(CacheColumns.MANUAL_RECORD_STOP)
-
-    def check_trial_alive(self, iteration):
-        return self.cache.get(CacheColumns.EXPERIMENT_BLOCK_ON)
-
-    def check_thread_event(self, iteration):
-        return self.thread_event.is_set()
-
-    def capture_image(self, exposure):
-        """Capture single image"""
-        self.begin_acquisition(exposure)
-        try:
-            image_result = self.cam.GetNextImage()
-            img = image_result.GetNDArray()
+    def stream(self):
+        while not self.stop_signal.is_set():
+            img = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            image_result.Release()
-            return img
-        except PySpin.SpinnakerException as exc:
-            self.logger.error(f'(image_capture); {exc}')
-        finally:
-            self.cam.EndAcquisition()
+            (flag, encodedImage) = cv2.imencode(".jpg", img)
 
-    def handle_prediction(self, img, i):
-        if config.is_predictor_experiment and not i % 60:
-            self.predictor_experiment_ids.append(i)
-            self.mqtt_client.publish_command('show_pogona', 3)
-        forecast, hit_point, hit_steps = self.predictor.handle_frame(img)
-        if hit_point is None or not hit_steps:
+            if not flag:
+                continue
+
+            time.sleep(0.03)
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
+
+
+class ArenaManager(SyncManager):
+    def __init__(self, **kwargs):
+        super().__init__(address=(config.arena_manager_address, config.arena_manager_port),
+                         authkey=config.arena_manager_password.encode('utf-8'), **kwargs)
+        self.start()
+        self.detected_cameras = {}
+        self.camera_modules = []
+        self.units = {}  # activated camera units
+        self.threads = {}
+
+        self.log = get_logger('Arena Management')
+        self.global_stop_event = self.Event()
+        self.global_start_event = self.Event()
+        self.arena_shutdown_event = self.Event()
+        self.cache_lock = self.Lock()
+        self._streaming_camera = None
+
+        self.start_management_listeners()
+        self.camera_init()
+        self.log.info('Arena manager created.')
+
+    def camera_init(self):
+        """Detect connected cameras"""
+        configured_modules = list(set([cam_config['module'] for cam_config in config.cameras.values()]))
+        self.log.info(f'Configured camera modules: {configured_modules}')
+        for module_name in configured_modules:
+            try:
+                cam_module, cam_class = config.arena_modules['cameras'][module_name]
+                cam_module = importlib.import_module(cam_module)
+                self.camera_modules.append(cam_module)
+                # each camera module must include an init function,
+                # which returns the Camera Processes according to the config
+                info_df = cam_module.scan_cameras()
+                self.detected_cameras.update({cam_name: getattr(cam_module, cam_class) for cam_name in info_df.index})
+            except Exception as exc:
+                raise Exception(f'unable to load camera module: {module_name}; {exc}')
+
+    def start_management_listeners(self):
+        subs_dict = {
+            'start_recording': self.start_recording,
+            'stop_recording': self.stop_recording,
+            'arena_shutdown': self.shutdown
+        }
+        for topic, callback in subs_dict.items():
+            self.threads[topic] = Subscriber(self.arena_shutdown_event, config.subscription_topics[topic], callback)
+            self.threads[topic].start()
+
+        self.threads['arena_operations'] = ArenaOperations(self.arena_shutdown_event)
+        self.threads['metrics_logger'] = MetricsLogger(self.arena_shutdown_event)
+
+    def log_temperature(self):
+        if self.threads.get('temp') is not None and self.threads['temp'].is_alive():
+            self.log.warning('Another temperature logger is already running')
             return
 
-        time2hit = (1 / config.fps) * hit_steps  # seconds
-        self.mqtt_client.publish_event('event/log/prediction', json.dumps({'hit_point': hit_point.tolist(), 'time2hit': time2hit}))
+        def _rec_temp():
+            ser = Serializer()
+            self.log.info('read_temp started')
+            while cache.get_current_experiment() and not self.arena_shutdown_event.is_set():
+                try:
+                    line = ser.read_line()
+                    if line and isinstance(line, bytes):
+                        m = re.search(r'Temperature is: ([\d.]+)', line.decode())
+                        if m:
+                            cache.publish(config.subscription_topics['temperature'], m[1])
+                except Exception as exc:
+                    self.log.exception(f'Error in read_temp: {exc}')
+                time.sleep(5)
 
-    def log_info(self):
-        """Print into logger the info of the camera"""
-        st = '\n'
-        for k, v in zip(config.info_fields, self.info()):
-            st += f'{k}: {v}\n'
-        self.logger.debug(st)
+        self.threads['temp'] = threading.Thread(target=_rec_temp)
+        self.threads['temp'].start()
 
-    def analyze_timestamps(self, frame_times):
-        """Convert camera's timestamp to server time, save server timestamps and calculate FPS"""
-        self.cam.TimestampLatch()
-        camera_time = self.cam.TimestampLatchValue.GetValue()
-        server_time = time.time()
-        frame_times = server_time - (camera_time - pd.Series(frame_times)) / 1e9
-        mean_fps, std_fps = calculate_fps(frame_times)
+    def record(self, exposure=None, cameras=None, output_dir=None, folder_prefix=None,
+               num_frames=None, rec_time=None):
+        """
+        Record videos from Arena's cameras
+        :param exposure: (int) Exposure time to be set to cameras
+        :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
+        :param output_dir: Output dir for videos and timestamps, if not exist save into a timestamp folder in default output dir.
+        :param folder_prefix: Prefix to be added to folder name. Not used if output is given.
+        :param num_frames: Limit number of frames to be taken by each camera
+        :param rec_time: Limit the recording time (seconds)
+        """
+        assert not (num_frames and rec_time), 'you can not set num_frames and rec_time together'
+        if cache.get(cc.IS_RECORDING):
+            self.log.exception('Another recording is happening, can not initiate a new record')
+            return
 
-        frame_times = pd.to_datetime(frame_times, unit='s')
-        frame_times.to_csv(self.timestamp_path)
-        if config.is_predictor_experiment and self.is_realtime_mode:
-            predictor_times = frame_times[self.predictor_experiment_ids]
-            predictor_times.to_csv(f'{self.dir_path}/predictor_times.csv')
+        self.global_start_event.clear()
+        self.global_stop_event.clear()
+        record_cameras = {cn: ccls for cn, ccls in self.detected_cameras.items() if (not cameras or cn in cameras)}
+        for cam_name, cam_class in record_cameras.items():
+            cam_config = config.cameras[cam_name].copy()
+            if exposure:
+                cam_config['exposure'] = exposure
+            output_dir = self.check_output_dir(output_dir, folder_prefix)
+            cu = CameraUnit(cam_name, cam_class, self.global_start_event, self.global_stop_event,
+                            cam_config, output_dir, num_frames)
+            cu.start()
+            self.units[cam_name] = cu
 
-        return mean_fps, std_fps
+        if rec_time or num_frames:
+            time.sleep(0.1)
+            self.start_recording()
 
-    def info(self) -> list:
-        """Get All camera values of INFO_FIELDS and return as a list"""
-        nan_string = 'x'
-        values = []
-        for field in config.info_fields:
-            try:
-                value = getattr(self.cam, field.replace(' ', ''))
-                if not value:
-                    raise Exception('No Value')
-                else:
-                    try:
-                        value = value.ToString()
-                    except PySpin.SpinnakerException:
-                        value = value.GetValue()
-            except Exception as exc:
-                self.logger.warning(f'{field}: {exc}')
-                value = nan_string
-            values.append(value)
+        if rec_time:
+            threading.Timer(rec_time, self.stop_recording).start()
 
-        return values
+    def start_recording(self):
+        if cache.get(cc.IS_RECORDING):
+            self.log.warning('recording in progress. can not start a new record')
+            return
+        cache.set(cc.IS_RECORDING, True)
+        self.global_start_event.set()
+        self.log.info('start recording signal was sent.')
 
-    def get_max_throughput(self):
-        try:
-            max_throughput = int(self.cam.DeviceMaxThroughput.GetValue())
-        except Exception as exc:
-            self.logger.warning(exc)
-            max_throughput = config.default_max_throughput
+    def stop_recording(self):
+        if cache.get(cc.IS_RECORDING):
+            self.global_stop_event.set()
+            cache.set(cc.IS_RECORDING, False)
+            self.log.info('stop recording signal was sent.')
 
-        return max_throughput
+    def shutdown(self) -> None:
+        self.arena_shutdown_event.set()
+        self.stop_recording()
+        [cu.stop() for cu in self.units.values()]
+        [lst.join() for lst in self.threads]
+        self.units = {}
+        self.log.info('shutdown')
+        super().shutdown()
 
-    def is_firefly(self):
-        """Check whether cam is a Firefly camere"""
-        nodemap_tldevice = self.cam.GetTLDeviceNodeMap()
-        device_name = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceModelName')).GetValue()
-        if 'firefly' in device_name.lower():
-            return True
+    def start_experiment(self, **kwargs):
+        exposure = kwargs.get('exposure')
+        cameras = kwargs.get('cameras')
+        e = Experiment(**kwargs)
+        self.record(exposure=exposure, cameras=cameras)
+        time.sleep(0.1)
+        e.start()
+        self.log_temperature()
 
-    def get_camera_name(self):
-        for name, device_id in config.camera_names.items():
-            if self.device_id == device_id:
-                return name
+    def display_info(self, return_string=False):
+        info_df = self.camera_modules[0].scan_cameras()
+        if return_string:
+            return f'\nCameras Info:\n\n{info_df.to_string()}\n'
+        return info_df
 
-    def management_log(self, msg):
-        self.mqtt_client.publish_event(config.experiment_topic, f'>> Camera {self.name}: {msg}')
+    def set_streaming_camera(self, cam_name):
+        if cam_name not in self.units:
+            self.record(cameras=[cam_name])
+        
+        if not self.units[cam_name].cam_ready.is_set():
+            self.units[cam_name].start()
+        self._streaming_camera = cam_name
+        self.log.info(f'Set streaming camera to {cam_name}')
 
-    @property
-    def video_path(self):
-        return f'{self.dir_path}/{self.name}_{datetime_string()}.avi'
+    def stream(self):
+        return self.units[self._streaming_camera].stream()
 
-    @property
-    def timestamp_path(self):
-        mkdir(f'{self.dir_path}/timestamps')
-        return f'{self.dir_path}/timestamps/{self.device_id}.csv'
+    def stop_stream(self):
+        if self._streaming_camera is not None:
+            self.units[self._streaming_camera].stop()
+        self._streaming_camera = None
 
-    @property
-    def device_id(self):
-        return get_device_id(self.cam)
-
-    @property
-    def is_realtime_mode(self):
-        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == config.realtime_camera
-
-
-############################################################################################################
-
-
-def get_device_id(cam) -> str:
-    """Get the camera device ID of the cam instance"""
-    nodemap_tldevice = cam.GetTLDeviceNodeMap()
-    device_id = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
-    m = re.search(r'\d{8}', device_id)
-    if not m:
-        return device_id
-    return m[0]
-
-
-def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
-    """Filter cameras according to camera_label, which can be a name or last digits of device ID"""
-    current_devices = [get_device_id(cam) for cam in cam_list]
-    chosen_devices = []
-    for cam_id in cameras_string.split(','):
-        if re.match(r'[a-zA-z]+', cam_id):
-            device = config.camera_names.get(cam_id)
-            if device and device in current_devices:
-                chosen_devices.append(device)
-        elif re.match(r'[0-9]+', cam_id):
-            chosen_devices.extend([d for d in current_devices if d[-len(cam_id):] == cam_id])
-
-    def _remove_from_cam_list(device_id):
-        devices = [get_device_id(c) for c in cam_list]
-        cam_list.RemoveByIndex(devices.index(device_id))
-
-    for d in current_devices:
-        if d not in chosen_devices:
-            _remove_from_cam_list(d)
+    @staticmethod
+    def check_output_dir(output, folder_prefix):
+        if not output:
+            folder_name = datetime_string()
+            if folder_prefix:
+                folder_name = f'{folder_prefix}_{folder_name}'
+            output = f"{config.output_dir}/{folder_name}"
+        return mkdir(output)
 
 
-def display_info():
-    """Function for displaying info of all FireFly cameras detected"""
-    df = []
-    index = []
-    system = PySpin.System.GetInstance()
-    cam_list = system.GetCameras()
-    for cam in cam_list:
-        sc = SpinCamera(cam)
-        if not sc.is_firefly():
-            continue
-        df.append(sc.info())
-        index.append(sc.device_id)
-
-    df = pd.DataFrame(df, columns=config.info_fields, index=index)
-    del cam, sc
-    output = f'\nCameras Info:\n\n{df.to_string()}\n'
-    cam_list.Clear()
-    # system.ReleaseInstance()
-    return output
-
-
-def start_camera(cam, acquire_stop, dir_path, exposure, cache, log_stream, is_use_predictions):
-    """Thread function for configuring and starting spin cameras"""
-    sc = SpinCamera(cam, acquire_stop, dir_path, cache=cache, log_stream=log_stream, is_use_predictions=is_use_predictions)
-    sc.begin_acquisition(exposure)
-    return sc
-
-
-def start_streaming(sc: SpinCamera):
-    """Thread function for start acquiring frames from camera"""
-    sc.acquire()
-    del sc
-
-
-def capture_image(camera: str, exposure=config.exposure_time) -> (np.ndarray, None):
-    """
-    Capture single image from a camera
-    :param camera: The camera name (don't use more than one camera)
-    :param exposure: The exposure of the camera
-    :return: Image numpy array
-    """
-    system = PySpin.System.GetInstance()
-    cam_list = system.GetCameras()
-    filter_cameras(cam_list, camera)
-    if len(cam_list) < 1:
-        print(f'No camera matches name: {camera}')
-        return
-    cam = SpinCamera(cam_list[0])
-    img = cam.capture_image(exposure)
-    del cam
-    cam_list.Clear()
-    return img
-
-
-def record(exposure=config.exposure_time, cameras=None, output=None, folder_prefix=None,
-           cache=None, is_use_predictions=False, **acquire_stop) -> str:
-    """
-    Record videos from Arena's cameras
-    :param exposure: The exposure time to be set to the cameras
-    :param cameras: (str) Cameras to be used. You can specify last digits of p/n or name. (for more than 1 use ',')
-    :param output: Output dir for videos and timestamps, if not exist save into a timestamp folder in default output dir.
-    :param folder_prefix: Prefix to be added to folder name. Not used if output is given.
-    :param cache: memory cache to be used by the cameras
-    :param is_use_predictions: relevant for realtime camera only - using strike prediction
-    """
-    if config.is_debug_mode:
-        return 'DEBUG MODE'
-    assert all(k in config.acquire_stop_options for k in acquire_stop.keys())
-    system = PySpin.System.GetInstance()
-    cam_list = system.GetCameras()
-    log_stream = get_log_stream()
-
-    if cameras:
-        filter_cameras(cam_list, cameras)
-
-    if not output:
-        folder_name = datetime_string()
-        if folder_prefix:
-            folder_name = f'{folder_prefix}_{folder_name}'
-        output = f"{config.output_dir}/{folder_name}"
-    output = mkdir(output)
-
-    filtered = [(cam, acquire_stop, output, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]
-    print(f'\nCameras detected: {len(filtered)}')
-    print(f'Acquire Stop: {acquire_stop}')
-    if filtered:
-        with Pool(len(filtered)) as pool:
-            results = pool.starmap(start_camera, filtered)
-            pool.starmap(start_streaming, [(sc,) for sc in results])
-        del filtered, results  # must delete this list in order to destroy all pointers to cameras.
-
-    cam_list.Clear()
-    # system.ReleaseInstance()
-
-    return log_stream.getvalue()
-
-
-def main():
-    """Main function for Arena capture"""
-    ap = argparse.ArgumentParser(description="Tool for capturing multiple cameras streams in the arena.")
-    ap.add_argument("-n", "--num_frames", type=int, help=f"Specify Number of Frames.")
-    ap.add_argument("-t", "--record_time", type=int, help=f"Specify record duration in seconds.")
-    ap.add_argument("-m", "--manual_stop", action="store_true", default=False,
-                    help=f"Stop record using cache key MANUAL_RECORD_STOP.")
-    ap.add_argument("--experiment_alive", action="store_true", default=False,
-                    help=f"Stop record if the experiment ended")
-    ap.add_argument("-o", "--output", type=str, default=config.output_dir,
-                    help=f"Specify output directory path. Default={config.output_dir}")
-    ap.add_argument("-e", "--exposure", type=int, default=config.exposure_time,
-                    help=f"Specify cameras exposure time. Default={config.exposure_time}")
-    ap.add_argument("-c", "--camera", type=str, required=False,
-                    help=f"filter cameras by last digits or according to CAMERA_NAMES (for more than one use ',').")
-    ap.add_argument("-i", "--info", action="store_true", default=False,
-                    help=f"Show cameras information")
-
-    args = vars(ap.parse_args())
-
-    if args.get('info'):
-        print(display_info())
-    else:
-        acquire_stop = {}
-        for key in config.acquire_stop_options:
-            if key in args:
-                acquire_stop[key] = args[key]
-        record(args.get('exposure'), args.get('camera'), args.get('output'), **acquire_stop)
+# def main():
+#     """Main function for Arena capture"""
+#     ap = argparse.ArgumentParser(description="Tool for capturing multiple cameras streams in the arena.")
+#     ap.add_argument("-n", "--num_frames", type=int, help=f"Specify Number of Frames.")
+#     ap.add_argument("-t", "--record_time", type=int, help=f"Specify record duration in seconds.")
+#     ap.add_argument("-m", "--manual_stop", action="store_true", default=False,
+#                     help=f"Stop record using cache key MANUAL_RECORD_STOP.")
+#     ap.add_argument("--experiment_alive", action="store_true", default=False,
+#                     help=f"Stop record if the experiment ended")
+#     ap.add_argument("-o", "--output", type=str, default=config.output_dir,
+#                     help=f"Specify output directory path. Default={config.output_dir}")
+#     ap.add_argument("-e", "--exposure", type=int, default=config.exposure_time,
+#                     help=f"Specify cameras exposure time. Default={config.exposure_time}")
+#     ap.add_argument("-c", "--camera", type=str, required=False,
+#                     help=f"filter cameras by last digits or according to CAMERA_NAMES (for more than one use ',').")
+#     ap.add_argument("-i", "--info", action="store_true", default=False,
+#                     help=f"Show cameras information")
+#
+#     args = vars(ap.parse_args())
+#
+#     if args.get('info'):
+#         print(display_info())
+#     else:
+#         acquire_stop = {}
+#         for key in config.acquire_stop_options:
+#             if key in args:
+#                 acquire_stop[key] = args[key]
+#         record(args.get('exposure'), args.get('camera'), args.get('output'), **acquire_stop)
 
 
 if __name__ == '__main__':
-    main()
+    mgr = ArenaManager()
+    mgr.record()

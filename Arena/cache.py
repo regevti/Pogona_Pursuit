@@ -1,6 +1,5 @@
 import redis
 import config
-EXPERIMENTS_TIMEOUT = 60 * 60
 
 
 class Column:
@@ -12,14 +11,14 @@ class Column:
 
 class CacheColumns:
     """Cache Columns used by RedisCache"""
-    EXPERIMENT_NAME = Column('EXPERIMENT_NAME', str, EXPERIMENTS_TIMEOUT)
-    EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, EXPERIMENTS_TIMEOUT)
-    EXPERIMENT_BLOCK_PATH = Column('EXPERIMENT_BLOCK_PATH', str, EXPERIMENTS_TIMEOUT)
-    EXPERIMENT_BLOCK_ON = Column('EXPERIMENT_BLOCK_ON', bool, EXPERIMENTS_TIMEOUT)
-    APP_ON = Column('APP_ON', bool, EXPERIMENTS_TIMEOUT)
-    ALWAYS_REWARD = Column('ALWAYS_REWARD', bool, EXPERIMENTS_TIMEOUT)
+    EXPERIMENT_NAME = Column('EXPERIMENT_NAME', str, config.experiments_timeout)
+    EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, config.experiments_timeout)
+    EXPERIMENT_BLOCK_ID = Column('EXPERIMENT_BLOCK_ID', int, config.experiments_timeout)
+    EXPERIMENT_BLOCK_PATH = Column('EXPERIMENT_BLOCK_PATH', str, config.experiments_timeout)
     STREAM_CAMERA = Column('STREAM_CAMERA', str, 60)
-    MANUAL_RECORD_STOP = Column('MANUAL_RECORD_STOP', bool, 5)
+    IS_RECORDING = Column('IS_RECORDING', bool, None)
+    IS_VISUAL_APP_ON = Column('IS_VISUAL_APP_ON', bool, config.experiments_timeout)
+    IS_ALWAYS_REWARD = Column('IS_ALWAYS_REWARD', bool, config.experiments_timeout)
     IS_REWARD_TIMEOUT = Column('IS_REWARD_TIMEOUT', bool, 30)
 
 
@@ -47,3 +46,16 @@ class RedisCache:
 
     def delete(self, cache_column: Column):
         return self._redis.delete(cache_column.name)
+
+    def publish(self, channel, payload=''):
+        self._redis.publish(channel, payload)
+
+    def publish_command(self, command, payload=''):
+        assert command in config.commands_topics, f'command {command} is not in config commands_topics'
+        self.publish(config.commands_topics[command], payload)
+
+    def get_current_experiment(self):
+        return self.get(CacheColumns.EXPERIMENT_NAME)
+
+    def stop_experiment(self):
+        self.delete(CacheColumns.EXPERIMENT_NAME)

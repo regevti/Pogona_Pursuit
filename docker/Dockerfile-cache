@@ -1,0 +1,15 @@
+FROM redis
+
+RUN apt-get update && apt-get install -y supervisor npm
+RUN apt-get update && apt-get install -y curl && curl -sL https://deb.nodesource.com/setup_14.x | bash -  \
+    && apt-get install -y nodejs
+RUN mkdir "/websocket"
+
+COPY redis/server.js /websocket
+COPY redis/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+RUN cd "/websocket" && npm install ws "redis@^4.2.0"
+RUN npm install -g nodemon
+    #"@babel/core" "@babel/node" "@babel/preset-env" "@babel/cli" "@babel/polyfill"
+
+CMD ["/usr/bin/supervisord"]

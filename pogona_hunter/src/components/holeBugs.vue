@@ -271,12 +271,12 @@ export default {
     },
     logTrialTimes() {
       let endTime = Date.now()
-      this.$mqtt.publish('event/log/trials_times', JSON.stringify({
-        trial: this.trialId,
-        start: this.trialStart,
+      this.$socketClient.publish('log/metric/trials_times', JSON.stringify({
+        trial_id: this.trialId,
+        start_time: this.trialStart,
         bug_type: this.currentBugType,
         duration: (endTime - this.trialStart) / 1000,
-        end: endTime
+        end_time: endTime
       }))
     }
   }

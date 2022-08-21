@@ -4,10 +4,10 @@ from functools import lru_cache
 import pandas as pd
 import pickle
 import cv2
-from pose import PoseAnalyzer
+from pose_analysis.pose import PoseAnalyzer
 from scipy.signal import find_peaks
-from loader import Loader, closest_index
-from pose_utils import *
+from pose_analysis.loader import Loader, closest_index
+from pose_analysis.pose_utils import *
 
 
 NUM_FRAMES_TO_PLOT = 5
