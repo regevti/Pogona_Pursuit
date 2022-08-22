@@ -1,24 +1,46 @@
 import sys
+import time
 import logging
+import logging.handlers
+import logging.config
 import traceback
 import multiprocessing as mp
 import threading
 
 
-_handler = None
+def logger_thread(q: mp.Queue, stop_event: mp.Event):
+    def _logger_thread():
+        logger = logging.getLogger('logger_thread')
+        logger.setLevel(logging.DEBUG)
+        h = logging.StreamHandler()
+        h.setFormatter(CustomFormatter())
+        logger.addHandler(h)
+
+        while not stop_event.is_set():
+            record = q.get()
+            logger.handle(record)
+
+    t = threading.Thread(target=_logger_thread)
+    t.start()
+    return t
 
 
-def init_loggers():
-    global _handler
-    _handler = MultiProcessingLog()
+def get_process_logger(name, q: mp.Queue):
+    qh = logging.handlers.QueueHandler(q)
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(qh)
+    return logger
 
 
 def get_logger(name):
-    if _handler is None:
-        raise Exception('logger handler was not initialized')
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    logger.addHandler(_handler)
+    if not logger.handlers:
+        h = logging.StreamHandler()
+        h.setLevel(logging.DEBUG)
+        h.setFormatter(CustomFormatter())
+        logger.addHandler(h)
     return logger
 
 
@@ -28,7 +50,7 @@ class CustomFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    format = "%(asctime)s - %(name)s - %(levelname)s - %(msg)s"
+    format = '%(asctime)s %(name)-15s %(levelname)-8s %(processName)-12s - %(message)s'
 
     FORMATS = {
         logging.DEBUG: grey + format + reset,
@@ -40,10 +62,11 @@ class CustomFormatter(logging.Formatter):
 
     def format(self, record):
         log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt)
+        formatter = logging.Formatter(log_fmt, '%Y-%m-%d %H:%M:%S')
         return formatter.format(record)
 
 
+# deprecated
 class MultiProcessingLog(logging.Handler):
     def __init__(self):
         logging.Handler.__init__(self)

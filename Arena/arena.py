@@ -1,8 +1,11 @@
 #!/usr/bin/env python
+import sys
 import time
 import cv2
 import re
 import importlib
+import atexit
+import signal
 import threading
 import multiprocessing as mp
 from multiprocessing.shared_memory import SharedMemory
@@ -11,12 +14,22 @@ import numpy as np
 
 import config
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, datetime_string, Serializer
-from loggers import get_logger
+from utils import mkdir, datetime_string
+from loggers import get_logger, get_process_logger, logger_thread
 from experiment import Experiment
 from subscribers import Subscriber, MetricsLogger, ArenaOperations
 
 cache = RedisCache()
+
+
+def signal_handler(signum, frame):
+    print('signal detected!')
+    cache.publish_command('arena_shutdown')
+    time.sleep(2)
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, signal_handler)
 
 
 class ArenaProcess(mp.Process):
@@ -161,24 +174,34 @@ class CameraUnit:
 
 class ArenaManager(SyncManager):
     def __init__(self, **kwargs):
-        super().__init__(address=(config.arena_manager_address, config.arena_manager_port),
-                         authkey=config.arena_manager_password.encode('utf-8'), **kwargs)
+        super().__init__(**kwargs) #address=(config.arena_manager_address, config.arena_manager_port),
+                         #authkey=config.arena_manager_password.encode('utf-8'), **kwargs)
         self.start()
         self.detected_cameras = {}
         self.camera_modules = []
         self.units = {}  # activated camera units
         self.threads = {}
+        self.experiment_threads = []
 
-        self.log = get_logger('Arena Management')
         self.global_stop_event = self.Event()
         self.global_start_event = self.Event()
         self.arena_shutdown_event = self.Event()
+        self.stop_logging_event = self.Event()
+        self.log_queue = self.Queue(-1)
+        self.logging_thread = logger_thread(self.log_queue, self.stop_logging_event)
+        self.log = get_process_logger('Arena Management', self.log_queue)
         self.cache_lock = self.Lock()
         self._streaming_camera = None
 
         self.start_management_listeners()
         self.camera_init()
         self.log.info('Arena manager created.')
+        atexit.register(self.arena_shutdown)
+        time.sleep(5)
+        cache.publish_command('arena_shutdown')
+
+    def __del__(self):
+        sys.exit(0)
 
     def camera_init(self):
         """Detect connected cameras"""
@@ -196,40 +219,35 @@ class ArenaManager(SyncManager):
             except Exception as exc:
                 raise Exception(f'unable to load camera module: {module_name}; {exc}')
 
+    def start_experiment(self, **kwargs):
+        exposure = kwargs.get('exposure')
+        cameras = kwargs.get('cameras')
+        e = Experiment(**kwargs)
+        self.start_experiment_listeners()
+        self.record(exposure=exposure, cameras=cameras)
+        time.sleep(0.1)
+        e.start()
+
     def start_management_listeners(self):
         subs_dict = {
             'start_recording': self.start_recording,
             'stop_recording': self.stop_recording,
-            'arena_shutdown': self.shutdown
+            'arena_shutdown': self.arena_shutdown
         }
         for topic, callback in subs_dict.items():
-            self.threads[topic] = Subscriber(self.arena_shutdown_event, config.subscription_topics[topic], callback)
+            self.threads[topic] = Subscriber(self.arena_shutdown_event, self.log_queue,
+                                             config.subscription_topics[topic], callback)
             self.threads[topic].start()
 
-        self.threads['arena_operations'] = ArenaOperations(self.arena_shutdown_event)
-        self.threads['metrics_logger'] = MetricsLogger(self.arena_shutdown_event)
+        self.threads['arena_operations'] = ArenaOperations(self.arena_shutdown_event, self.log_queue)
+        self.threads['arena_operations'].start()
 
-    def log_temperature(self):
-        if self.threads.get('temp') is not None and self.threads['temp'].is_alive():
-            self.log.warning('Another temperature logger is already running')
-            return
-
-        def _rec_temp():
-            ser = Serializer()
-            self.log.info('read_temp started')
-            while cache.get_current_experiment() and not self.arena_shutdown_event.is_set():
-                try:
-                    line = ser.read_line()
-                    if line and isinstance(line, bytes):
-                        m = re.search(r'Temperature is: ([\d.]+)', line.decode())
-                        if m:
-                            cache.publish(config.subscription_topics['temperature'], m[1])
-                except Exception as exc:
-                    self.log.exception(f'Error in read_temp: {exc}')
-                time.sleep(5)
-
-        self.threads['temp'] = threading.Thread(target=_rec_temp)
-        self.threads['temp'].start()
+    def start_experiment_listeners(self):
+        # start experiment listeners
+        for channel_name, d in config.experiment_metrics.items():
+            thread_name = f'metric_{channel_name}'
+            self.threads[thread_name] = MetricsLogger(self.arena_shutdown_event, self.log_queue,
+                                                      channel=config.subscription_topics[channel_name])
 
     def record(self, exposure=None, cameras=None, output_dir=None, folder_prefix=None,
                num_frames=None, rec_time=None):
@@ -276,28 +294,30 @@ class ArenaManager(SyncManager):
         self.log.info('start recording signal was sent.')
 
     def stop_recording(self):
+        self.log.warning('stop recording signal was sent.')
         if cache.get(cc.IS_RECORDING):
             self.global_stop_event.set()
             cache.set(cc.IS_RECORDING, False)
-            self.log.info('stop recording signal was sent.')
+            self.log.info('closing record...')
 
-    def shutdown(self) -> None:
+    def arena_shutdown(self) -> None:
+        self.log.warning('shutdown start')
+        self.log.info(f'NUm of threads: {len(self.threads)}')
         self.arena_shutdown_event.set()
         self.stop_recording()
         [cu.stop() for cu in self.units.values()]
-        [lst.join() for lst in self.threads]
-        self.units = {}
-        self.log.info('shutdown')
-        super().shutdown()
-
-    def start_experiment(self, **kwargs):
-        exposure = kwargs.get('exposure')
-        cameras = kwargs.get('cameras')
-        e = Experiment(**kwargs)
-        self.record(exposure=exposure, cameras=cameras)
-        time.sleep(0.1)
-        e.start()
-        self.log_temperature()
+        for name, t in self.threads.items():
+            if threading.current_thread().name != t.name:
+                try:
+                    t.join()
+                except:
+                    self.log.exception(f'Error joining thread {name}')
+        self.units, self.threads = {}, {}
+        self.log.info('closing logging thread')
+        self.stop_logging_event.set()
+        self.logging_thread.join()
+        self.shutdown()
+        print('shutdown finished')
 
     def display_info(self, return_string=False):
         info_df = self.camera_modules[0].scan_cameras()

@@ -2,3 +2,8 @@
 
 deeplabcut==2.1.8.2
 deeplabcut-live==0.0.2
+ruamel.yaml==0.16.12
+
+# deep learning
+torch==1.11.0
+torchvision==0.12.0

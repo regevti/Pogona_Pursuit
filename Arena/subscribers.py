@@ -1,3 +1,4 @@
+import re
 import json
 import time
 import inspect
@@ -6,50 +7,45 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 from parallel_port import ParallelPort
-import paho.mqtt.client as mqtt
 
 from cache import CacheColumns as cc, RedisCache
 import config
-from loggers import get_logger
-
-
-cache = RedisCache()
-_logger = get_logger('subscribers_main')
-# Initialize the parallel port
-parport = None
-if config.is_use_parport:
-    try:
-        parport = ParallelPort()
-        _logger.info('Parallel port is ready')
-    except Exception as exc:
-        _logger.exception(f'Error loading feeder: {exc}')
-else:
-    _logger.warning('Parallel port is not configured. some arena operation cannot work')
+from loggers import get_logger, get_process_logger
+from utils import Serializer
 
 
 class Subscriber(threading.Thread):
     sub_name = ''
 
-    def __init__(self, stop_event: threading.Event, channel=None, callback=None):
+    def __init__(self, stop_event: threading.Event, log_queue, channel=None, callback=None):
         super().__init__()
+        self.cache = RedisCache()
         self.channel = channel or config.subscription_topics[self.sub_name]
-        self.name = self.channel.split('/')[-1]
-        self.logger = get_logger(str(self))
+        self.name = self.sub_name or self.channel.split('/')[-1]
+        self.logger = get_process_logger(str(self), log_queue)
         self.stop_event = stop_event
         self.callback = callback
 
     def __str__(self):
-        return f'Subscriber {self.channel}'
+        return self.name
 
     def run(self):
-        p = cache._redis.pubsub()
-        p.psubscribe(self.channel)
-        while not self.stop_event.is_set():
-            message_dict = p.get_message(ignore_subscribe_messages=True)
-            if message_dict:
-                channel, data = self.parse_message(message_dict)
-                self._run(channel, data)
-            time.sleep(0.01)
+        try:
+            p = self.cache._redis.pubsub()
+            p.psubscribe(self.channel)
+            self.logger.info(f'start listening on {self.channel}')
+            while not self.stop_event.is_set():
+                message_dict = p.get_message(ignore_subscribe_messages=True, timeout=1)
+                if message_dict:
+                    channel, data = self.parse_message(message_dict)
+                    self._run(channel, data)
+                    if self.name == 'arena_shutdown':
+                        return
+                time.sleep(0.01)
+            p.punsubscribe()
+        except:
+            self.logger.exception(f'Error in subscriber {self.name}')
+
 
     def _run(self, channel, data):
         if self.callback is not None:
@@ -67,10 +63,8 @@ class Subscriber(threading.Thread):
 
 
 class MetricsLogger(Subscriber):
-    sub_name = 'metrics_logger'
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, stop_event: threading.Event, log_queue, channel=None, callback=None):
+        super().__init__(stop_event, log_queue, channel, callback)
         self.config = config.experiment_metrics[self.name]
 
     def __str__(self):
@@ -133,55 +127,102 @@ class MetricsLogger(Subscriber):
             self.logger.exception(f'ERROR saving event to csv; {exc}')
 
     def get_csv_filename(self) -> Path:
-        if cache.get_current_experiment():
+        if self.cache.get_current_experiment():
             if self.config.get('is_overall_experiment'):
-                parent = cache.get(cc.EXPERIMENT_PATH)
+                parent = self.cache.get(cc.EXPERIMENT_PATH)
             else:
-                parent = cache.get(cc.EXPERIMENT_BLOCK_PATH)
+                parent = self.cache.get(cc.EXPERIMENT_BLOCK_PATH)
         else:
             parent = f'events/{datetime.today().strftime("%Y%m%d")}'
             Path(parent).mkdir(parents=True, exist_ok=True)
 
         return Path(f'{parent}/{self.config["csv_file"]}')
 
-    @staticmethod
-    def handle_hit(payload):
-        if cache.get(cc.IS_ALWAYS_REWARD) and (payload.get('is_hit') or payload.get('is_reward_any_touch')) \
+    def handle_hit(self, payload):
+        if self.cache.get(cc.IS_ALWAYS_REWARD) and (payload.get('is_hit') or payload.get('is_reward_any_touch')) \
                 and payload.get('is_reward_bug'):
-            return reward()
+            self.cache.publish_command('reward')
+
+
+class TemperatureLogger(MetricsLogger):
+    def __init__(self, stop_event: threading.Event, log_queue, **kwargs):
+        super().__init__(stop_event, log_queue, channel=config.subscription_topics['temperature'])
+        self.n_tries = 5
+
+    def run(self):
+        ser = Serializer()
+        self.logger.info('read_temp started')
+        grace_count = 0
+        while self.cache.get_current_experiment() and self.can_loop() and grace_count < self.n_tries:
+            try:
+                line = ser.read_line()
+                if line and isinstance(line, bytes):
+                    m = re.search(r'Temperature is: ([\d.]+)', line.decode())
+                    if m:
+                        self.cache.publish(config.subscription_topics['temperature'], m[1])
+            except Exception as exc:
+                self.logger.exception(f'Error in read_temp: {exc}')
+                grace_count += 1
+            time.sleep(5)
 
 
 class ArenaOperations(Subscriber):
     sub_name = 'arena_operations'
 
-    def _run(self, topic, data):
-        topic = topic.split('/')[-1]
-        if topic == 'reward':
-            ret = reward()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Initialize the parallel port
+        self.parport = None
+        if config.is_use_parport:
+            try:
+                self.parport = ParallelPort()
+                self.logger.info('Parallel port is ready')
+            except Exception as exc:
+                self.logger.exception(f'Error loading feeder: {exc}')
+        else:
+            self.logger.warning('Parallel port is not configured. some arena operation cannot work')
+
+    def _run(self, channel, data):
+        if self.parport is None:
+            return
+        channel = channel.split('/')[-1]
+        if channel == 'reward':
+            ret = self.reward()
             if ret:
                 self.logger.info('Manual reward was given')
             else:
                 self.logger.warning('Could not give manual reward')
 
-        elif topic == 'led_light':
-            if parport:
+        elif channel == 'led_light':
+            if self.parport:
                 self.logger.info(f'LED lights turned {data}')
-                parport.led_lighting(data)
+                self.parport.led_lighting(data)
+
+    def reward(self):
+        if self.parport and not self.cache.get(cc.IS_REWARD_TIMEOUT):
+            self.parport.feed()
+            self.cache.set(cc.IS_REWARD_TIMEOUT, True)
+            self.cache.publish('cmd/visual_app/reward_given')
+            return True
 
 
-def reward():
-    if parport and not cache.get(cc.IS_REWARD_TIMEOUT):
-        parport.feed()
-        cache.set(cc.IS_REWARD_TIMEOUT, True)
-        cache.publish('cmd/visual_app/reward_given')
-        return True
+def get_experiment_subscribers(stop_event, log_queue):
+    threads = {}
+    for channel_name, d in config.experiment_metrics.items():
+        thread_name = f'metric_{channel_name}'
+        if channel_name == 'temperature':
+            threads[thread_name] = TemperatureLogger(stop_event, log_queue)
+        else:
+            threads[thread_name] = MetricsLogger(stop_event, log_queue,
+                                                 channel=config.subscription_topics[channel_name])
+    return threads
 
 
-def block_log(data):
-    try:
-        block_path = Path(cache.get(cc.EXPERIMENT_BLOCK_PATH))
-        if block_path.exists():
-            with (block_path / 'block.log').open('a') as f:
-                f.write(f'{datetime.now().isoformat()} - {data}\n')
-    except Exception as exc:
-        print(f'Error writing block_log; {exc}')
+# def block_log(data):
+#     try:
+#         block_path = Path(cache.get(cc.EXPERIMENT_BLOCK_PATH))
+#         if block_path.exists():
+#             with (block_path / 'block.log').open('a') as f:
+#                 f.write(f'{datetime.now().isoformat()} - {data}\n')
+#     except Exception as exc:
+#         print(f'Error writing block_log; {exc}')

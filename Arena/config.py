@@ -88,24 +88,25 @@ subscription_topics.update(commands_topics)
 
 # Arena
 default_exposure = 10000
-cameras = {
-    'color': {
-        'id': 'DEV_1AB22C017E6D',
-        'module': 'allied_vision',
-        'fps': 80,
-        'exposure': 12000,
-        'image_size': [1088, 1456, 3],
-        'listeners': ['video_writer']
-    },
-    'left': {
-        'id': 'DEV_1AB22C017E70',
-        'module': 'allied_vision',
-        'fps': 80,
-        'exposure': default_exposure,
-        'image_size': [1088, 1456, 3],
-        'listeners': ['video_writer']
-    }
-}
+cameras = {}
+# cameras = {
+#     'color': {
+#         'id': 'DEV_1AB22C017E6D',
+#         'module': 'allied_vision',
+#         'fps': 80,
+#         'exposure': 12000,
+#         'image_size': [1088, 1456, 3],
+#         'listeners': ['video_writer']
+#     },
+#     'left': {
+#         'id': 'DEV_1AB22C017E70',
+#         'module': 'allied_vision',
+#         'fps': 80,
+#         'exposure': default_exposure,
+#         'image_size': [1088, 1456, 3],
+#         'listeners': ['video_writer']
+#     }
+# }
 arena_modules = {
     'cameras': {
         'allied_vision': ('cameras.allied_vision', 'AlliedVisionCamera'),

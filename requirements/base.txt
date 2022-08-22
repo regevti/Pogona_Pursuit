@@ -1,7 +1,5 @@
 # queue messaging
-paho-mqtt==1.5.0
 redis==3.5.3
-celery[redis]==5.0.0
 PyYAML==5.3.1
 
 pyparallel==0.2.2
@@ -10,4 +8,4 @@ pyserial==3.4
 environs==8.0.0
 python-dateutil==2.8.1
 
-pandas==1.0.3
+pandas==1.4.3

@@ -4,18 +4,15 @@ import atexit
 import time
 from pathlib import Path
 from flask import Flask, render_template, Response, request, send_from_directory, jsonify
-
-from loggers import init_loggers
 import config
 from cache import RedisCache, CacheColumns as cc
 from utils import titlize, turn_display_on, turn_display_off
 from experiment import ExperimentCache
 from arena import ArenaManager
 
-init_loggers()
 app = Flask(__name__)
 cache = RedisCache()
-arena_mgr = ArenaManager(redis_cache=cache)
+arena_mgr = ArenaManager()
 atexit.register(arena_mgr.stop_recording)
 
 
