@@ -17,12 +17,15 @@ from utils import Serializer
 class Subscriber(threading.Thread):
     sub_name = ''
 
-    def __init__(self, stop_event: threading.Event, log_queue, channel=None, callback=None):
+    def __init__(self, stop_event: threading.Event, log_queue=None, channel=None, callback=None):
         super().__init__()
         self.cache = RedisCache()
         self.channel = channel or config.subscription_topics[self.sub_name]
         self.name = self.sub_name or self.channel.split('/')[-1]
-        self.logger = get_process_logger(str(self), log_queue)
+        if log_queue is None:
+            self.logger = get_logger(str(self))
+        else:
+            self.logger = get_process_logger(str(self), log_queue)
         self.stop_event = stop_event
         self.callback = callback
 
@@ -45,7 +48,6 @@ class Subscriber(threading.Thread):
             p.punsubscribe()
         except:
             self.logger.exception(f'Error in subscriber {self.name}')
-
 
     def _run(self, channel, data):
         if self.callback is not None:
@@ -204,6 +206,28 @@ class ArenaOperations(Subscriber):
             self.cache.set(cc.IS_REWARD_TIMEOUT, True)
             self.cache.publish('cmd/visual_app/reward_given')
             return True
+
+
+class AppHealthCheck(Subscriber):
+    sub_name = 'healthcheck'
+
+    def run(self):
+        try:
+            p = self.cache._redis.pubsub()
+            p.psubscribe(self.channel)
+            self.logger.info(f'start listening on {self.channel}')
+            while not self.stop_event.is_set():
+                self.cache.publish_command('healthcheck')
+                time.sleep(0.01)
+                message_dict = p.get_message(ignore_subscribe_messages=True, timeout=1)
+                if not message_dict or not message_dict.get('data'):
+                    self.logger.warning('App is not on!')
+                else:
+                    self.logger.info(message_dict)
+                time.sleep(2)
+            p.punsubscribe()
+        except:
+            self.logger.exception(f'Error in subscriber {self.name}')
 
 
 def get_experiment_subscribers(stop_event, log_queue):

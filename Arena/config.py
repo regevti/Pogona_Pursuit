@@ -30,10 +30,12 @@ reward_types = [
 static_files_dir = env('STATIC_FILES_DIR', 'static')
 management_url = env('MANAGEMENT_URL', 'http://localhost:3351')
 api_max_blocks_to_show = 20
+LOGGING_LEVEL = env('LOGGING_LEVEL', 'DEBUG')
+FLASK_PORT = env.int('FLASK_PORT', 5000)
 
 # Cache (Redis)
 redis_host = env('REDIS_HOST', 'cache')
-console_topic = "log/console"
+ui_console_channel = "cmd/visual_app/console"
 experiment_metrics = {
     'touch': {
         'is_write_csv': True,
@@ -71,12 +73,14 @@ commands_topics = {
     'start_recording': 'cmd/management/start_recording',
     'stop_recording': 'cmd/management/stop_recording',
     'arena_shutdown': 'cmd/management/arena_shutdown',
+    'end_experiment': 'cmd/management/end_experiment',
 
     'init_bugs': 'cmd/visual_app/init_bugs',
     'init_media': 'cmd/visual_app/init_media',
     'hide_bugs': 'cmd/visual_app/hide_bugs',
     'hide_media': 'cmd/visual_app/hide_media',
     'reload_app': 'cmd/visual_app/reload_app',
+    'healthcheck': 'cmd/visual_app/healthcheck'
 }
 subscription_topics = {
     'arena_operations': 'cmd/arena/*',
@@ -88,25 +92,24 @@ subscription_topics.update(commands_topics)
 
 # Arena
 default_exposure = 10000
-cameras = {}
-# cameras = {
-#     'color': {
-#         'id': 'DEV_1AB22C017E6D',
-#         'module': 'allied_vision',
-#         'fps': 80,
-#         'exposure': 12000,
-#         'image_size': [1088, 1456, 3],
-#         'listeners': ['video_writer']
-#     },
-#     'left': {
-#         'id': 'DEV_1AB22C017E70',
-#         'module': 'allied_vision',
-#         'fps': 80,
-#         'exposure': default_exposure,
-#         'image_size': [1088, 1456, 3],
-#         'listeners': ['video_writer']
-#     }
-# }
+cameras = {
+    'color': {
+        'id': 'DEV_1AB22C017E6D',
+        'module': 'allied_vision',
+        'fps': 80,
+        'exposure': 12000,
+        'image_size': [1088, 1456, 3],
+        'listeners': ['video_writer']
+    },
+    'left': {
+        'id': 'DEV_1AB22C017E70',
+        'module': 'allied_vision',
+        'fps': 80,
+        'exposure': default_exposure,
+        'image_size': [1088, 1456, 3],
+        'listeners': ['video_writer']
+    }
+}
 arena_modules = {
     'cameras': {
         'allied_vision': ('cameras.allied_vision', 'AlliedVisionCamera'),

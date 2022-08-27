@@ -74,7 +74,7 @@ class ExperimentAnalyzer:
                         if not info_path.exists():
                             continue
                         info = self.get_block_info(info_path)
-                        info['day'] = datetime.strptime(day_dir.name, '%Y%m%d').strftime('%d.%m.%y')
+                        info['day'] = datetime.strptime(day_dir.cam_name, '%Y%m%d').strftime('%d.%m.%y')
                         if not self.is_block_match_conditions(info):
                             continue
                         trial_data = self.get_trials_data(block_dir, info)
@@ -84,7 +84,7 @@ class ExperimentAnalyzer:
                         pass
 
                     except ImportError as exc:
-                        self.log(f'Error loading {block_dir.name}; {exc}')
+                        self.log(f'Error loading {block_dir.cam_name}; {exc}')
 
         if len(res_df) > 0:
             res_df = pd.concat(res_df)
@@ -178,7 +178,7 @@ class ExperimentAnalyzer:
     def get_days(self, animal_dir: Path) -> list:
         l = [a for a in animal_dir.glob('*') if not a.name.startswith('.')]
         if self.is_first_day:
-            l.sort(key=lambda x: x.name)
+            l.sort(key=lambda x: x.cam_name)
             return [l[0]]
         else:
             return [day_dir for day_dir in l if self.is_in_date_range(day_dir.name)]

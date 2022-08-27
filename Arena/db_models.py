@@ -94,7 +94,7 @@ class ORM:
 
     def commit_experiment(self, exp, blocks):
         with self.session() as s:
-            kwargs = {c.name: getattr(exp, c.name)
+            kwargs = {c.cam_name: getattr(exp, c.cam_name)
                       for c in Experiment.__table__.columns if c not in ['id', 'end_time']}
             self.experiment_model = Experiment(**kwargs)
             s.add(self.experiment_model)
@@ -103,7 +103,7 @@ class ORM:
                 self.commit_block(s, blk)
 
     def commit_block(self, s, blk):
-        kwargs = {c.name: getattr(self, c.name)
+        kwargs = {c.cam_name: getattr(self, c.cam_name)
                   for c in blk.__table__.columns if c not in ['id', 'end_time'] and not c.foreign_keys}
         kwargs['experiment_id'] = self.experiment_model.id
         s.add(blk(**kwargs))

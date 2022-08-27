@@ -1,16 +1,21 @@
 import json
+import logging
 import os
 import atexit
+import sys
 import time
 from pathlib import Path
-from flask import Flask, render_template, Response, request, send_from_directory, jsonify
+from flask import Flask, render_template, Response, request, send_from_directory, jsonify, logging as flask_logging
 import config
 from cache import RedisCache, CacheColumns as cc
 from utils import titlize, turn_display_on, turn_display_off
 from experiment import ExperimentCache
 from arena import ArenaManager
+from loggers import init_logger_config
 
-app = Flask(__name__)
+app = Flask('ArenaAPI')
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+init_logger_config()
 cache = RedisCache()
 arena_mgr = ArenaManager()
 atexit.register(arena_mgr.stop_recording)
@@ -19,15 +24,29 @@ atexit.register(arena_mgr.stop_recording)
 @app.route('/')
 def index():
     """Video streaming ."""
-    print(f'current dir: {os.getcwd()}')
     cached_experiments = [c.stem for c in Path(config.experiment_cache_path).glob('*.json')]
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
     return render_template('index.html', cameras=config.cameras.keys(), exposure=config.default_exposure,
-                           config=app_config, acquire_stop={k: titlize(k) for k in config.acquire_stop_options.keys()},
+                           config=app_config, acquire_stop={}, log_channel=config.ui_console_channel,
                            reward_types=config.reward_types, experiment_types=config.experiment_types,
                            media_files=list_media(), max_blocks=config.api_max_blocks_to_show, cached_experiments=cached_experiments,
                            extra_time_recording=config.extra_time_recording)
+
+
+@app.route('/check', methods=['GET'])
+def check():
+    txt = ''
+    if cache.get(cc.EXPERIMENT_NAME):
+        txt += 'Experiment is running\n'
+        txt += f'Experiment Name: {cache.get(cc.EXPERIMENT_NAME)}\n'
+        txt += f'Current Block ID: {cache.get(cc.EXPERIMENT_BLOCK_ID)}\n'
+    else:
+        txt += 'No experiment is running\n'
+
+    txt += f'Active Cameras: {cache.get(cc.ACTIVE_CAMERAS)}\n'
+    txt += f'Recording Cameras: {cache.get(cc.RECORDING_CAMERAS)}\n'
+    return Response(txt)
 
 
 @app.route('/record', methods=['POST'])
@@ -201,7 +220,6 @@ def set_stream_camera():
 @app.route('/stop_stream_camera', methods=['POST'])
 def stop_stream_camera():
     if request.method == 'POST':
-        # cache.set(CacheColumns.STREAM_CAMERA, request.form['camera'])
         arena_mgr.stop_stream()
         return Response('ok')
 
@@ -211,3 +229,28 @@ def video_feed():
     """Video streaming route. Put this in the src attribute of an img tag."""
     return Response(arena_mgr.stream(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+def initialize():
+    logger = logging.getLogger(app.name)
+    logger.setLevel(logging.DEBUG)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("""%(levelname)s in %(module)s [%(pathname)s:%(lineno)d]:\n%(message)s""")
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+
+if __name__ == "__main__":
+    # app.logger.removeHandler(flask_logging.default_handler)
+    # h = logging.StreamHandler(sys.stdout)
+    # h.setLevel(logging.WARNING)
+    # h.setFormatter(CustomFormatter())
+    # werklogger = logging.getLogger('werkzeug')
+    # werklogger.addHandler(h)
+    # app.debug = False
+    # logger = logging.getLogger(app.name)
+    # h = logging.StreamHandler()
+    # h.setFormatter(CustomFormatter())
+    # logger.addHandler(h)
+    app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)

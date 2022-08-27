@@ -7,14 +7,45 @@ import traceback
 import multiprocessing as mp
 import threading
 
+from cache import RedisCache
+import config
+
+cache = RedisCache()
+DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(processName)s - %(message)s'
+DEFAULT_DATEFMT = '%Y-%m-%d %H:%M:%S'
+_loggers = {}
+
+log_conf = {
+    'version': 1,
+    'formatters': {
+        'default': {
+            'format': DEFAULT_FORMAT,
+            'datefmt': DEFAULT_DATEFMT
+        }
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://flask.logging.wsgi_errors_stream',
+            'formatter': 'default'
+        }
+    },
+    'root': {
+        'level': config.LOGGING_LEVEL,
+        'handlers': ['console'],
+    }
+}
+
+
+def init_logger_config():
+    logging.config.dictConfig(log_conf)
+    root_logger = logging.getLogger()
+    root_logger.info('Logging is configured')
+
 
 def logger_thread(q: mp.Queue, stop_event: mp.Event):
     def _logger_thread():
-        logger = logging.getLogger('logger_thread')
-        logger.setLevel(logging.DEBUG)
-        h = logging.StreamHandler()
-        h.setFormatter(CustomFormatter())
-        logger.addHandler(h)
+        logger = get_logger('logger_thread')
 
         while not stop_event.is_set():
             record = q.get()
@@ -28,19 +59,23 @@ def logger_thread(q: mp.Queue, stop_event: mp.Event):
 def get_process_logger(name, q: mp.Queue):
     qh = logging.handlers.QueueHandler(q)
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.getLevelName(config.LOGGING_LEVEL))
     logger.addHandler(qh)
+    logger.propagate = False
     return logger
 
 
 def get_logger(name):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    if not logger.handlers:
-        h = logging.StreamHandler()
-        h.setLevel(logging.DEBUG)
-        h.setFormatter(CustomFormatter())
-        logger.addHandler(h)
+    logger.setLevel(logging.getLevelName(config.LOGGING_LEVEL))
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(CustomFormatter())
+    redis_handler = CachePublishHandler()
+    redis_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, DEFAULT_DATEFMT))
+    logger.addHandler(console_handler)
+    logger.addHandler(redis_handler)
+    logger.propagate = False
+    _loggers[name] = logger
     return logger
 
 
@@ -50,7 +85,7 @@ class CustomFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    format = '%(asctime)s %(name)-15s %(levelname)-8s %(processName)-12s - %(message)s'
+    format = DEFAULT_FORMAT
 
     FORMATS = {
         logging.DEBUG: grey + format + reset,
@@ -62,8 +97,24 @@ class CustomFormatter(logging.Formatter):
 
     def format(self, record):
         log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt, '%Y-%m-%d %H:%M:%S')
+        formatter = logging.Formatter(log_fmt, DEFAULT_DATEFMT)
         return formatter.format(record)
+
+
+class CachePublishHandler(logging.StreamHandler):
+    """
+    A handler class for publishing records through redis pub/sub
+    """
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            cache.publish(config.ui_console_channel, str(msg))
+            self.flush()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            self.handleError(record)
 
 
 # deprecated

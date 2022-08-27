@@ -5,11 +5,15 @@ import time
 import config
 from arena import Camera
 from image_handlers.video_writer import VideoWriter
+from cache import RedisCache, CacheColumns as cc
+
+
+cache = RedisCache()
 
 
 class AlliedVisionCamera(Camera):
     def __init__(self, *args, **kwargs):
-        super(AlliedVisionCamera, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.system = vimba.Vimba.get_instance()
         self.camera_time_delta = 0.0
 
@@ -49,12 +53,15 @@ class AlliedVisionCamera(Camera):
                 try:
                     self.configure(cam)
                     self.update_time_delta(cam)
-                    if self.start_event is not None:
-                        self.start_event.wait()
+                    if self.start_signal is not None:
+                        self.log.info(f'waiting for start_signal... {self.start_signal}')
+                        self.start_signal.wait()
                     self.log.info('start streaming')
-                    cam.start_streaming(self._frame_handler)
-                    self.stop_event.wait()
-                    if self.stop_event.is_set():
+                    cache.append_to_list(cc.RECORDING_CAMERAS, self.cam_name)
+                    cam.start_streaming(self._frame_handler, buffer_count=10)
+                    self.stop_signal.wait()
+                    cache.remove_from_list(cc.RECORDING_CAMERAS, self.cam_name)
+                    if self.stop_signal.is_set():
                         self.log.info('received stop event')
                 except KeyboardInterrupt:
                     pass
@@ -64,13 +71,13 @@ class AlliedVisionCamera(Camera):
 
     def _frame_handler(self, cam: vimba.Camera, frame: vimba.Frame):
         try:
-            self.image_unloaded.wait(timeout=0.2)
+            self.cam_image_unloaded.wait(timeout=0.2)
             img = frame.as_numpy_ndarray()
             with self.lock:
-                self.frame_timestamp.value = frame.get_timestamp() / 1e9 + self.camera_time_delta
+                self.cam_frame_timestamp.value = frame.get_timestamp() / 1e9 + self.camera_time_delta
                 buf_np = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
                 np.copyto(buf_np, img)
-                self.image_unloaded.clear()
+                self.cam_image_unloaded.clear()
                 if not self.cam_ready.is_set():
                     self.cam_ready.set()
         except Exception:
@@ -106,12 +113,7 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
                     break
             cam_names.append(cam_name)
         info = pd.DataFrame(info, index=cam_names)
-        if is_print:
-            with pd.option_context('display.max_colwidth', None,
-                                   'display.max_columns', None,
-                                   'display.max_rows', None):
-                print(info)
-                print()
+
     return info
 
 

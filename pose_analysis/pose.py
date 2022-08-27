@@ -254,7 +254,7 @@ class PoseAnalyzer:
         return s
 
     def validate_video(self):
-        assert self.video_path.exists(), f'video {self.video_path.name} does not exist'
+        assert self.video_path.exists(), f'video {self.video_path.cam_name} does not exist'
         assert self.video_path.suffix in ['.avi', '.mp4'], f'suffix {self.video_path.suffix} not supported'
 
     def load_dlc_config(self):

@@ -3,6 +3,7 @@ import inspect
 import json
 import threading
 import time
+import humanize
 import re
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -17,6 +18,7 @@ import config
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, Serializer, to_integer
+from subscribers import Subscriber
 
 cache = RedisCache()
 
@@ -33,18 +35,18 @@ class Experiment:
     extra_time_recording: int = config.extra_time_recording
 
     def __post_init__(self):
-        self.name = str(self)
+        self.start_time = datetime.now()
+        self.day = self.start_time.strftime('%Y%m%d')
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
         self.blocks = [Block(i, self.cameras, str(self), self.experiment_path,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
-        self.start_time = datetime.now()
-        self.day = self.start_time.strftime('%Y%m%d')
-        self.logger = get_logger(f'Experiment {str(self)}')
-        self.run_thread = None
+        self.logger = get_logger(f'Experiment')
+        self.threads = {}
+        self.experiment_stop_flag = threading.Event()
 
     def __str__(self):
-        return self.day
+        return f'EXP{self.day}'
 
     @property
     def first_block(self):
@@ -66,7 +68,7 @@ class Experiment:
     def start(self):
         """Main Function for starting an experiment"""
         def _start():
-            self.logger.info('Experiment started')
+            self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}')
             self.init_experiment_cache()
             self.turn_screen('on')
 
@@ -82,9 +84,26 @@ class Experiment:
             time.sleep(3)
             cache.publish_command('end_experiment')
 
-        self.run_thread = threading.Thread(target=_start)
-        self.run_thread.start()
+        self.threads['experiment_stop'] = Subscriber(self.experiment_stop_flag,
+                                                     channel=config.subscription_topics['end_experiment'],
+                                                     callback=self.stop_experiment)
+
+        self.threads['main'] = threading.Thread(target=_start)
+        [t.start() for t in self.threads.values()]
         return str(self)
+
+    def stop_experiment(self):
+        self.logger.info('closing experiment...')
+        cache.publish_command('stop_recording')
+        self.experiment_stop_flag.set()
+        cache.delete(cc.IS_VISUAL_APP_ON)
+        cache.delete(cc.EXPERIMENT_BLOCK_ID)
+        cache.delete(cc.EXPERIMENT_BLOCK_PATH)
+        cache.delete(cc.IS_ALWAYS_REWARD)
+        cache.delete(cc.EXPERIMENT_NAME)
+        cache.delete(cc.EXPERIMENT_PATH)
+        self.threads['main'].join()
+        self.logger.info('experiment was stopped')
 
     def save(self, data):
         """Save experiment arguments"""
@@ -92,12 +111,12 @@ class Experiment:
     def turn_screen(self, val):
         """val must be on or off"""
         try:
-            requests.get(f'http://localhost:5000/display/{val}')
+            requests.get(f'http://localhost:{config.FLASK_PORT}/display/{val}')
         except Exception as exc:
             self.logger.exception(f'Error turning off screen: {exc}')
 
     def init_experiment_cache(self):
-        cache.set(cc.EXPERIMENT_NAME, self.name, timeout=self.experiment_duration)
+        cache.set(cc.EXPERIMENT_NAME, str(self), timeout=self.experiment_duration)
         cache.set(cc.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
 
     @property
@@ -144,7 +163,7 @@ class Block:
     threads_event: Event = field(default_factory=Event, repr=False)
 
     def __post_init__(self):
-        self.logger = get_logger(f'{self.experiment_name} - Block {self.block_id}')
+        self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
         if isinstance(self.bug_types, str):
             self.bug_types = self.bug_types.split(',')
         if isinstance(self.reward_bugs, str):
@@ -166,6 +185,7 @@ class Block:
         return info
 
     def start(self):
+        self.logger.info('block start')
         mkdir(self.block_path)
         if self.is_always_reward:
             cache.set(cc.IS_ALWAYS_REWARD, True, timeout=self.block_duration)
@@ -313,7 +333,7 @@ class Block:
     @property
     def block_summary(self):
         log_string = f'Summary of Block {self.block_id}:\n'
-        touches_file = Path(self.block_path) / config.metrics_files.get("touch", '')
+        touches_file = Path(self.block_path) / config.experiment_metrics.get("touch", '')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)

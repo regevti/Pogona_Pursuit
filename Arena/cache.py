@@ -15,11 +15,13 @@ class CacheColumns:
     EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, config.experiments_timeout)
     EXPERIMENT_BLOCK_ID = Column('EXPERIMENT_BLOCK_ID', int, config.experiments_timeout)
     EXPERIMENT_BLOCK_PATH = Column('EXPERIMENT_BLOCK_PATH', str, config.experiments_timeout)
-    STREAM_CAMERA = Column('STREAM_CAMERA', str, 60)
+    STREAM_CAMERA = Column('STREAM_CAMERA', str, config.experiments_timeout)
     IS_RECORDING = Column('IS_RECORDING', bool, None)
     IS_VISUAL_APP_ON = Column('IS_VISUAL_APP_ON', bool, config.experiments_timeout)
     IS_ALWAYS_REWARD = Column('IS_ALWAYS_REWARD', bool, config.experiments_timeout)
     IS_REWARD_TIMEOUT = Column('IS_REWARD_TIMEOUT', bool, 30)
+    ACTIVE_CAMERAS = Column('ACTIVE_CAMERAS', list, config.experiments_timeout)
+    RECORDING_CAMERAS = Column('RECORDING_CAMERAS', list, config.experiments_timeout)
 
 
 class RedisCache:
@@ -28,11 +30,15 @@ class RedisCache:
 
     def get(self, cache_column: Column):
         res = self._redis.get(cache_column.name)
-        if res and type(res) == bytes:
-            decoded = res.decode("utf-8")
+        if res:
+            if type(res) == bytes:
+                res = res.decode("utf-8")
+
             if cache_column.type == bool:
-                decoded = int(decoded)
-            return decoded
+                res = int(res)
+            elif cache_column.type == list:
+                res = res.split(',')
+
         return res
 
     def set(self, cache_column: Column, value, timeout=None):
@@ -42,7 +48,22 @@ class RedisCache:
             timeout = cache_column.timeout
         if cache_column.type == bool:
             value = int(value)
+        elif cache_column.type == list:
+            value = ','.join(value)
         return self._redis.set(cache_column.name, value, ex=timeout)
+
+    def append_to_list(self, cache_column: Column, value, timeout=None):
+        assert cache_column.type == list
+        l = self.get(cache_column) or []
+        l.append(value)
+        return self.set(cache_column, l, timeout)
+
+    def remove_from_list(self, cache_column: Column, value):
+        assert cache_column.type == list
+        l = self.get(cache_column) or []
+        if value in l:
+            l.remove(value)
+        return self.set(cache_column, l)
 
     def delete(self, cache_column: Column):
         return self._redis.delete(cache_column.name)

@@ -11,13 +11,15 @@ import multiprocessing as mp
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.managers import SharedMemoryManager, SyncManager
 import numpy as np
+import pandas as pd
+from dataclasses import dataclass
 
 import config
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, datetime_string
-from loggers import get_logger, get_process_logger, logger_thread
+from loggers import get_logger, get_process_logger, logger_thread, _loggers
 from experiment import Experiment
-from subscribers import Subscriber, MetricsLogger, ArenaOperations
+from subscribers import Subscriber, MetricsLogger, ArenaOperations, AppHealthCheck
 
 cache = RedisCache()
 
@@ -25,7 +27,6 @@ cache = RedisCache()
 def signal_handler(signum, frame):
     print('signal detected!')
     cache.publish_command('arena_shutdown')
-    time.sleep(2)
     sys.exit(0)
 
 
@@ -33,22 +34,31 @@ signal.signal(signal.SIGINT, signal_handler)
 
 
 class ArenaProcess(mp.Process):
-    def __init__(self, shm: SharedMemory, lock: mp.Lock, name: str,
-                 cam_ready: mp.Event, image_unloaded: mp.Event, start_event: mp.Event,
-                 stop_event: mp.Event, frame_timestamp: mp.Value, cam_config: dict,
-                 output_dir: str):
-        super().__init__()
+    def __init__(self,
+                 cam_name: str,
+                 shm: SharedMemory,
+                 cam_config: dict,
+                 log_queue: mp.Queue,
+                 lock: mp.Lock,
+                 stop_signal: mp.Event,
+                 cam_image_unloaded: mp.Event,
+                 cam_ready: mp.Event,
+                 start_signal: mp.Event,
+                 n_frames: mp.Value,
+                 cam_frame_timestamp: mp.Value):
+        self.cam_name = cam_name
         self.shm = shm
-        self.lock = lock
-        self.name = name
-        self.log = get_logger(str(self))
-        self.stop_event = stop_event
-        self.start_event = start_event
-        self.cam_ready = cam_ready
-        self.image_unloaded = image_unloaded
-        self.frame_timestamp = frame_timestamp
         self.cam_config = cam_config
-        self.output_dir = output_dir
+        self.log_queue = log_queue
+        self.lock = lock
+        self.stop_signal = stop_signal
+        self.cam_image_unloaded = cam_image_unloaded
+        self.cam_ready = cam_ready
+        self.start_signal = start_signal
+        self.n_frames = n_frames
+        self.cam_frame_timestamp = cam_frame_timestamp
+        super().__init__()
+        self.log = get_process_logger(str(self), self.log_queue)
 
     def run(self):
         raise NotImplemented('')
@@ -56,7 +66,10 @@ class ArenaProcess(mp.Process):
 
 class Camera(ArenaProcess):
     def __str__(self):
-        return f'Camera {self.name}'
+        return f'Cam-{self.cam_name}'
+
+    def is_streaming(self):
+        return cache.get(cc.STREAM_CAMERA) == self.cam_name
 
 
 class ImageHandler(ArenaProcess):
@@ -65,27 +78,27 @@ class ImageHandler(ArenaProcess):
         self.durations = []
 
     def __str__(self):
-        return f'Image Handler {self.name}'
+        return f'ImageHandler {self.cam_name}'
 
     def run(self):
-        if self.start_event is not None:
-            self.start_event.wait()
+        if self.start_signal is not None:
+            self.start_signal.wait()
         self.cam_ready.wait(timeout=3)
         self.log.info('Start frame handling')
         while True:
-            if self.stop_event.is_set():
+            if self.stop_signal.is_set():
                 self.log.info('stop event detected')
                 break
 
-            if self.image_unloaded.is_set():
+            if self.cam_image_unloaded.is_set():
                 continue
 
             with self.lock:
                 t0 = time.time()
                 frame = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
-                timestamp = self.frame_timestamp.value
+                timestamp = self.cam_frame_timestamp.value
                 self.durations.append(time.time() - t0)
-                self.image_unloaded.set()
+                self.cam_image_unloaded.set()
 
             self.handle(frame, timestamp)
 
@@ -101,55 +114,67 @@ class ImageHandler(ArenaProcess):
         pass
 
 
+@dataclass
 class CameraUnit:
-    def __init__(self, name, cam_cls, start_event, global_stop, cam_config, output_dir, num_frames):
-        self.name = name
-        self.start_event = start_event
-        self.global_stop = global_stop
+    name: str
+    cam_cls: Camera
+    global_start: mp.Event
+    global_stop: mp.Event
+    cam_config: dict
+    num_frames: int
+    log_queue: mp.Queue
+
+    def __post_init__(self):
+        self.shm = None
+        self.is_on = False
         self.processes = []
         self.shm_manager = SharedMemoryManager()
-        self.cam_image_unloaded = mp.Event()
-        self.cam_ready = mp.Event()
-        self.shm = None
-        self.stop_signal = mp.Event()
-        self.n_frames = mp.Value('i', 0)
+        self.shm_manager.start()
+        self.mp_utils = {
+            'lock': mp.Lock(),
+            'stop_signal': mp.Event(),
+            'start_signal': self.global_start,
+            'cam_image_unloaded': mp.Event(),
+            'cam_ready': mp.Event(),
+            'n_frames': mp.Value('i', 0),
+            'cam_frame_timestamp': mp.Value("d", 0.0)
+        }
+        self.logger = get_process_logger(str(self), self.log_queue)
+        self.processes_cls = self.get_process_classes()
         self.listen_stop_events()
-        self.cam_config = cam_config
-        self.processes_cls = self.get_process_classes(cam_cls)
-        self.output_dir = output_dir
-        self.num_frames = num_frames
 
-    def get_process_classes(self, cam_cls):
-        listeners = [cam_cls]
-        for lst in self.cam_config['listeners']:
-            module_path, class_name = config.arena_modules[lst]
-            listeners.append(getattr(importlib.import_module(module_path), class_name))
-        return listeners
+    def __str__(self):
+        return f'CU-{self.name}'
 
     def __del__(self):
-        self.stop()
+        if self.is_on:
+            self.stop()
+        self.shm_manager.shutdown()
 
     def start(self):
-        self.shm_manager.start()
+        self.logger.info('start camera unit')
+        self.mp_utils['stop_signal'].clear()
         self.shm = self.shm_manager.SharedMemory(size=int(np.prod(self.cam_config['image_size'])))
-        lock = mp.Lock()
-
-        cam_frame_timestamp = mp.Value("d", 0.0)
 
         for proc_cls in self.processes_cls:
-            proc = proc_cls(self.shm, lock, self.name, self.cam_ready, self.cam_image_unloaded,
-                            self.start_event, self.stop_signal, cam_frame_timestamp, self.cam_config, self.output_dir)
+            proc = proc_cls(self.name, self.shm, self.cam_config, self.log_queue, **self.mp_utils)
             proc.start()
             self.processes.append(proc)
 
+        self.listen_stop_events()
+        cache.append_to_list(cc.ACTIVE_CAMERAS, self.name)
+        self.is_on = True
+
     def stop(self):
-        self.stop_signal.set()
+        cache.remove_from_list(cc.ACTIVE_CAMERAS, self.name)
+        self.mp_utils['stop_signal'].set()
         [proc.join() for proc in self.processes]
-        self.shm_manager.shutdown()
+        self.is_on = False
+        self.logger.info('unit stopped')
 
     def listen_stop_events(self):
         def listener():
-            while not self.stop_signal.is_set():
+            while not self.mp_utils['stop_signal'].is_set():
                 if self.global_stop.is_set():
                     self.stop()
                     break
@@ -159,7 +184,7 @@ class CameraUnit:
         t.start()
 
     def stream(self):
-        while not self.stop_signal.is_set():
+        while not self.mp_utils['stop_signal'].is_set():
             img = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             (flag, encodedImage) = cv2.imencode(".jpg", img)
@@ -170,6 +195,19 @@ class CameraUnit:
             time.sleep(0.03)
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
+
+    def is_stream_camera(self):
+        self.logger.info(f'{cache.get(cc.STREAM_CAMERA)} - {self.name}')
+        return cache.get(cc.STREAM_CAMERA) == self.name
+
+    def get_process_classes(self):
+        listeners = [self.cam_cls]
+        self.logger.info(self.is_stream_camera())
+        if not self.is_stream_camera() or 1:
+            for lst in self.cam_config['listeners']:
+                module_path, class_name = config.arena_modules[lst]
+                listeners.append(getattr(importlib.import_module(module_path), class_name))
+        return listeners
 
 
 class ArenaManager(SyncManager):
@@ -182,6 +220,7 @@ class ArenaManager(SyncManager):
         self.units = {}  # activated camera units
         self.threads = {}
         self.experiment_threads = []
+        self.reset_cache()
 
         self.global_stop_event = self.Event()
         self.global_start_event = self.Event()
@@ -189,16 +228,15 @@ class ArenaManager(SyncManager):
         self.stop_logging_event = self.Event()
         self.log_queue = self.Queue(-1)
         self.logging_thread = logger_thread(self.log_queue, self.stop_logging_event)
-        self.log = get_process_logger('Arena Management', self.log_queue)
+        self.logger = get_process_logger('ArenaManagement', self.log_queue)
+        # self.log = get_logger('Arena Management')
         self.cache_lock = self.Lock()
         self._streaming_camera = None
 
         self.start_management_listeners()
         self.camera_init()
-        self.log.info('Arena manager created.')
+        self.logger.info('Arena manager created.')
         atexit.register(self.arena_shutdown)
-        time.sleep(5)
-        cache.publish_command('arena_shutdown')
 
     def __del__(self):
         sys.exit(0)
@@ -206,7 +244,7 @@ class ArenaManager(SyncManager):
     def camera_init(self):
         """Detect connected cameras"""
         configured_modules = list(set([cam_config['module'] for cam_config in config.cameras.values()]))
-        self.log.info(f'Configured camera modules: {configured_modules}')
+        self.logger.info(f'Configured camera modules: {configured_modules}')
         for module_name in configured_modules:
             try:
                 cam_module, cam_class = config.arena_modules['cameras'][module_name]
@@ -243,14 +281,22 @@ class ArenaManager(SyncManager):
         self.threads['arena_operations'].start()
 
     def start_experiment_listeners(self):
-        # start experiment listeners
+        # start experiment listen   ers
         for channel_name, d in config.experiment_metrics.items():
             thread_name = f'metric_{channel_name}'
             self.threads[thread_name] = MetricsLogger(self.arena_shutdown_event, self.log_queue,
                                                       channel=config.subscription_topics[channel_name])
+        # self.threads['app_healthcheck'] = AppHealthCheck(self.arena_shutdown_event, self.log_queue)
+        # self.threads['app_healthcheck'].start()
+
+    def reset_cache(self):
+        for name, col in cc.__dict__.items():
+            if name.startswith('_'):
+                continue
+            cache.delete(col)
 
     def record(self, exposure=None, cameras=None, output_dir=None, folder_prefix=None,
-               num_frames=None, rec_time=None):
+               num_frames=None, rec_time=None, is_streamer=False):
         """
         Record videos from Arena's cameras
         :param exposure: (int) Exposure time to be set to cameras
@@ -262,7 +308,7 @@ class ArenaManager(SyncManager):
         """
         assert not (num_frames and rec_time), 'you can not set num_frames and rec_time together'
         if cache.get(cc.IS_RECORDING):
-            self.log.exception('Another recording is happening, can not initiate a new record')
+            self.logger.exception('Another recording is happening, can not initiate a new record')
             return
 
         self.global_start_event.clear()
@@ -272,13 +318,13 @@ class ArenaManager(SyncManager):
             cam_config = config.cameras[cam_name].copy()
             if exposure:
                 cam_config['exposure'] = exposure
-            output_dir = self.check_output_dir(output_dir, folder_prefix)
+            cam_config['output_dir'] = self.check_output_dir(output_dir, folder_prefix)
             cu = CameraUnit(cam_name, cam_class, self.global_start_event, self.global_stop_event,
-                            cam_config, output_dir, num_frames)
+                            cam_config, num_frames, self.log_queue)
             cu.start()
             self.units[cam_name] = cu
 
-        if rec_time or num_frames:
+        if rec_time or num_frames or is_streamer:
             time.sleep(0.1)
             self.start_recording()
 
@@ -287,22 +333,22 @@ class ArenaManager(SyncManager):
 
     def start_recording(self):
         if cache.get(cc.IS_RECORDING):
-            self.log.warning('recording in progress. can not start a new record')
+            self.logger.warning('recording in progress. can not start a new record')
             return
         cache.set(cc.IS_RECORDING, True)
         self.global_start_event.set()
-        self.log.info('start recording signal was sent.')
+        self.logger.info('start recording signal was sent.')
 
     def stop_recording(self):
-        self.log.warning('stop recording signal was sent.')
+        self.logger.warning('stop recording signal was sent.')
         if cache.get(cc.IS_RECORDING):
             self.global_stop_event.set()
             cache.set(cc.IS_RECORDING, False)
-            self.log.info('closing record...')
+            self.logger.info('closing record...')
 
     def arena_shutdown(self) -> None:
-        self.log.warning('shutdown start')
-        self.log.info(f'NUm of threads: {len(self.threads)}')
+        self.logger.warning('shutdown start')
+        self.logger.info(f'NUm of threads: {len(self.threads)}')
         self.arena_shutdown_event.set()
         self.stop_recording()
         [cu.stop() for cu in self.units.values()]
@@ -310,29 +356,36 @@ class ArenaManager(SyncManager):
             if threading.current_thread().name != t.name:
                 try:
                     t.join()
+                    self.logger.info(f'thread {name} is down')
                 except:
-                    self.log.exception(f'Error joining thread {name}')
+                    self.logger.exception(f'Error joining thread {name}')
         self.units, self.threads = {}, {}
-        self.log.info('closing logging thread')
+        self.logger.info('closing logging thread')
         self.stop_logging_event.set()
         self.logging_thread.join()
         self.shutdown()
         print('shutdown finished')
 
     def display_info(self, return_string=False):
+        if not self.camera_modules:
+            return
         info_df = self.camera_modules[0].scan_cameras()
+        with pd.option_context('display.max_colwidth', None,
+                               'display.max_columns', None,
+                               'display.max_rows', None):
+            self.logger.info(f'\n{info_df}')
         if return_string:
-            return f'\nCameras Info:\n\n{info_df.to_string()}\n'
+            return f'\nCameras Info:\n\n{info_df.to_string()}\n\n'
         return info_df
 
     def set_streaming_camera(self, cam_name):
+        cache.set(cc.STREAM_CAMERA, cam_name)
         if cam_name not in self.units:
-            self.record(cameras=[cam_name])
-        
-        if not self.units[cam_name].cam_ready.is_set():
+            self.record(cameras=[cam_name], is_streamer=True)
+        if not self.units[cam_name].is_on:
             self.units[cam_name].start()
         self._streaming_camera = cam_name
-        self.log.info(f'Set streaming camera to {cam_name}')
+        self.logger.info(f'Set streaming camera to {cam_name}')
 
     def stream(self):
         return self.units[self._streaming_camera].stream()
@@ -340,7 +393,9 @@ class ArenaManager(SyncManager):
     def stop_stream(self):
         if self._streaming_camera is not None:
             self.units[self._streaming_camera].stop()
+        cache.delete(cc.STREAM_CAMERA)
         self._streaming_camera = None
+        self.logger.info('streaming stopped')
 
     @staticmethod
     def check_output_dir(output, folder_prefix):

@@ -135,7 +135,10 @@ export default {
           this.isRewardGiven = false
           clearTimeout(rewardTimeout)
         }, 20 * 1000)
-    }
+      },
+      'cmd/visual_app/healthcheck': () => {
+        this.$socketClient.publish('cmd/visual_app/healthcheck', JSON.stringify({'state': 1}))
+      }
   })
   },
   mounted() {

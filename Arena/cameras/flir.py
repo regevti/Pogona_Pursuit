@@ -294,7 +294,7 @@ class SpinCamera:
                 return name
 
     def management_log(self, msg):
-        self.mqtt_client.publish_event(config.console_topic, f'>> Camera {self.name}: {msg}')
+        self.mqtt_client.publish_event(config.ui_console_channel, f'>> Camera {self.name}: {msg}')
 
     @property
     def video_path(self):
