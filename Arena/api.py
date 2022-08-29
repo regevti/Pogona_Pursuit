@@ -5,7 +5,7 @@ import atexit
 import sys
 import time
 from pathlib import Path
-from flask import Flask, render_template, Response, request, send_from_directory, jsonify, logging as flask_logging
+from flask import Flask, render_template, Response, request, send_from_directory, jsonify
 import config
 from cache import RedisCache, CacheColumns as cc
 from utils import titlize, turn_display_on, turn_display_off
@@ -18,7 +18,6 @@ logging.getLogger('werkzeug').setLevel(logging.WARNING)
 init_logger_config()
 cache = RedisCache()
 arena_mgr = ArenaManager()
-atexit.register(arena_mgr.stop_recording)
 
 
 @app.route('/')
@@ -27,26 +26,21 @@ def index():
     cached_experiments = [c.stem for c in Path(config.experiment_cache_path).glob('*.json')]
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
-    return render_template('index.html', cameras=config.cameras.keys(), exposure=config.default_exposure,
-                           config=app_config, acquire_stop={}, log_channel=config.ui_console_channel,
-                           reward_types=config.reward_types, experiment_types=config.experiment_types,
-                           media_files=list_media(), max_blocks=config.api_max_blocks_to_show, cached_experiments=cached_experiments,
-                           extra_time_recording=config.extra_time_recording)
+    return render_template('index.html', cameras=list(config.cameras.keys()), exposure=config.default_exposure,
+                           config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
+                           experiment_types=config.experiment_types, media_files=list_media(),
+                           max_blocks=config.api_max_blocks_to_show, cached_experiments=cached_experiments,
+                           extra_time_recording=config.extra_time_recording,
+                           acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
 @app.route('/check', methods=['GET'])
 def check():
-    txt = ''
-    if cache.get(cc.EXPERIMENT_NAME):
-        txt += 'Experiment is running\n'
-        txt += f'Experiment Name: {cache.get(cc.EXPERIMENT_NAME)}\n'
-        txt += f'Current Block ID: {cache.get(cc.EXPERIMENT_BLOCK_ID)}\n'
-    else:
-        txt += 'No experiment is running\n'
-
-    txt += f'Active Cameras: {cache.get(cc.ACTIVE_CAMERAS)}\n'
-    txt += f'Recording Cameras: {cache.get(cc.RECORDING_CAMERAS)}\n'
-    return Response(txt)
+    res = dict()
+    res['experiment_name'] = cache.get_current_experiment()
+    res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
+    res['cam_units_status'] = {k: cu.is_on() for k, cu in arena_mgr.units.items()}
+    return jsonify(res)
 
 
 @app.route('/record', methods=['POST'])
@@ -94,6 +88,28 @@ def stop_experiment():
     return Response('No available experiment')
 
 
+@app.route('/start_camera_unit', methods=['POST'])
+def start_camera_unit():
+    cam_name = request.form['camera']
+    if cam_name not in arena_mgr.units:
+        app.logger.error(f'cannot start camera unit {cam_name} - unknown')
+        return Response('')
+
+    arena_mgr.units[cam_name].start()
+    return Response('ok')
+
+
+@app.route('/stop_camera_unit', methods=['POST'])
+def stop_camera_unit():
+    cam_name = request.form['camera']
+    if cam_name not in arena_mgr.units:
+        app.logger.error(f'cannot start camera unit {cam_name} - unknown')
+        return Response('')
+
+    arena_mgr.units[cam_name].stop()
+    return Response('ok')
+
+
 @app.route('/calibrate')
 def calibrate():
     """Calibrate camera"""
@@ -102,7 +118,7 @@ def calibrate():
     except ImportError:
         return Response('Unable to locate calibration module')
 
-    img = capture_image('realtime')
+    img = arena_mgr.get_frame('color')
     try:
         h, _, h_im, error = calibration.calibrate(img)
     except Exception as exc:

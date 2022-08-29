@@ -3,6 +3,8 @@ import inspect
 import json
 import threading
 import time
+from typing import Union
+
 import humanize
 import re
 from datetime import datetime
@@ -26,7 +28,7 @@ cache = RedisCache()
 @dataclass
 class Experiment:
     animal_id: str
-    cameras: str
+    cameras: Union[str, list]
     num_blocks: int = 1
     name: str = ''
     blocks: list = field(default_factory=list, repr=False)
@@ -38,6 +40,7 @@ class Experiment:
         self.start_time = datetime.now()
         self.day = self.start_time.strftime('%Y%m%d')
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
+        self.cameras = self.cameras.split(',')
         self.blocks = [Block(i, self.cameras, str(self), self.experiment_path,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
@@ -68,7 +71,8 @@ class Experiment:
     def start(self):
         """Main Function for starting an experiment"""
         def _start():
-            self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}')
+            self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}'
+                             f' with cameras: {",".join(self.cameras)}')
             self.init_experiment_cache()
             self.turn_screen('on')
 
@@ -94,7 +98,6 @@ class Experiment:
 
     def stop_experiment(self):
         self.logger.info('closing experiment...')
-        cache.publish_command('stop_recording')
         self.experiment_stop_flag.set()
         cache.delete(cc.IS_VISUAL_APP_ON)
         cache.delete(cc.EXPERIMENT_BLOCK_ID)
@@ -203,16 +206,16 @@ class Block:
     def run_block(self):
         """Run block flow"""
         self.init_block()
-        cache.publish_command('start_recording')
         self.wait(self.extra_time_recording)
 
-        self.start_trials()
-        self.wait(self.block_duration, check_visual_app_on=True)
+        for trial_id in range(self.num_trials):
+            self.start_trial(trial_id)
+            self.wait(self.trial_duration, check_visual_app_on=True)
+            self.end_trial()
+            self.wait(self.iti)
 
-        self.end_trials()
         self.wait(self.extra_time_recording)
         self.end_block()
-        cache.publish_command('stop_recording')
 
     # def start_threads(self) -> ThreadPool:
     #     """Start cameras recording and temperature recording on a separate processes"""
@@ -259,23 +262,26 @@ class Block:
         cache.publish_command('led_light', 'on')
         cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
         cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
+        for cam_name in self.cameras:
+            output_dir = mkdir(f'{self.block_path}/videos')
+            cache.set_cam_output_dir(cam_name, output_dir)
 
-    @staticmethod
-    def end_block():
+    def end_block(self):
         cache.publish_command('led_light', 'off')
         cache.delete(cc.EXPERIMENT_BLOCK_ID)
         cache.delete(cc.EXPERIMENT_BLOCK_PATH)
+        for cam_name in self.cameras:
+            cache.set_cam_output_dir(cam_name, '')
 
-    def start_trials(self):
+    def start_trial(self, trial_id):
         if self.is_media_experiment:
             cache.publish_command('init_media', self.media_options)
         else:
             cache.publish_command('init_bugs', self.bug_options)
-
         cache.set(cc.IS_VISUAL_APP_ON, True)
-        self.logger.info(f'{self.block_type} initiated')
+        self.logger.info(f'Trial-{trial_id + 1} started')
 
-    def end_trials(self):
+    def end_trial(self):
         self.hide_visual_app_content()
 
     def hide_visual_app_content(self):
@@ -333,7 +339,7 @@ class Block:
     @property
     def block_summary(self):
         log_string = f'Summary of Block {self.block_id}:\n'
-        touches_file = Path(self.block_path) / config.experiment_metrics.get("touch", '')
+        touches_file = Path(self.block_path) / config.experiment_metrics.get("touch", {}).get('csv_file', 'touch.csv')
         num_hits = 0
         if touches_file.exists() and touches_file.is_file():
             touches_df = pd.read_csv(touches_file, parse_dates=['time'], index_col=0).reset_index(drop=True)

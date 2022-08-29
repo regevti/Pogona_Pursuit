@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import time
 import config
+from arrayqueues.shared_arrays import Full
 from arena import Camera
 from image_handlers.video_writer import VideoWriter
 from cache import RedisCache, CacheColumns as cc
@@ -38,12 +39,12 @@ class AlliedVisionCamera(Camera):
                 cam.TriggerMode.set('Off')
                 cam.AcquisitionFrameRateEnable.set(True)
                 cam.AcquisitionFrameRate.set(self.cam_config['fps'])
-                self.log.debug(f"configured fps to: {self.cam_config['fps']}")
+                self.logger.debug(f"configured fps to: {self.cam_config['fps']}")
 
             cam.AcquisitionMode.set('Continuous')
-            self.log.info('Finish configuration')
+            self.logger.info('Finish configuration')
         except Exception:
-            self.log.exception(f"Exception while configuring camera: ")
+            self.logger.exception(f"Exception while configuring camera: ")
 
     def run(self):
         with self.system as v:
@@ -53,16 +54,13 @@ class AlliedVisionCamera(Camera):
                 try:
                     self.configure(cam)
                     self.update_time_delta(cam)
-                    if self.start_signal is not None:
-                        self.log.info(f'waiting for start_signal... {self.start_signal}')
-                        self.start_signal.wait()
-                    self.log.info('start streaming')
+                    self.logger.info('start streaming')
                     cache.append_to_list(cc.RECORDING_CAMERAS, self.cam_name)
                     cam.start_streaming(self._frame_handler, buffer_count=10)
                     self.stop_signal.wait()
                     cache.remove_from_list(cc.RECORDING_CAMERAS, self.cam_name)
                     if self.stop_signal.is_set():
-                        self.log.info('received stop event')
+                        self.logger.warning('received stop event')
                 except KeyboardInterrupt:
                     pass
                 finally:
@@ -70,18 +68,21 @@ class AlliedVisionCamera(Camera):
                         cam.stop_streaming()
 
     def _frame_handler(self, cam: vimba.Camera, frame: vimba.Frame):
+        t0 = time.time()
+        waiting_time = 0.1
         try:
-            self.cam_image_unloaded.wait(timeout=0.2)
-            img = frame.as_numpy_ndarray()
-            with self.lock:
-                self.cam_frame_timestamp.value = frame.get_timestamp() / 1e9 + self.camera_time_delta
-                buf_np = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
-                np.copyto(buf_np, img)
-                self.cam_image_unloaded.clear()
-                if not self.cam_ready.is_set():
-                    self.cam_ready.set()
+            while True:
+                try:
+                    img = frame.as_numpy_ndarray()
+                    timestamp = frame.get_timestamp() / 1e9 + self.camera_time_delta
+                    self.frames_queue.put(img, timestamp)
+                    break
+                except Full:
+                    if (time.time() - t0) > waiting_time:
+                        self.logger.warning(f'Queue is still full after waiting {waiting_time}')
+                        break
         except Exception:
-            self.log.exception(f"Exception while getting image from alliedVision camera: ")
+            self.logger.exception(f"Exception while getting image from alliedVision camera: ")
         finally:
             cam.queue_frame(frame)
 

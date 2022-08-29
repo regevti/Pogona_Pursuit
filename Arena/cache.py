@@ -38,19 +38,55 @@ class RedisCache:
                 res = int(res)
             elif cache_column.type == list:
                 res = res.split(',')
-
         return res
 
     def set(self, cache_column: Column, value, timeout=None):
         assert isinstance(value, cache_column.type), \
             f'Bad type for {cache_column.name}; received {type(value)} expected {cache_column.type}'
+
         if not timeout and cache_column.timeout:
             timeout = cache_column.timeout
+
         if cache_column.type == bool:
             value = int(value)
         elif cache_column.type == list:
             value = ','.join(value)
         return self._redis.set(cache_column.name, value, ex=timeout)
+
+    def update_cam_dict(self, cam_name, **kwargs):
+        key = self._get_cam_dict_key(cam_name)
+        d = self.get_cam_dict(cam_name)
+        d.update(kwargs)
+        for k, v in d.copy().items():
+            if isinstance(v, (list, tuple)):
+                d[f'{k}_numlist'] = ','.join([str(x) for x in v])
+                d.pop(k)
+            if v is None:  # if none
+                d[k] = ''
+        return self._redis.hmset(key, d)
+
+    def get_cam_dict(self, cam_name):
+        d = self._redis.hgetall(self._get_cam_dict_key(cam_name))
+        for k, v in d.copy().items():
+            if type(v) == bytes:
+                v = v.decode("utf-8")
+            if type(k) == bytes:
+                d.pop(k)  # remove binary keys from dict
+                k = k.decode("utf-8")
+            if k.endswith('_numlist'):
+                d[k.replace('_numlist', '')] = [int(x) for x in v.split(',')]
+            else:
+                d[k] = v
+        return d
+
+    def delete_cam_dict(self, cam_name):
+        self._redis.delete(self._get_cam_dict_key(cam_name))
+
+    def set_cam_output_dir(self, cam_name, output_dir: str):
+        self.update_cam_dict(cam_name, **{config.output_dir_key: output_dir})
+
+    def _get_cam_dict_key(self, cam_name):
+        return f'cam_{cam_name}'
 
     def append_to_list(self, cache_column: Column, value, timeout=None):
         assert cache_column.type == list

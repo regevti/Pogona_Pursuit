@@ -43,6 +43,9 @@ def init_logger_config():
     root_logger.info('Logging is configured')
 
 
+_handlers = {}
+
+
 def logger_thread(q: mp.Queue, stop_event: mp.Event):
     def _logger_thread():
         logger = get_logger('logger_thread')
@@ -57,7 +60,11 @@ def logger_thread(q: mp.Queue, stop_event: mp.Event):
 
 
 def get_process_logger(name, q: mp.Queue):
-    qh = logging.handlers.QueueHandler(q)
+    if _handlers.get(name):
+        qh = _handlers[name]
+    else:
+        qh = logging.handlers.QueueHandler(q)
+        _handlers[name] = qh
     logger = logging.getLogger(name)
     logger.setLevel(logging.getLevelName(config.LOGGING_LEVEL))
     logger.addHandler(qh)
@@ -68,10 +75,14 @@ def get_process_logger(name, q: mp.Queue):
 def get_logger(name):
     logger = logging.getLogger(name)
     logger.setLevel(logging.getLevelName(config.LOGGING_LEVEL))
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(CustomFormatter())
-    redis_handler = CachePublishHandler()
-    redis_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, DEFAULT_DATEFMT))
+    if _handlers.get(name):
+        console_handler, redis_handler = _handlers[name]
+    else:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(CustomFormatter())
+        redis_handler = CachePublishHandler()
+        redis_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, DEFAULT_DATEFMT))
+        _handlers[name] = (console_handler, redis_handler)
     logger.addHandler(console_handler)
     logger.addHandler(redis_handler)
     logger.propagate = False

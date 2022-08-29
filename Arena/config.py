@@ -70,8 +70,6 @@ commands_topics = {
     'reward': 'cmd/arena/reward',
     'led_light': 'cmd/arena/led_light',
 
-    'start_recording': 'cmd/management/start_recording',
-    'stop_recording': 'cmd/management/stop_recording',
     'arena_shutdown': 'cmd/management/arena_shutdown',
     'end_experiment': 'cmd/management/end_experiment',
 
@@ -99,7 +97,7 @@ cameras = {
         'fps': 80,
         'exposure': 12000,
         'image_size': [1088, 1456, 3],
-        'listeners': ['video_writer']
+        'output_dir': ''
     },
     'left': {
         'id': 'DEV_1AB22C017E70',
@@ -107,7 +105,7 @@ cameras = {
         'fps': 80,
         'exposure': default_exposure,
         'image_size': [1088, 1456, 3],
-        'listeners': ['video_writer']
+        'output_dir': ''
     }
 }
 arena_modules = {
@@ -120,10 +118,12 @@ arena_manager_address = env('ARENA_MANAGER_ADDRESS', '127.0.0.1')
 arena_manager_port = env.int('ARENA_MANAGER_PORT', 50000)
 arena_manager_password = env('ARENA_MANAGER_PASSWORD', '123456')
 output_dir = env('OUTPUT_DIR', 'output')
+output_dir_key = 'output_dir'
 shm_buffer_dtype = 'uint8'
 pixels2cm = 0.01833304668870419
 default_num_frames = 1000
 default_max_throughput = 94578303
+array_queue_size_mb = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20)  # I assume that one image is roughly 5Mb
 
 # Database
 db_name = env('DB_NAME', 'arena')

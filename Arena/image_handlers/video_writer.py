@@ -1,6 +1,6 @@
 import threading
 import multiprocessing as mp
-from arena import ImageHandler
+from arena import ImageSink
 import numpy as np
 import time
 import cv2
@@ -8,7 +8,7 @@ import config
 from utils import datetime_string
 
 
-class VideoWriter(ImageHandler):
+class VideoWriter(ImageSink):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.n_frames = 0
@@ -23,9 +23,9 @@ class VideoWriter(ImageHandler):
         pass
 
     def _on_end(self):
-        self.log.info(f'Video with {self.n_frames} frames saved into {self.video_path}')
+        self.logger.info(f'Video with {self.n_frames} frames saved into {self.video_path}')
         if len(self.timestamps) > 0:
-            self.log.debug(f'fs: {1/np.mean(np.diff(self.timestamps)):.2f}')
+            self.logger.debug(f'fs: {1 / np.mean(np.diff(self.timestamps)):.2f}')
 
     def handle(self, frame_, timestamp):
         if self.cam_config['output_dir'] and self.video_out is None:
