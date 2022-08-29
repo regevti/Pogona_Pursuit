@@ -45,14 +45,14 @@ export default {
     isNoisyLowHorizontal: function () {
       return this.bugsSettings.movementType === 'low_horizontal_noise'
     },
+    isStatic: function () {
+      return this.bugsSettings.movementType === 'static'
+    },
     bugHeight: function () {
       return this.bugsSettings.bugHeight ? Number(this.bugsSettings.bugHeight) : 100
     },
     numImagesPerBug: function () {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
-    },
-    isStatic: function () {
-      return this.bugTypeOptions[this.currentBugType].isStatic
     },
     stepsPerImage: function () {
       return this.bugTypeOptions[this.currentBugType].stepsPerImage
@@ -62,6 +62,14 @@ export default {
         return this.bugsSettings.speed
       }
       return this.bugTypeOptions[this.currentBugType].speed
+    },
+    noiseStartX: function () {
+      let halfScreen = this.canvas.width / 2
+      if (this.xTarget > halfScreen) {
+        return this.canvas.width * this.bugsSettings.noiseStartFraction
+      } else {
+        return this.canvas.width * (1 - this.bugsSettings.noiseStartFraction)
+      }
     }
   },
   mounted() {
@@ -73,8 +81,8 @@ export default {
       this.bugsSettings.bugTypes = [this.bugsSettings.bugTypes]
     }
     if (this.isMoveInCircles) {
-      this.r0 = [this.canvas.width / 2, this.canvas.height]
-      this.r = Math.min(this.canvas.width / 2, this.canvas.height) * 0.75
+      this.r0 = [this.canvas.width / 2, this.canvas.height / 2]
+      this.r = Math.min(this.canvas.width / 2, this.canvas.height / 2) * 0.75
     } else if (this.isRandomDrift || this.isLowHorizontal || this.isNoisyLowHorizontal) {
       this.initTargetDrift()
     }
@@ -98,7 +106,7 @@ export default {
       this.currentBugSize = this.getRadiusSize()
     },
     move(particles) {
-      if (this.isDead || this.isStatic || this.isOutEdged) {
+      if (this.isDead || this.isOutEdged) {
         this.draw()
         return
       }
@@ -109,19 +117,26 @@ export default {
         this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
         this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.bugsSettings.isAntiClockWise ? -1 : 1)
         this.y = this.r0[1] + this.r * Math.sin(this.theta)
+      } else if (this.isStatic) {
+        this.x = this.canvas.width / 2
+        this.y = this.canvas.height / 2
+        this.dx = 0
+        this.dy = 0
       } else {
-        // Random walk
         let randNoise = this.getRandomNoise()
-        let halfScreen = this.canvas.width / 2
+        let halfScreen = this.canvas.width
         if (this.isNoisyLowHorizontal &&
-            ((this.xTarget < halfScreen && this.x < halfScreen) ||
-                (this.xTarget > halfScreen && this.x > halfScreen))) {
+            ((this.xTarget < halfScreen && this.x < this.noiseStartX) ||
+                (this.xTarget > halfScreen && this.x > this.noiseStartX))) {
+          // low horizontal + Noise (The noisy part)
           this.dx = 0.5 * this.vx + 0.5 * randNoise
           this.dy = 0.0008 * (this.yTarget - this.y) + 0.5 * randNoise + 0.9 * this.dy
         } else if (this.isRandomDrift && this.frameCounter > 100) {
+          // random drift after 100 frames
           this.dx = 0.004 * (this.xTarget - this.x) + 0.5 * randNoise
           this.dy = 0.004 * (this.yTarget - this.y) + 0.5 * randNoise
         } else if (this.isStraightLine || this.isRandomDrift) {
+          // straight lines (random walk) w/ little gaussian noise
           this.dx = this.vx + 0.5 * randNoise
           this.dy = this.vy + 0.5 * randNoise
         }

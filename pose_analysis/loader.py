@@ -5,10 +5,10 @@ from dateutil import parser
 import pandas as pd
 import numpy as np
 from functools import lru_cache
+from pose_analysis.pose_utils import distance, fit_circle, closest_index, pixels2cm
 from datetime import timedelta, datetime
 from Arena.explore import ExperimentAnalyzer
 import pose_analysis.pose_config as config
-from pose_analysis.pose_utils import distance, fit_circle, closest_index, pixels2cm
 
 
 # SCREEN_BOUNDARIES = {'x': (0, 1918), 'y': (443, 1075)}
@@ -274,7 +274,6 @@ class Loader:
 def get_experiments(*args, is_validate=True, **kwargs):
     """Get experiment using explore"""
     df = ExperimentAnalyzer(*args, **kwargs).get_experiments()
-    print(df)
     loaders = []
     for animal_id, day, block, trial in df.index:
         day_dir = datetime.strptime(day, '%d.%m.%y').strftime('%Y%m%d')

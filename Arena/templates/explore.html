@@ -71,7 +71,8 @@
   $('#startDate').datepicker({
     uiLibrary: 'bootstrap4',
     iconsLibrary: 'fontawesome',
-    value: `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`,
+    value: '2020-10-01',
+    // value: `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`,
     format: 'yyyy-mm-dd',
     maxDate: function () {
       return $('#endDate').val();

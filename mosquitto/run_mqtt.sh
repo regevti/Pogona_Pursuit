@@ -1,0 +1,1 @@
+/usr/local/sbin/mosquitto -c /Users/regev/MSc/msi/Pogona_Pursuit/mosquitto/mosquitto.conf
