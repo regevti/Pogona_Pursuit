@@ -3,7 +3,7 @@ env = Env()
 env.read_env()
 
 # General
-version = '1.1'
+version = '2.2'
 is_debug_mode = env.bool('DEBUG', False)
 is_use_parport = env.bool('IS_USE_PARPORT', False)
 
@@ -15,7 +15,7 @@ time_between_blocks = env.int('time_between_blocks', 300)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
-             'is_anticlockwise' 'target_drift', 'background_color'],
+             'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
     'media': ['media_url']
 }
 reward_types = [
@@ -40,7 +40,8 @@ logger_files = {
     'prediction': 'predictions.csv',
     'trajectory': 'bug_trajectory.csv',
     'temperature': 'temperature.csv',
-    'video_frames': 'video_frames.csv'
+    'video_frames': 'video_frames.csv',
+    'trials_times': 'trials_times.csv'
 }
 subscription_topics = {
     'reward': 'event/command/reward',
@@ -53,7 +54,9 @@ subscription_topics = {
     'prediction': 'event/log/prediction',
     'trajectory': 'event/log/trajectory',
     'temperature': 'event/log/temperature',
-    'video_frames': 'event/log/video_frames'
+    'video_frames': 'event/log/video_frames',
+    'trials_times': 'event/log/trials_times',
+    'block_log': experiment_topic
 }
 
 # Arena
@@ -66,9 +69,10 @@ output_dir = env('OUTPUT_DIR', 'output')
 saved_frame_resolution = env.list('SAVED_FRAME_RESOLUTION', [1440, 1088])
 camera_names = {
     'realtime': '19506468',
-    'right': '19506475',
     'left': '19506455',
-    'back': '19506481',
+    'stream': '19506481',
+    'back': '19506475',
+    # 'top': '20349303'
 }
 acquire_stop_options = {
     'num_frames': int,
