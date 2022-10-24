@@ -54,18 +54,20 @@ class MultiSelectField extends Field {
 
 class Cameras {
   get value() {
-    let a = []
-    $("#cams-checkboxes input").each(function (e) {
-      if (this.checked && !this.disabled) {
-        a.push(this.value)
+    let a = {}
+    $(".cam-checkbox").each(function (i, obj) {
+      if (obj.checked && !obj.disabled) {
+        // let isUsePredictions = $(`#use-predictions-${obj.value}`).prop('checked')
+        // the following is_use_predictions isn't used anywhere
+        a[obj.value] = {is_use_predictions: true}
       }
     });
-    return a.join(',')
+    return a
   }
 
   set value(cameras) {
-    $("#cams-checkboxes input").each(function (e) {
-      this.checked = cameras.includes(this.value)
+    $(".cam-checkbox").each(function (i, obj) {
+      this.checked = cameras.includes(obj.value)
     });
   }
 }
@@ -191,7 +193,6 @@ class Block {
 const mainFields = {
   // name: new FieldObject('experimentName', Field),
   animal_id: new FieldObject('animalId', Field),
-  is_use_predictions: new FieldObject('use_predictions', CheckField),
   time_between_blocks: new FieldObject('timeBetweenBlocks', NumericalField),
   extra_time_recording: new FieldObject('extraTimeRecording', NumericalField),
   cameras: new FieldObject('cameras', Cameras),

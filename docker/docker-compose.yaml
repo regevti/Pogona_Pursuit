@@ -36,7 +36,7 @@ services:
     image: pogona_app:${app_tag-latest}
     container_name: pogona_hunter
     depends_on:
-      - mqtt
+      - cache
     restart: "unless-stopped"
     command: "http-server dist"
 #    volumes:
@@ -83,18 +83,18 @@ services:
 #      - LC_ALL=C.UTF-8
 #      - LANG=C.UTF-8
 
-  mqtt:
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile-mqtt
-    restart: "unless-stopped"
-    image: pogona_mqtt:${mqtt_tag-latest}
-    container_name: mqtt
-    environment:
-      - PYTHONUNBUFFERED=1
-    ports:
-      - 1883:1883
-      - 0.0.0.0:9001:9001
+#  mqtt:
+#    build:
+#      context: ..
+#      dockerfile: ./docker/Dockerfile-mqtt
+#    restart: "unless-stopped"
+#    image: pogona_mqtt:${mqtt_tag-latest}
+#    container_name: mqtt
+#    environment:
+#      - PYTHONUNBUFFERED=1
+#    ports:
+#      - 1883:1883
+#      - 0.0.0.0:9001:9001
 
   cache:
     build:
@@ -114,3 +114,9 @@ services:
       - 5432:5432
     environment:
       - POSTGRES_PASSWORD=password
+
+  grafana:
+    image: grafana/grafana
+    restart: "unless-stopped"
+    ports:
+      - 3000:3000

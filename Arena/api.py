@@ -1,23 +1,21 @@
 import json
+import psutil
 import logging
-import os
-import atexit
-import sys
-import time
+import torch.multiprocessing as mp
 from pathlib import Path
 from flask import Flask, render_template, Response, request, send_from_directory, jsonify
 import config
 from cache import RedisCache, CacheColumns as cc
-from utils import titlize, turn_display_on, turn_display_off
+from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config
+from db_models import ORM
 
 app = Flask('ArenaAPI')
-logging.getLogger('werkzeug').setLevel(logging.WARNING)
-init_logger_config()
-cache = RedisCache()
-arena_mgr = ArenaManager()
+cache = None
+arena_mgr = None
+orm = None
 
 
 @app.route('/')
@@ -26,7 +24,11 @@ def index():
     cached_experiments = [c.stem for c in Path(config.experiment_cache_path).glob('*.json')]
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
-    return render_template('index.html', cameras=list(config.cameras.keys()), exposure=config.default_exposure,
+    if arena_mgr is None:
+        cameras = list(config.cameras.keys())
+    else:
+        cameras = list(arena_mgr.detected_cameras.keys())
+    return render_template('index.html', cameras=cameras, exposure=config.default_exposure,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
                            max_blocks=config.api_max_blocks_to_show, cached_experiments=cached_experiments,
@@ -39,7 +41,20 @@ def check():
     res = dict()
     res['experiment_name'] = cache.get_current_experiment()
     res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
-    res['cam_units_status'] = {k: cu.is_on() for k, cu in arena_mgr.units.items()}
+    res['open_app_host'] = cache.get(cc.OPEN_APP_HOST)
+    res['temperature'] = orm.get_temperature()
+    for cam_name, cu in arena_mgr.units.items():
+        res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
+        res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}
+        res.setdefault('cam_units_predictors', {})[cam_name] = ','.join(cu.get_alive_predictors()) or '-'
+        proc_cpus = {}
+        for p in cu.processes.copy().values():
+            try:
+                proc_cpus[p.name] = psutil.Process(p.pid).cpu_percent(0.1)
+            except:
+                continue
+        res.setdefault('processes_cpu', {})[cam_name] = proc_cpus
+    res.update(get_sys_metrics())
     return jsonify(res)
 
 
@@ -55,6 +70,7 @@ def record_video():
 def start_experiment():
     """Set Experiment Name"""
     data = request.json
+    print(data)
     e = arena_mgr.start_experiment(**data)
     return Response(e)
 
@@ -138,7 +154,13 @@ def reward():
 
 @app.route('/led_light/<state>')
 def led_light(state):
-    cache.publish_command('led_light', 'on')
+    cache.publish_command('led_light', state)
+    return Response('ok')
+
+
+@app.route('/heat_light/<state>')
+def heat_light(state):
+    cache.publish_command('heat_light', state)
     return Response('ok')
 
 
@@ -269,4 +291,16 @@ if __name__ == "__main__":
     # h = logging.StreamHandler()
     # h.setFormatter(CustomFormatter())
     # logger.addHandler(h)
+    mp.freeze_support()
+    mp.set_start_method('spawn', force=True)
+
+    import torch
+    torch.cuda.set_device(0)
+
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+    init_logger_config()
+    cache = RedisCache()
+    arena_mgr = ArenaManager()
+    orm = ORM()
+
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)

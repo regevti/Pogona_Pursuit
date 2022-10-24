@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "redis": "^4.2.0",
+    "uuid": "^9.0.0",
     "vue": "^2.5.2",
     "vue-burger-menu": "^2.0.5",
     "vue-mqtt": "^2.0.3",

@@ -38,9 +38,7 @@ Websocket subscribed to the pattern: "cmd/visual_app/*"
 7. **cmd/visual_app/reward_given** - Reward was given in the arena
 
 ### Publishes
-1. **event/log/video_frames**
-2. **event/log/touch**
-3. **event/command/end_app_wait**
-4. **event/log/trajectory**
-5. **event/log/experiment**
-6. **event/log/trials_times**
+1. **log/metric/touch** - screen touch logging
+2. **log/metric/trial** - logging of all trial data, including bug_trajectory or media
+3. **cmd/visual_app/console** - publish message to management UI console
+

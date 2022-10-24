@@ -5,15 +5,11 @@
 <div class="row mt-4">
     <div class="col text-center">
         <select id="selectStreamCamera" class="form-control col-sm-3 mx-auto mb-2">
-            {% for cam in cameras %}
-                {% if cam == 'stream' %}
-                    <option value="{{cam}}" selected>{{cam}}</option>
-                {% else %}
-                    <option value="{{cam}}">{{cam}}</option>
-                {% endif %}
-            {% endfor %}
+<!--            {% for cam in cameras %}-->
+<!--                <option id="stream-option-{{cam}}" value="{{cam}}" disabled>{{cam}}</option>-->
+<!--            {% endfor %}-->
         </select>
-        <button id="stream" type="button" class="btn btn-lg btn-primary mr-2">Stream</button>
+        <button id="streamButton" type="button" class="btn btn-lg btn-primary mr-2">Stream</button>
         <button id="stopStream" type="button" class="btn btn-lg btn-outline-danger">Stop Stream</button>
     </div>
 </div>

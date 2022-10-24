@@ -5,6 +5,8 @@ jupyterlab
 tqdm
 matplotlib
 seaborn
+scikit-learn==1.1.2
+bbox==0.9.2
 
 # API
 Flask==2.2.2

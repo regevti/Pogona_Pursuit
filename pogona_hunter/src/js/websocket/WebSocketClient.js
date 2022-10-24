@@ -64,7 +64,7 @@ export default class WebSocketClient {
     this.onMessage = (msg) => {
       let parsedMessage = JSON.parse(msg.data)
       let payload = parsedMessage.payload
-      console.log(`WS message received; ${parsedMessage.channel}: ${payload}`)
+      // console.log(`WS message received; ${parsedMessage.channel}: ${payload}`)
       if (parsedMessage.channel in subObjects) {
         subObjects[parsedMessage.channel](payload)
       }

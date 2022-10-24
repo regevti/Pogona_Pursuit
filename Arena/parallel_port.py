@@ -3,8 +3,8 @@ import parallel
 
 # Outputs
 feeder = 0x01
-led_light = 0x02
-gaze_external = 0x04
+led_light = 0x04
+heat_light = 0x08
 
 
 class ParallelPort:
@@ -30,5 +30,14 @@ class ParallelPort:
     def led_lighting(self, state='off'):
         if state == 'on':
             self.turn_on(led_light)
+            # self.turn_on(heat_light)
         else:
             self.turn_off(led_light)
+            # self.turn_off(heat_light)
+
+    def heat_lighting(self, state='off'):
+        """notice for heat that the connections are opposite"""
+        if state == 'on':
+            self.turn_off(heat_light)
+        else:
+            self.turn_on(heat_light)

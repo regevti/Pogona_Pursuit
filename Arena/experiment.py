@@ -1,5 +1,6 @@
 import argparse
 import inspect
+import websocket
 import json
 import threading
 import time
@@ -19,8 +20,9 @@ import pandas as pd
 import config
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, Serializer, to_integer
+from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off
 from subscribers import Subscriber
+from db_models import ORM
 
 cache = RedisCache()
 
@@ -28,20 +30,20 @@ cache = RedisCache()
 @dataclass
 class Experiment:
     animal_id: str
-    cameras: Union[str, list]
+    cameras: dict
     num_blocks: int = 1
     name: str = ''
     blocks: list = field(default_factory=list, repr=False)
     time_between_blocks: int = config.time_between_blocks
-    is_use_predictions: bool = False
     extra_time_recording: int = config.extra_time_recording
 
     def __post_init__(self):
         self.start_time = datetime.now()
         self.day = self.start_time.strftime('%Y%m%d')
+        self.name = str(self)
+        self.orm = ORM()
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
-        self.cameras = self.cameras.split(',')
-        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path,
+        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.orm,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
         self.logger = get_logger(f'Experiment')
@@ -72,8 +74,9 @@ class Experiment:
         """Main Function for starting an experiment"""
         def _start():
             self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}'
-                             f' with cameras: {",".join(self.cameras)}')
+                             f' with cameras: {",".join(self.cameras.keys())}')
             self.init_experiment_cache()
+            self.orm.commit_experiment(self)
             self.turn_screen('on')
 
             try:
@@ -86,8 +89,11 @@ class Experiment:
 
             self.turn_screen('off')
             time.sleep(3)
+            self.orm.update_experiment_end_time()
             cache.publish_command('end_experiment')
 
+        if not self.is_ready_for_experiment():
+            return
         self.threads['experiment_stop'] = Subscriber(self.experiment_stop_flag,
                                                      channel=config.subscription_topics['end_experiment'],
                                                      callback=self.stop_experiment)
@@ -96,8 +102,32 @@ class Experiment:
         [t.start() for t in self.threads.values()]
         return str(self)
 
-    def stop_experiment(self):
-        self.logger.info('closing experiment...')
+    def is_ready_for_experiment(self):
+        if all([
+            self.is_websocket_server_on(),
+            self.is_pogona_hunter_up()
+        ]):
+            return True
+        else:
+            self.logger.error('aborting experiment')
+
+    def is_websocket_server_on(self):
+        try:
+            ws = websocket.WebSocket()
+            ws.connect(config.websocket_url)
+            return True
+        except Exception:
+            self.logger.error(f'Websocket server on {config.websocket_url} is dead')
+
+    def is_pogona_hunter_up(self):
+        try:
+            res = requests.get(f'http://0.0.0.0:{config.POGONA_HUNTER_PORT}')
+            return res.ok
+        except Exception:
+            self.logger.error('pogona hunter app is down')
+
+    def stop_experiment(self, *args):
+        self.logger.debug('closing experiment...')
         self.experiment_stop_flag.set()
         cache.delete(cc.IS_VISUAL_APP_ON)
         cache.delete(cc.EXPERIMENT_BLOCK_ID)
@@ -106,15 +136,20 @@ class Experiment:
         cache.delete(cc.EXPERIMENT_NAME)
         cache.delete(cc.EXPERIMENT_PATH)
         self.threads['main'].join()
-        self.logger.info('experiment was stopped')
+        self.logger.info('Experiment ended')
 
     def save(self, data):
         """Save experiment arguments"""
 
     def turn_screen(self, val):
         """val must be on or off"""
+        assert val in ['on', 'off'], 'val must be either "on" or "off"'
         try:
-            requests.get(f'http://localhost:{config.FLASK_PORT}/display/{val}')
+            if val.lower() == 'on':
+                turn_display_on()
+            else:
+                turn_display_off()
+            self.logger.debug(f'screen turned {val}')
         except Exception as exc:
             self.logger.exception(f'Error turning off screen: {exc}')
 
@@ -134,10 +169,12 @@ class Experiment:
 @dataclass
 class Block:
     block_id: int
-    cameras: str
+    cameras: dict
     experiment_name: str
     experiment_path: str
+    orm: ORM
     extra_time_recording: int = config.extra_time_recording
+    start_time = None
 
     num_trials: int = 1
     trial_duration: int = 10
@@ -159,11 +196,7 @@ class Block:
     target_drift: str = ''
     bug_height: int = None
     time_between_bugs: int = None
-    is_use_predictions: bool = False
     background_color: str = ''
-
-    pool: ThreadPool = field(default=None, repr=False)
-    threads_event: Event = field(default_factory=Event, repr=False)
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
@@ -177,8 +210,7 @@ class Block:
 
     @property
     def info(self):
-        non_relevant_fields = ['self', 'cache', 'pool', 'threads_event', 'is_use_predictions',
-                               'cameras', 'experiment_path']
+        non_relevant_fields = ['self', 'cache', 'is_use_predictions', 'cameras', 'experiment_path', 'orm']
         for block_type, block_type_fields in config.experiment_types.items():
             if block_type != self.block_type:
                 non_relevant_fields += block_type_fields
@@ -188,7 +220,10 @@ class Block:
         return info
 
     def start(self):
-        self.logger.info('block start')
+        self.start_time = datetime.now()
+        self.logger.debug('block start')
+        self.orm.commit_block(self)
+
         mkdir(self.block_path)
         if self.is_always_reward:
             cache.set(cc.IS_ALWAYS_REWARD, True, timeout=self.block_duration)
@@ -200,69 +235,32 @@ class Block:
             self.end_block()
             self.logger.warning('block stopped externally')
             raise exc
+        finally:
+            self.orm.update_block_end_time()
 
         self.logger.info(self.block_summary)
 
     def run_block(self):
         """Run block flow"""
         self.init_block()
-        self.wait(self.extra_time_recording)
+        self.wait(self.extra_time_recording, label='Extra Time Rec')
 
-        for trial_id in range(self.num_trials):
+        for trial_id in range(1, self.num_trials + 1):
             self.start_trial(trial_id)
-            self.wait(self.trial_duration, check_visual_app_on=True)
+            self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}')
             self.end_trial()
-            self.wait(self.iti)
+            self.wait(self.iti, label='ITI')
 
-        self.wait(self.extra_time_recording)
+        self.wait(self.extra_time_recording, label='Extra Time Rec')
         self.end_block()
-
-    # def start_threads(self) -> ThreadPool:
-    #     """Start cameras recording and temperature recording on a separate processes"""
-    #     self.threads_event.set()
-    #
-    #     def _start_recording():
-    #         self.logger.info('recording started')
-    #         cache.publish_command('gaze_external', 'on')
-    #         if not config.is_debug_mode:
-    #             acquire_stop = {'record_time': self.block_duration, 'thread_event': self.threads_event}
-    #             try:
-    #                 record(cameras=self.cameras, output=self.videos_path, cache=cache,
-    #                        is_use_predictions=self.is_use_predictions, **acquire_stop)
-    #             except Exception as exc:
-    #                 print(f'Error in start_recording: {exc}')
-    #         else:
-    #             self.wait(self.block_duration)
-    #         cache.publish_command('gaze_external', 'off')
-    #         self.logger.info('recording ended')
-    #
-    #     def _read_temp():
-    #         ser = Serializer()
-    #         print('read_temp started')
-    #         while self.threads_event.is_set():
-    #             try:
-    #                 line = ser.read_line()
-    #                 if line and isinstance(line, bytes):
-    #                     m = re.search(r'Temperature is: ([\d.]+)', line.decode())
-    #                     if m:
-    #                         cache.publish(config.subscription_topics['temperature'], m[1])
-    #             except Exception as exc:
-    #                 print(f'Error in read_temp: {exc}')
-    #             time.sleep(5)
-    #
-    #     pool = ThreadPool(processes=2)
-    #     pool.apply_async(_start_recording)
-    #     pool.apply_async(_read_temp)
-    #
-    #     return pool
 
     def init_block(self):
         mkdir(self.block_path)
-        self.save_block_log()
+        self.save_block_log_files()
         cache.publish_command('led_light', 'on')
         cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
         cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
-        for cam_name in self.cameras:
+        for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             cache.set_cam_output_dir(cam_name, output_dir)
 
@@ -270,56 +268,72 @@ class Block:
         cache.publish_command('led_light', 'off')
         cache.delete(cc.EXPERIMENT_BLOCK_ID)
         cache.delete(cc.EXPERIMENT_BLOCK_PATH)
-        for cam_name in self.cameras:
+        for cam_name in self.cameras.keys():
             cache.set_cam_output_dir(cam_name, '')
 
     def start_trial(self, trial_id):
-        if self.is_media_experiment:
-            cache.publish_command('init_media', self.media_options)
-        else:
-            cache.publish_command('init_bugs', self.bug_options)
-        cache.set(cc.IS_VISUAL_APP_ON, True)
-        self.logger.info(f'Trial-{trial_id + 1} started')
+        trial_db_id = self.orm.commit_trial({
+            'start_time': datetime.now(),
+            'in_block_trial_id': trial_id})
+        if not self.is_blank_block:
+            if self.is_media_block:
+                command, options = 'init_media', self.media_options
+            else:
+                command, options = 'init_bugs', self.bug_options
+            options['trialID'] = trial_id
+            options['trialDBId'] = trial_db_id
+            cache.publish_command(command, json.dumps(options))
+            cache.set(cc.IS_VISUAL_APP_ON, True)
+            time.sleep(1)  # wait for data to be sent
+        self.logger.info(f'Trial #{trial_id} started')
 
     def end_trial(self):
         self.hide_visual_app_content()
+        time.sleep(1)
 
     def hide_visual_app_content(self):
-        if self.is_media_experiment:
+        if self.is_blank_block:
+            return
+        if self.is_media_block:
             cache.publish_command('hide_media')
         else:
             cache.publish_command('hide_bugs')
 
-    def save_block_log(self):
+    def save_block_log_files(self):
         with open(f'{self.block_path}/info.yaml', 'w') as f:
             yaml.dump(self.info, f)
         with open(f'{self.block_path}/config.yaml', 'w') as f:
             yaml.dump(config_log(), f)
 
-    def wait(self, duration, check_visual_app_on=False):
+    def wait(self, duration, check_visual_app_on=False, label=''):
         """Sleep while checking for experiment end"""
-        self.logger.info(f'waiting for {duration} seconds...')
+        if label:
+            label = f'({label}): '
+        self.logger.info(f'{label}waiting for {duration} seconds...')
         t0 = time.time()
         while time.time() - t0 < duration:
             # check for external stop of the experiment
             if not cache.get(cc.EXPERIMENT_NAME):
                 raise EndExperimentException()
             # check for visual app finish (due to bug catch, etc...)
-            if check_visual_app_on and not cache.get(cc.IS_VISUAL_APP_ON):
-                self.logger.info('Trials ended')
+            if check_visual_app_on and not self.is_blank_block and not cache.get(cc.IS_VISUAL_APP_ON):
+                self.logger.debug('Trial ended')
                 return
             time.sleep(0.1)
 
     @property
-    def media_options(self):
-        return json.dumps({
+    def media_options(self) -> dict:
+        return {
+            'trialID': 1,  # default value, changed in init_media,
             'url': f'{config.management_url}/media/{self.media_url}'
-        })
+        }
 
     @property
-    def bug_options(self):
-        return json.dumps({
+    def bug_options(self) -> dict:
+        return {
             'numOfBugs': 1,
+            'trialID': 1,  # default value, changed in init_bugs
+            'trialDBId': 1, # default value, changed in init_bugs
             'numTrials': self.num_trials,
             'iti': self.iti,
             'trialDuration': self.trial_duration,
@@ -334,7 +348,7 @@ class Block:
             'backgroundColor': self.background_color,
             'exitHole': self.exit_hole,
             'rewardAnyTouchProb': self.reward_any_touch_prob
-        })
+        }
 
     @property
     def block_summary(self):
@@ -359,8 +373,12 @@ class Block:
         return log_string
 
     @property
-    def is_media_experiment(self):
+    def is_media_block(self):
         return self.block_type == 'media'
+
+    @property
+    def is_blank_block(self):
+        return self.block_type == 'blank'
 
     @property
     def is_always_reward(self):

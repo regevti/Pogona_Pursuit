@@ -1,5 +1,5 @@
 <template>
-  <div class="board-canvas-wrapper" oncontextmenu="return false;" v-on:mousedown="logTouch">
+  <div class="board-canvas-wrapper" oncontextmenu="return false;" v-on:mousedown="analyzeScreenTouch">
     <div id="bugs-board" v-if="!isMedia">
       <audio ref="audio1">
         <source src="@/assets/sounds/2.mp3" type="audio/mpeg">
@@ -19,16 +19,8 @@
                    :bugsSettings="bugsSettings"
                    :exit-hole-pos="exitHolePos"
                    :entrance-hole-pos="entranceHolePos"
-                   :trial-id="trial_id"
                    ref="bugChild"
-                   v-on:bugRetreated="trial_id++"></hole-bugs>
-        <!--        <bug v-for="(value, index) in bugsProps"-->
-        <!--             :key="index"-->
-        <!--             :x0="value.x"-->
-        <!--             :y0="value.y"-->
-        <!--             :bugsSettings="bugsSettings"-->
-        <!--             ref="bugChild">-->
-        <!--        </bug>-->
+                   v-on:bugRetreated="endTrial"></hole-bugs>
       </canvas>
     </div>
     <media v-if="isMedia" :url="mediaUrl" ref="mediaElement"></media>
@@ -42,6 +34,7 @@ import {distance, randomRange} from '@/js/helpers'
 import {handlePrediction, showPogona} from '../js/predictions'
 import SlideMenu from './slideMenu'
 import media from './media'
+import { v4 as uuidv4 } from 'uuid'
 
 export default {
   name: 'board',
@@ -52,6 +45,9 @@ export default {
       bugsProps: [],
       bugsSettings: {
         numOfBugs: 0,
+        trialID: null,
+        trialDBId: null,
+        trialStartTime: null,
         numTrials: 2, // null = endless trials
         trialDuration: 10,
         iti: 5,
@@ -74,20 +70,20 @@ export default {
       },
       mediaUrl: '',
       holeImgSrc: '',
-      trial_id: 1,
       pad: 100, // padding for holes
       isMedia: false,
       isHandlingTouch: false,
       isRewardGiven: false,
       isClimbing: false,
       afterRewardTimeout: 40 * 1000,
-      trajectoryLog: [],
       touchesCounter: 0,
       canvasParams: {
         width: window.innerWidth,
         height: window.innerHeight
         // height: Math.round(window.innerHeight / 1.5)
-      }
+      },
+      bugTrajectoryLog: [],
+      identifier: uuidv4()
     }
   },
   created() {
@@ -96,7 +92,10 @@ export default {
     }
     this.$socketClient.subscribe({
       'cmd/visual_app/hide_bugs': (payload) => {
-        this.clearBoard()
+        console.log('received hide_bugs command')
+        if (this.$refs.bugChild) {
+          this.$refs.bugChild.forEach(bug => bug.startRetreat())
+        }
       },
       'cmd/visual_app/init_bugs': (options) => {
         options = JSON.parse(options)
@@ -107,7 +106,7 @@ export default {
       },
       'cmd/visual_app/hide_media': (payload) => {
         if (this.isMedia) {
-          this.$socketClient.publish('event/log/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
+          this.$socketClient.publish('log/metric/video_frames', JSON.stringify(this.$refs.mediaElement.framesLog))
           this.isMedia = false
         }
         location.reload()
@@ -137,7 +136,9 @@ export default {
         }, 20 * 1000)
       },
       'cmd/visual_app/healthcheck': () => {
-        this.$socketClient.publish('cmd/visual_app/healthcheck', JSON.stringify({'state': 1}))
+        this.$socketClient.publish('cmd/visual_app/healthcheck', JSON.stringify({
+          id: this.identifier, host: location.host
+        }))
       }
   })
   },
@@ -146,13 +147,15 @@ export default {
     this.ctx = this.canvas.getContext('2d')
     this.initBoard()
     window.addEventListener('keypress', e => {
-      this.changeTrajectory(e.code)
+      this.startBugsEscape(e.code)
     })
   },
   computed: {
+    currentBugType: function () {
+      return Array.isArray(this.bugsSettings.bugTypes) ? this.bugsSettings.bugTypes[0] : this.bugsSettings.bugTypes
+    },
     currentBugOptions: function () {
-      let bugType = Array.isArray(this.bugsSettings.bugTypes) ? this.bugsSettings.bugTypes[0] : this.bugsSettings.bugTypes
-      return this.configOptions.bugTypes[bugType]
+      return this.configOptions.bugTypes[this.currentBugType]
     },
     holesPositions: function () {
       let [canvasW, canvasH] = [this.canvas.width, this.canvas.height]
@@ -177,13 +180,11 @@ export default {
         cancelAnimationFrame(this.animationHandler)
       }
       if (isLogTrajectory) {
-        this.startLogTrajectory()
+        this.startLogBugTrajectory()
       }
+      this.bugsSettings.trialStartTime = Date.now()
       this.drawHoles()
       this.spawnBugs(this.bugsSettings.numOfBugs)
-      if (this.bugsSettings.numOfBugs > 0) {
-        this.$socketClient.set('IS_VISUAL_APP_ON', 1)
-      }
       this.$nextTick(function () {
         console.log('start animation...')
         this.animate()
@@ -207,10 +208,8 @@ export default {
         this.$refs.bugChild = []
         cancelAnimationFrame(this.animationHandler)
       }
-      if (this.trajectoryLogInterval) {
-        this.endLogTrajectory()
-      }
-      this.trial_id = 1
+      this.bugsSettings.trialID = null
+      this.bugsSettings.trialDBId = null
       this.$nextTick(function () {
         console.log('Clear board')
         this.animate()
@@ -237,6 +236,26 @@ export default {
     setCanvasClick(event) {
       this.handleTouchEvent(event.x, event.y)
     },
+    analyzeScreenTouch(event) {
+      if (this.touchesCounter === 0) {
+        let that = this
+        let touchesCounterTimeout = setTimeout(() => {
+          that.touchesCounter = 0
+          clearTimeout(touchesCounterTimeout)
+        }, 4000)
+      }
+      this.touchesCounter++
+      if (this.touchesCounter > 5 && !this.isClimbing) {
+        console.log('climbing!')
+        this.isClimbing = true
+        let climbingTimout = setTimeout(() => {
+          this.isClimbing = false
+          clearTimeout(climbingTimout)
+        }, 10000)
+        this.$socketClient.publish('cmd/visual_app/console',
+          `screen climbing detected on trial #${this.bugsSettings.trialID}`)
+      }
+    },
     handleTouchEvent(x, y) {
       console.log(x, y)
       if (this.isHandlingTouch || !this.$refs.bugChild) {
@@ -256,7 +275,12 @@ export default {
         if ((isHit || isRewardAnyTouch) && !this.isClimbing) {
           this.destruct(i, x, y, isRewardBug)
         }
-        this.$socketClient.publish('event/log/touch', JSON.stringify({
+        this.logTouch(x, y, bug, isHit, isRewardBug, isRewardAnyTouch)
+      }
+      this.isHandlingTouch = false
+    },
+    logTouch(x, y, bug, isHit, isRewardBug, isRewardAnyTouch) {
+      this.$socketClient.publish('log/metric/touch', JSON.stringify({
           time: Date.now(),
           x: x,
           y: y,
@@ -268,15 +292,14 @@ export default {
           is_climbing: this.isClimbing,
           bug_type: bug.currentBugType,
           bug_size: bug.currentBugSize,
-          trial: this.trial_id
+          in_block_trial_id: this.bugsSettings.trialID,
+          trial_id: this.bugsSettings.trialDBId
         }))
-      }
-      this.isHandlingTouch = false
+      console.log('Touch event was sent to the server')
     },
     destruct(bugIndex, x, y, isRewardBug) {
       let currentBugs = this.$refs.bugChild
       currentBugs[bugIndex].isDead = true
-      currentBugs[bugIndex].logTrialTimes()
       if (isRewardBug) {
         this.$refs.audio1.play()
         this.$store.commit('increment')
@@ -290,22 +313,23 @@ export default {
       }, this.bugsSettings.bloodDuration)
     },
     endTrial() {
-      this.trial_id++
-      if (this.bugsSettings.numTrials && this.trial_id > this.bugsSettings.numTrials) {
-        // numTrials was given and you reached the last trial -> end block
-        this.$socketClient.set('IS_VISUAL_APP_ON', 0)
-        this.clearBoard()
-      } else {
-        // start new trial
-        let iti = this.bugsSettings.iti * 1000
-        if (this.isRewardGiven) {
-          iti = Math.max(...[iti, this.afterRewardTimeout])
-        }
-        const startNewGameTimeout = setTimeout(() => {
-          this.initBoard()
-          clearTimeout(startNewGameTimeout)
-        }, iti)
+      // end trial can be called only after: 1) bug caught [destruct method], 2) trial time reached
+      let endTime = Date.now()
+      let trialID = this.bugsSettings.trialID
+      let payload = {
+        trial_db_id: this.bugsSettings.trialDBId,
+        start_time: this.bugsSettings.trialStartTime,
+        bug_type: this.currentBugType,
+        duration: (endTime - this.bugsSettings.trialStartTime) / 1000,
+        end_time: endTime,
+        bug_trajectory: this.bugTrajectoryLog,
+        video_frames: null
       }
+      this.$socketClient.set('IS_VISUAL_APP_ON', 0)
+      this.clearBoard()
+      this.endLogBugTrajectory()
+      this.$socketClient.publish('log/metric/trial_data', JSON.stringify(payload))
+      console.log(`Trial ${trialID} data was sent to the server`)
     },
     spawnBugs(noOfBugs) {
       const minDistance = 100
@@ -330,49 +354,28 @@ export default {
         this.bugsProps.push(properties)
       }
     },
-    changeTrajectory(event) {
+    startBugsEscape(event) {
       console.log('rightClick', event.x, event.y)
       this.$refs.bugChild.forEach(bug => bug.escape(event.x, event.y))
     },
-    startLogTrajectory() {
-      console.log('trajectory log started...')
+    startLogBugTrajectory() {
+      console.log('trajectory log started')
       this.trajectoryLogInterval = setInterval(() => {
         let bug = this.$refs.bugChild[0]
         if (bug) {
-          this.trajectoryLog.push({
+          this.bugTrajectoryLog.push({
             time: Date.now(),
             x: bug.x,
-            y: bug.y,
-            bug_type: bug.currentBugType
+            y: bug.y
           })
         }
       }, 1000 / 60)
     },
-    endLogTrajectory() {
+    endLogBugTrajectory() {
       clearInterval(this.trajectoryLogInterval)
       this.trajectoryLogInterval = null
-      this.$socketClient.publish('event/log/trajectory', JSON.stringify(this.trajectoryLog))
-      console.log('sent trajectory through mqtt...')
-      this.trajectoryLog = []
-    },
-    logTouch(event) {
-      if (this.touchesCounter === 0) {
-        let that = this
-        let touchesCounterTimeout = setTimeout(() => {
-          that.touchesCounter = 0
-          clearTimeout(touchesCounterTimeout)
-        }, 4000)
-      }
-      this.touchesCounter++
-      if (this.touchesCounter > 5 && !this.isClimbing) {
-        console.log('climbing!')
-        this.isClimbing = true
-        let climbingTimout = setTimeout(() => {
-          this.isClimbing = false
-          clearTimeout(climbingTimout)
-        }, 10000)
-        this.$socketClient.publish('event/log/experiment', `screen climbing detected on trial${this.trial_id}`)
-      }
+      this.bugTrajectoryLog = []
+      console.log('trajectory log ended')
     }
   }
 }

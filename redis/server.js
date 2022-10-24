@@ -23,7 +23,7 @@ wsServer.on('connection', function connection(ws, req) {
     // broadcast on web socket when receving a Redis PUB/SUB Event
     subscriber.pSubscribe(SUBSCRIPTION_PATTERN, (payload, channel) => {
         ws.send(JSON.stringify({channel: channel, payload: payload}));
-        console.log(`Subscriber: ${channel} - ${payload}`);
+        // console.log(`Subscriber: ${channel} - ${payload}`);
     });
 
     ws.on('message', function message(event) {
@@ -32,11 +32,11 @@ wsServer.on('connection', function connection(ws, req) {
         if (channel.startsWith('set/')) {
             channel = channel.replace('set/', '')
             publisher.set(channel, parsedMessage.payload)
-            console.log(`Set "${channel}" to "${parsedMessage.payload}"`)
+            // console.log(`Set "${channel}" to "${parsedMessage.payload}"`)
         }
         else {
             publisher.publish(channel, parsedMessage.payload);
-            console.log(`Published to channel ${channel}: ${parsedMessage.payload}`)
+            // console.log(`Published to channel ${channel}: ${parsedMessage.payload}`)
         }
     })
 

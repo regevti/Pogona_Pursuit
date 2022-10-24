@@ -8,7 +8,8 @@
     <script crossorigin="anonymous"
             integrity="sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4"
             src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js"></script>
-    <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css"
+          rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
     <link href="{{ url_for('static', filename='bootstrap-4.5.0/css/bootstrap.css')}}" rel="stylesheet">
     <script src="{{ url_for('static', filename='Bootstrap-4-Multi-Select-BsMultiSelect/dist/js/BsMultiSelect.js') }}"
@@ -17,21 +18,24 @@
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
     <script src="{{ url_for('static', filename='fields.js') }}" type="text/javascript"></script>
     <script src="{{ url_for('static', filename='WebSocketClient.js') }}" type="text/javascript"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.4.0/css/font-awesome.css" rel="stylesheet">
 </head>
 
 <body>
 <div class="row">
-    <div class="col">
+    <div class="col-xl-7">
         <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0.5em">Pogona Pursuit</h1>
         <div class="row" id="controls-panel">
             {% include "management/start_experiment.html" %}
             {% include "management/cameras_record.html" %}
-            {% include "management/events.html" %}
         </div>
         <pre class="row" id="record-output"></pre>
     </div>
     <div class="col">
         {% include "management/stream.html" %}
+        <button id="clearOutputButton" class="btn btn-secondary" style="position: relative;left: 0; top: 90px">
+            <i class="fa fa-eraser"></i>
+        </button>
     </div>
     {% include "management/footer.html" %}
 </div>
@@ -44,17 +48,20 @@
             reconnectEnabled: true,
             reconnectInterval: 5000 // time to reconnect in milliseconds
         })
+        wsclient.onError = (event) => {
+            appendOutput('Error connecting to Redis', color='red')
+        }
         wsclient.connect()
         wsclient.subscribe({
             "{{log_channel}}": (msg) => {
                 appendOutput(msg)
             }
         })
-
         const maxBlocks = Number("{{max_blocks}}")
         const cameras = "{{ cameras|join(',') }}".split(',')
         const $numBlocks = $("#numBlocks")
         const apiCheckTimeout = 1000
+        let checkedCameras = []
 
         let isToggleCheckPause = false
         let api_check = function () {
@@ -63,30 +70,95 @@
                 type: 'GET',
                 success: function (data) {
                     if (!isToggleCheckPause) {
-                        for (let cam_name in data['cam_units_status']) {
-                            let tog = $(`#toggle-${cam_name}`)
-                            if (data['cam_units_status'][cam_name] !== tog.prop('checked')) {
+                        let onCameras = []
+                        for (let camName in data['cam_units_status']) {
+                            let tog = $(`#toggle-${camName}`)
+                            let isOn = data['cam_units_status'][camName]
+                            if (isOn !== tog.prop('checked')) {
                                 tog.bootstrapToggle('toggle')
+                            }
+                            if (isOn) {
+                                onCameras.push(camName)
+                            }
+                        }
+                        // $("#selectStreamCamera option").remove()
+
+                        $("#selectStreamCamera option").each(function () {
+                            if (onCameras.indexOf(this.value) === -1) {
+                                $(this).remove()
+                            }
+                        })
+                        onCameras.forEach((camName) => {
+                            if ($(`#selectStreamCamera option[value=${camName}]`).length <= 0) {
+                                $("#selectStreamCamera").append($("<option></option>").attr("value", camName).text(camName))
+                            }
+                        })
+                        $("#streamButton").prop('disabled', !onCameras.length)
+                    }
+                    for (let cam_name in data['cam_units_fps']) {
+                        $(`#cam-fps-${cam_name}`).text(data['cam_units_fps'][cam_name]['cam_fps'].toFixed(1))
+                        $(`#sink-fps-${cam_name}`).text(data['cam_units_fps'][cam_name]['sink_fps'].toFixed(1))
+                        $(`#pred-fps-${cam_name}`).text(data['cam_units_fps'][cam_name]['pred_fps'].toFixed(1))
+                        $(`#pred-delay-${cam_name}`).text(`${data['cam_units_fps'][cam_name]['pred_delay'].toFixed(1)}ms`)
+                    }
+                    for (let cam_name in data['cam_units_predictors']) {
+                        $(`#predictors-${cam_name}`).text(data['cam_units_predictors'][cam_name])
+                    }
+
+                    let procText = ''
+                    for (let cam_name in data['processes_cpu']) {
+                        let d = data['processes_cpu'][cam_name]
+                        if (!jQuery.isEmptyObject(d)) {
+                            procText += `--CU-${cam_name}--` + '\n'
+                            for (let procName in d) {
+                                procText += `${procName}: ${d[procName]}%\n`
                             }
                         }
                     }
+                    $("#procCPU").text(procText)
+
                     let expName = data['experiment_name']
                     let blockId = data['block_id']
+                    let openAppHost = data['open_app_host']
+                    let tempValue = data['temperature']
+                    let tempColor = 'black'
+                    if (tempValue < 27) {
+                        tempColor = 'blue'
+                    } else if (tempValue > 32) {
+                        tempColor = 'red'
+                    }
                     $("#currentExperimentName").text(expName ? `Current Experiment: ${expName}` : 'No experiment is running')
                     $("#currentBlockID").text(expName ? `Block ID: ${blockId}` : '')
-                    $("#startExperimentButton").prop('disabled', !!expName)
+                    $("#openAppHostDiv").text(openAppHost ? `pogona hunter run on: ${openAppHost}` : 'No APP is running')
+                    // $("#startExperimentButton").prop('disabled', !!expName)
+                    $("#temperatureValue").text(tempValue ? `Temperature: ${tempValue}°C` : 'No Temperature logged').css({'color': tempColor})
+                    $("#gpuMetric").text(data['gpu_usage'] ? `GPU Usage: ${(data['gpu_usage']*100).toFixed(1)}%` : '')
+                    $("#cpuMetric").text(data['cpu_usage'] ? `CPU Usage: ${(data['cpu_usage']).toFixed(1)}%` : '')
+                    $("#memMetric").text(data['memory_usage'] ? `Memory Usage: ${(data['memory_usage']*100).toFixed(1)}%` : '')
                     setTimeout(api_check, apiCheckTimeout)
                 }
             })
         }
         api_check()
 
+        let $startExpButton = $('#startExperimentButton')
+        let $recordButton = $("#runRecordButton")
+        let $timeBetweenBlocksDiv = $("#timeBetweenBlocksDiv")
+        $startExpButton.prop('disabled', true)
+        $recordButton.prop('disabled', true)
+        $("streamButton").prop('disabled', true)
+
         cameras.forEach((cam) => {
             $(`#toggle-${cam}`).change((res) => {
                 isToggleCheckPause = true
                 let onRequested = $(`#toggle-${cam}`).prop('checked')
                 let url = onRequested ? '/start_camera_unit' : '/stop_camera_unit'
-                $(`#camera-${cam}`).prop('disabled', !onRequested)
+                let camCheck$ = $(`#camera-${cam}`)
+                camCheck$.prop('disabled', !onRequested)
+                if (!onRequested) {
+                    camCheck$.prop('checked', false)
+                }
+                $(`#stream-option-${cam}`).prop('disabled', !onRequested)
 
                 $.post(url, {camera: cam}).done(function () {
                     setTimeout(() => {
@@ -94,11 +166,32 @@
                     }, apiCheckTimeout)
                 })
             })
+            $(`#camera-${cam}`).change((res) => {
+                let isChecked = $(`#camera-${cam}`).prop('checked')
+
+                const camIndex = checkedCameras.indexOf(cam)
+                if (camIndex > -1 && !isChecked) {  // in checkedCameras
+                    checkedCameras.splice(camIndex, 1)
+                    if (checkedCameras.length === 0) {
+                        $startExpButton.prop('disabled', true)
+                        $recordButton.prop('disabled', true)
+                    }
+                } else if (camIndex === -1 && isChecked) {
+                    checkedCameras.push(cam)
+                    $startExpButton.prop('disabled', false)
+                    $recordButton.prop('disabled', false)
+                }
+            })
         })
 
         // Number of blocks listener
         $numBlocks.change(() => {
             let numBlocks = Number($numBlocks.val())
+            if (numBlocks < 2) {
+                $timeBetweenBlocksDiv.hide()
+            } else {
+                $timeBetweenBlocksDiv.show()
+            }
             for (let i = 1; i <= numBlocks; i++) {
                 $(`#block${i}`).show()
             }
@@ -152,26 +245,29 @@
                 if (isMediaExperiment(i)) {
                     $(`.media-options${i}`).show()
                     $(`.bugs-options${i}`).hide()
+                } else if (isBlankExperiment(i)) {
+                    $(`.media-options${i}`).hide()
+                    $(`.bugs-options${i}`).hide()
                 } else {
                     $(`.bugs-options${i}`).show()
                     $(`#rewardBugDiv${i}`).hide()
                     $isAntiClockWiseDiv.hide()
                     $(`.media-options${i}`).hide()
                 }
-            })
+            }).trigger('change')
             $(`#isDefaultBugSize${i}`).change(function () {
                 if (this.checked) {
                     $(`#bugSizeDiv${i}`).hide()
                 } else {
                     $(`#bugSizeDiv${i}`).show()
                 }
-            })
+            }).trigger('change')
         }
 
-        $("#stream").click(function () {
+        $("#streamButton").click(function () {
             $.post('/set_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
                 $("#selectStreamCamera").prop("disabled", true);
-                $(`input[value=${camera}]`).prop("disabled", true);
+                // $(`input[value=${camera}]`).prop("disabled", true);
                 $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
             })
         });
@@ -180,7 +276,7 @@
             $.post('/stop_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
                 $("#stream_img").attr("src", "{{ url_for('static', filename='video_placeholder.jpg') }}")
                 const sCamera = $("#selectStreamCamera");
-                $(`input[value=${sCamera.val()}]`).prop("disabled", false);
+                // $(`input[value=${sCamera.val()}]`).prop("disabled", false);
                 sCamera.prop("disabled", false);
             })
         });
@@ -202,12 +298,6 @@
                 type: "POST",
                 data: JSON.stringify(AllFields.values),
                 contentType: "application/json",
-                beforeSend: function () {
-                    console.log('>> initializing experiment...')
-                },
-                success: function (res) {
-                    checkCurrentExperiment()
-                },
                 error: function (data) {
                     console.log(data.responseText)
                 }
@@ -252,8 +342,7 @@
                 type: "POST",
                 data: JSON.stringify(Object.assign({
                     folder_prefix: $("#videoOutputPrefix").val(),
-                    cameras: Cameras.value,
-                    is_use_predictions: $("#use_predictions").is(":checked")
+                    cameras: Cameras.value
                 }, getAcquireStop())),
                 contentType: "application/json",
                 beforeSend: function () {
@@ -357,6 +446,12 @@
         $("#led_light_off").click(function (e) {
             $.get('/led_light/off')
         })
+        $("#heat_light_on").click(function (e) {
+            $.get('/heat_light/on')
+        })
+        $("#heat_light_off").click(function (e) {
+            $.get('/heat_light/off')
+        })
         $("#display_on").click(function (e) {
             $.get('/display/on')
         })
@@ -364,8 +459,16 @@
             $.get('/display/off')
         })
 
+        $("#clearOutputButton").click(function (e) {
+            $("#record-output").empty()
+        })
+
         function isMediaExperiment(i) {
             return $(`#blockTypeSelect${i}`).val() === 'media'
+        }
+
+        function isBlankExperiment(i) {
+            return $(`#blockTypeSelect${i}`).val() === 'blank'
         }
 
         function getCheckedCameras() {
@@ -385,7 +488,7 @@
         }
 
         function appendOutput(msg, color = 'black') {
-            let container = document.createElement("span")
+            let container = document.createElement("div")
             let text = document.createTextNode(msg + '\n')
             container.appendChild(text)
             let msgArray = msg.split(' - ')
@@ -406,7 +509,7 @@
             }
             container.style.color = color
             $("#record-output").queue(function () {
-                $( this ).append(container).dequeue()
+                $(this).append(container).dequeue()
             })
         }
 
@@ -416,6 +519,8 @@
 <style>
     body {
         padding: 20px;
+        overflow-x: hidden;
+        /*overflow-y: hidden;*/
     }
 
     #footer {
@@ -435,7 +540,7 @@
     }
 
     .toggle {
-        margin-left: 1em;
+        margin-left: 2em;
     }
 
     .cams-labels {
@@ -445,6 +550,18 @@
 
     #record-output {
         white-space: pre-wrap;
+        overflow-y: auto;
+        height: 250px;
+        display: block;
+    }
+
+    .icon-button {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        outline: none;
+        border: 0;
+        background: transparent;
     }
 
 </style>

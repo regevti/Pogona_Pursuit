@@ -20,7 +20,6 @@ export default {
       holeImgSrc: '',
       randomNoise: 0,
       frameCounter: 0,
-      trialStart: undefined,
       framesUntilExitFromEntranceHole: 100,
       minDistFromObstacle: 300,
       bordersAngles: {
@@ -34,8 +33,7 @@ export default {
   props: {
     bugsSettings: Object,
     exitHolePos: Array,
-    entranceHolePos: Array,
-    trialId: Number
+    entranceHolePos: Array
   },
   computed: {
     holeSize: function () {
@@ -81,7 +79,6 @@ export default {
       this.isRetreated = false
       this.isHoleRetreatStarted = false
       this.isChangingDirection = false
-      this.trialStart = Date.now()
       this.currentBugSize = this.getRadiusSize()
       this.x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
@@ -186,7 +183,6 @@ export default {
       let fadeTimeout = setTimeout(() => {
         this.isRetreated = true
         this.$emit('bugRetreated')
-        this.logTrialTimes()
         let initTimeout = setTimeout(() => {
           this.initBug()
           clearTimeout(initTimeout)
@@ -261,6 +257,11 @@ export default {
     },
     checkHoleRetreat() {
       if (!this.isHoleRetreatStarted && this.frameCounter > this.numFramesToRetreat) {
+        this.startRetreat()
+      }
+    },
+    startRetreat() {
+      if (!this.isHoleRetreatStarted) {
         let xd = this.xTarget - this.x
         let yd = this.yTarget - this.y
         let T = yd / xd
@@ -268,16 +269,6 @@ export default {
         this.vy = Math.sign(yd) * Math.sqrt((this.currentSpeed ** 2) - (this.vx ** 2))
         this.isHoleRetreatStarted = true
       }
-    },
-    logTrialTimes() {
-      let endTime = Date.now()
-      this.$socketClient.publish('log/metric/trials_times', JSON.stringify({
-        trial_id: this.trialId,
-        start_time: this.trialStart,
-        bug_type: this.currentBugType,
-        duration: (endTime - this.trialStart) / 1000,
-        end_time: endTime
-      }))
     }
   }
 }

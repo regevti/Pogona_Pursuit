@@ -19,9 +19,11 @@ class CacheColumns:
     IS_RECORDING = Column('IS_RECORDING', bool, None)
     IS_VISUAL_APP_ON = Column('IS_VISUAL_APP_ON', bool, config.experiments_timeout)
     IS_ALWAYS_REWARD = Column('IS_ALWAYS_REWARD', bool, config.experiments_timeout)
-    IS_REWARD_TIMEOUT = Column('IS_REWARD_TIMEOUT', bool, 30)
+    IS_REWARD_TIMEOUT = Column('IS_REWARD_TIMEOUT', bool, config.reward_timeout)
     ACTIVE_CAMERAS = Column('ACTIVE_CAMERAS', list, config.experiments_timeout)
     RECORDING_CAMERAS = Column('RECORDING_CAMERAS', list, config.experiments_timeout)
+    CURRENT_BLOCK_DB_INDEX = Column('CURRENT_BLOCK_DB_INDEX', int, config.experiments_timeout)
+    OPEN_APP_HOST = Column('OPEN_APP_HOST', str, 60)
 
 
 class RedisCache:
@@ -58,8 +60,10 @@ class RedisCache:
         d = self.get_cam_dict(cam_name)
         d.update(kwargs)
         for k, v in d.copy().items():
+            if isinstance(v, dict):
+                d.pop(k)
             if isinstance(v, (list, tuple)):
-                d[f'{k}_numlist'] = ','.join([str(x) for x in v])
+                d[f'{k}_list'] = ','.join([str(x) for x in v])
                 d.pop(k)
             if v is None:  # if none
                 d[k] = ''
@@ -73,10 +77,13 @@ class RedisCache:
             if type(k) == bytes:
                 d.pop(k)  # remove binary keys from dict
                 k = k.decode("utf-8")
-            if k.endswith('_numlist'):
-                d[k.replace('_numlist', '')] = [int(x) for x in v.split(',')]
-            else:
-                d[k] = v
+
+            if k.endswith('_list'):
+                k, v = k.replace('_list', ''), v.split(',')
+                if k in ['image_size']:
+                    v = [int(x) for x in v]
+
+            d[k] = v
         return d
 
     def delete_cam_dict(self, cam_name):
