@@ -11,6 +11,7 @@ from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config
 from db_models import ORM
+import calibration
 
 app = Flask('ArenaAPI')
 cache = None
@@ -129,19 +130,22 @@ def stop_camera_unit():
 @app.route('/calibrate')
 def calibrate():
     """Calibrate camera"""
-    try:
-        from Prediction import calibration
-    except ImportError:
-        return Response('Unable to locate calibration module')
+    img = arena_mgr.get_frame('front')
 
-    img = arena_mgr.get_frame('color')
+
+@app.route('/calibrate_aruco')
+def calibrate_aruco():
+    """Calibrate camera"""
+    img = arena_mgr.get_frame('front')
     try:
         h, _, h_im, error = calibration.calibrate(img)
     except Exception as exc:
+        arena_mgr.logger.error(f'Error in calibrate; {exc}')
         error = str(exc)
 
     if error:
         return Response(error)
+    arena_mgr.logger.info('calibration completed')
     return Response('Calibration completed')
 
 

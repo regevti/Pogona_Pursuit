@@ -59,6 +59,12 @@ export default {
     },
     timeBetweenBugs: function () {
       return (this.bugsSettings.iti || 2) * 1000
+    },
+    isMoveInCircles: function () {
+      return this.bugsSettings.movementType === 'circle'
+    },
+    isRandomMovement: function () {
+      return this.bugsSettings.movementType === 'random'
     }
   },
   mounted() {
@@ -84,7 +90,18 @@ export default {
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
       this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      this.setNextAngle()
+      switch (this.bugsSettings.movementType) {
+        case 'circle':
+          this.theta = Math.PI + (Math.PI / 4) // - Math.PI / 20 // used for circular movement
+          this.r = (Math.abs(this.xTarget - this.x) / 2)
+          this.r0 = [(this.x + this.xTarget) / 2, this.y + (this.r / 2.3)]
+          break
+        case 'low_horizontal':
+          this.startRetreat()
+          break
+        default:
+          this.setNextAngle()
+      }
     },
     move() {
       if (this.isDead || this.isRetreated) {
@@ -94,12 +111,23 @@ export default {
       this.frameCounter++
       this.edgeDetection()
       this.checkHoleRetreat()
+      switch (this.bugsSettings.movementType) {
+      case 'circle':
+        this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
+        this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.bugsSettings.isAntiClockWise ? -1 : 1)
+        this.y = this.r0[1] + this.r * Math.sin(this.theta)
+        break
+      default:
+        this.straightMove()
+      }
+      this.draw()
+    },
+    straightMove() {
       let randNoise = this.getRandomNoise()
       this.dx = this.vx + 0.5 * randNoise
       this.dy = this.vy + 0.5 * randNoise
       this.x += this.dx
       this.y += this.dy
-      this.draw()
     },
     edgeDetection() {
       if (this.isChangingDirection) {
@@ -112,7 +140,7 @@ export default {
         this.setNextAngle()
       // holes edges
       } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
-        if (this.isHoleRetreatStarted && this.isInsideExitHoleBoundaries()) {
+        if ((this.isHoleRetreatStarted && this.isInsideExitHoleBoundaries()) || !this.isRandomMovement) {
           this.hideBug()
         } else {
           this.setNextAngle()

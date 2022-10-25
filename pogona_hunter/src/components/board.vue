@@ -44,16 +44,16 @@ export default {
       configOptions: require('@/config.json'),
       bugsProps: [],
       bugsSettings: {
-        numOfBugs: 0,
+        numOfBugs: 1,
         trialID: null,
         trialDBId: null,
         trialStartTime: null,
-        numTrials: 2, // null = endless trials
+        numTrials: null, // deprecated. Trials are governed by the experiment
         trialDuration: 10,
         iti: 5,
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
-        movementType: 'circle',
+        movementType: 'low_horizontal',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,

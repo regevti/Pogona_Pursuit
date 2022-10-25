@@ -10,7 +10,6 @@ import signal
 import queue
 import threading
 
-import setuptools
 import torch.multiprocessing as mp
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.managers import SharedMemoryManager, SyncManager
@@ -23,7 +22,7 @@ from typing import Type
 import config
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, datetime_string, run_in_thread
-from loggers import get_logger, get_process_logger, logger_thread
+from loggers import get_process_logger, logger_thread
 from experiment import Experiment
 from subscribers import start_management_subscribers, start_experiment_subscribers
 from db_models import ORM
@@ -86,6 +85,10 @@ class ArenaProcess(mp.Process):
 
     def clear_fps(self):
         self.mp_metadata[self.calc_fps_name].value = 0.0
+
+    @property
+    def is_streaming(self):
+        return self.mp_metadata['is_streaming'].is_set()
 
 
 class Camera(ArenaProcess):
@@ -235,6 +238,7 @@ class ImageSink(ArenaProcess):
 
 
 class ImageHandler(ArenaProcess):
+    """Parent class to all image handlers or predictors. Run all imports in the new process"""
     calc_fps_name = 'pred_fps'
 
     def __init__(self, predictor_name, *args, shm=None, pred_shm=None, pred_image_size=None):
@@ -286,7 +290,8 @@ class CameraUnit:
             'pred_fps': mp.Value('d', 0.0),
             'shm_frame_timestamp': mp.Value('d', 0.0),
             'db_video_id': mp.Value('i', 0),
-            'pred_delay': mp.Value('d', 0.0)
+            'pred_delay': mp.Value('d', 0.0),
+            'is_streaming': mp.Event()
         }
         self.stop_signal.set()
         self.logger = get_process_logger(str(self), self.log_queue)
@@ -345,6 +350,7 @@ class CameraUnit:
 
     def stream(self):
         """iterator for streaming frames to web UI"""
+        self.mp_metadata['is_streaming'].set()
         while not self.stop_signal.is_set():
             img = self.get_stream_frame()
             (flag, encodedImage) = cv2.imencode(".jpg", img)
@@ -355,6 +361,7 @@ class CameraUnit:
             time.sleep(0.01)
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n\r\n')
+        self.mp_metadata['is_streaming'].clear()
 
     def get_frame(self):
         img = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
@@ -551,6 +558,11 @@ class ArenaManager(SyncManager):
         self._streaming_camera = cam_name
 
     def stop_stream(self):
+        if self._streaming_camera is not None:
+            try:
+                self.units[self._streaming_camera].mp_metadata['is_streaming'].clear()
+            except Exception:
+                self.logger.exception('Error in stop_stream')
         self._streaming_camera = None
 
     def stream(self):

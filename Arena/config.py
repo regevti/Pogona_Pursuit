@@ -1,5 +1,6 @@
+import yaml
 from environs import Env
-from enum import Enum, auto
+from pathlib import Path
 
 env = Env()
 env.read_env()
@@ -64,55 +65,7 @@ subscription_topics.update(commands_topics)
 
 # Arena
 default_exposure = 5000
-cameras = {
-    'top': {
-        'id': 'DEV_1AB22C017E6D',
-        'module': 'allied_vision',
-        'exposure': 9000,
-        'image_size': [1088, 1456, 3],
-        'output_dir': '',
-        'writing_fps': 60,
-        'fps': 60,
-        'predictors': {
-                # 'resnet': None
-                'pogona_head': [480, 640, 3]
-            },
-        'is_color': 1,
-    },
-    'back': {
-            'id': 'DEV_1AB22C017E72',
-            'module': 'allied_vision',
-            'exposure': 6000,
-            'image_size': [1088, 1456, 1],
-            'output_dir': '',
-            'fps': 60,
-            'writing_fps': 60,
-            'predictors': {
-                'deeplabcut': [1088, 1456, 1]
-            },
-    },
-    'front': {
-            'id': 'DEV_1AB22C017E6F',
-            'module': 'allied_vision',
-            'exposure': 6000,
-            'image_size': [1088, 1456, 1],
-            'output_dir': '',
-            'fps': 120,
-            'writing_fps': 60,
-            'predictors': {
-                'pogona_head': [480, 640, 3]
-            },
-    },
-    'test': {
-        'id': 'DEV_1AB22C017E70',
-        'module': 'allied_vision',
-        'fps': 98,
-        'exposure': default_exposure,
-        'image_size': [1088, 1456, 3],
-        'output_dir': '',
-        'predictors': ['pogona_head']
-    }
-}
+cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
 
 # Multi-Processing
 array_queue_size_mb = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20)  # I assume that one image is roughly 5Mb

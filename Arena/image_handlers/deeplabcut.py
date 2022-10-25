@@ -10,9 +10,9 @@ from dlclive import DLCLive, Processor
 
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 DLC_FOLDER = '/media/sil2/Data/regev/pose_estimation/deeplabcut/projects/dlc_pogona_mini'
-# EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_resnet_50_iteration-2_shuffle-0/'
-EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_mobilenet_v2_1.0_iteration-2_shuffle-1/'
-THRESHOLD = 0.8
+EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_resnet_50_iteration-2_shuffle-0/'
+# EXPORTED_MODEL = DLC_FOLDER + '/exported-models/DLC_dlc_pogona_mini_mobilenet_v2_1.0_iteration-2_shuffle-1/'
+THRESHOLD = 0.75
 
 
 class DeepLabCut(Predictor):
@@ -101,6 +101,6 @@ class DeepLabCut(Predictor):
         if engagement_score:
             font, color = cv2.FONT_HERSHEY_SIMPLEX, (255, 255, 0)
             text = f'Engagement: {engagement_score:.1f}'
-            frame = cv2.putText(frame, text, (20, 10), font, 1, color, 2, cv2.LINE_AA)
+            frame = cv2.putText(frame, text, (30, 20), font, 1, color, 2, cv2.LINE_AA)
 
         return frame
