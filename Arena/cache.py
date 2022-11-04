@@ -24,6 +24,8 @@ class CacheColumns:
     RECORDING_CAMERAS = Column('RECORDING_CAMERAS', list, config.experiments_timeout)
     CURRENT_BLOCK_DB_INDEX = Column('CURRENT_BLOCK_DB_INDEX', int, config.experiments_timeout)
     OPEN_APP_HOST = Column('OPEN_APP_HOST', str, 60)
+    CURRENT_ANIMAL_ID = Column('CURRENT_ANIMAL_ID', str, None)
+    CURRENT_ANIMAL_ID_DB_INDEX = Column('CURRENT_ANIMAL_ID_DB_INDEX', int, None)
 
 
 class RedisCache:

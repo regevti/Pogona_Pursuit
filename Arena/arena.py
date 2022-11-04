@@ -3,12 +3,12 @@ import datetime
 import sys
 import time
 import cv2
-import re
 import importlib
 import atexit
 import signal
 import queue
 import threading
+import sentry_sdk
 
 import torch.multiprocessing as mp
 from multiprocessing.shared_memory import SharedMemory
@@ -26,6 +26,7 @@ from loggers import get_process_logger, logger_thread
 from experiment import Experiment
 from subscribers import start_management_subscribers, start_experiment_subscribers
 from db_models import ORM
+from scheduler import Scheduler
 
 cache = RedisCache()
 
@@ -59,9 +60,13 @@ class ArenaProcess(mp.Process):
 
     def run(self):
         self.logger = get_process_logger(str(self), self.log_queue)
-        self._run()
-        if self.calc_fps_name:
-            self.clear_fps()
+        try:
+            self._run()
+            if self.calc_fps_name:
+                self.clear_fps()
+        except Exception as exc:
+            sentry_sdk.capture_exception(exc)
+            self.logger.exception(exc)
 
     def _run(self):
         raise NotImplemented('_run is not implemented')
@@ -369,7 +374,7 @@ class CameraUnit:
         return img
 
     def get_stream_frame(self):
-        if not self.pred_shm:
+        if not self.pred_shm or not self.get_alive_predictors():
             return self.get_frame()
 
         stream_pred = self.cam_config.get('stream_predictor')
@@ -508,6 +513,9 @@ class ArenaManager(SyncManager):
         }
         management_subs = start_management_subscribers(self.arena_shutdown_event, self.log_queue, subs_dict)
         self.threads.update(management_subs)
+        # scheduler
+        self.threads['scheduler'] = Scheduler(self)
+        self.threads['scheduler'].start()
 
     def start_experiment_listeners(self):
         # start experiment listeners

@@ -1,79 +1,50 @@
-<!--<div class="row">-->
-    <div class="col-md-7" style="height: 100%">
-        <form>
-            <h4>Cameras</h4>
-            <div class="row">
-                <div class="col-sm-auto">
-                    <div class="row" style="height: 26px"></div>
-                    {% for cam in cameras %}
-                    <div class="row ml-4">
-                        <input class="form-check-input cam-checkbox" type="checkbox" value="{{cam}}" id="camera-{{cam}}" disabled>
-                        <label class="form-check-label cams-labels" for="camera-{{cam}}">{{cam}}</label>
-                        <input id="toggle-{{cam}}" type="checkbox" checked data-toggle="toggle"
-                               data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
-        <!--                <input class="form-check-input cam-prediction-checkbox" type="checkbox" value="{{cam}}"-->
-        <!--                       id="use-predictions-{{cam}}" style="position: relative;margin-left: inherit" disabled>-->
-                    </div>
-                    {% endfor %}
+<div style="height: 100%">
+    <form class="bottom-border">
+        <h4>Cameras</h4>
+        <div class="row">
+            <div class="col-sm-auto">
+                <div class="row" style="height: 26px"></div>
+                {% for cam in cameras %}
+                <div class="row ml-4">
+                    <input class="form-check-input cam-checkbox" type="checkbox" value="{{cam}}" id="camera-{{cam}}"
+                           disabled>
+                    <label class="form-check-label cams-labels" for="camera-{{cam}}">{{cam}}</label>
+                    <input id="toggle-{{cam}}" type="checkbox" checked data-toggle="toggle"
+                           data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
+                    <!--                <input class="form-check-input cam-prediction-checkbox" type="checkbox" value="{{cam}}"-->
+                    <!--                       id="use-predictions-{{cam}}" style="position: relative;margin-left: inherit" disabled>-->
                 </div>
-                <div class="col">
-                    <div class="row">
-                    {% for columnKey in ["cam-fps", "sink-fps", "pred-fps", "pred-delay", "predictors"] %}
-                        <div class="col-sm-auto" style="margin-right: 1em; padding: 2px; text-align: center">
-                            <span><b>{{ columnKey }}</b></span>
-                            {% for cam in cameras %}
-                            <div id="{{columnKey}}-{{cam}}" style="margin-bottom: 2px">
-                                {% if columnKey=="predictors" %}
-                                  -
-                                {% else %}
-                                  0
-                                {% endif %}
-                            </div>
-                            {% endfor %}
-                        </div>
-                    {% endfor %}
-                    </div>
-                </div>
+                {% endfor %}
             </div>
-
-        </form>
-        <div class="row" style="margin-top: 1em">
-          <div class="col-md-7">
-              <form id="record_form">
-                    <h4>Record</h4>
-                    <div class="form-group row">
-                        <label for="videoOutputPrefix" class="col col-form-label">Folder Prefix</label>
-                        <div class="col-sm-7">
-                            <input type="text" class="form-control" id="videoOutputPrefix">
-                        </div>
-                    </div>
-                    <h7 class="label">Acquire Stop</h7>
-                    <div class="form-group row">
-                        <div class="col">
-                            <select id="acquireStopSelect" class="form-control col">
-                                {% for val, label in acquire_stop.items() %}
-                                    <option value="{{val}}">{{label}}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <input id="acquireStopValue" class="col-sm-4 ml-1" type="int" class="form-control"
-                               placeholder="Value" required>
-                    </div>
-                    <div class="form-group row">
-                        <div class="col">
-                            <button id="runRecordButton" type="submit" class="btn btn-primary mr-2">Run</button>
-                            <button id="stopRecord" type="button" class="btn btn-outline-danger mr-4">Stop Record
-                            </button>
-                            <button id="camerasInfo" type="button" class="btn btn-outline-info">Info</button>
-                        </div>
-                    </div>
-                </form>
-          </div>
             <div class="col">
-                {% include "management/events.html" %}
+                <div class="row">
+                    {% for columnKey in ["cam-fps", "sink-fps", "pred-fps", "pred-delay", "predictors"] %}
+                    <div class="col-sm-auto" style="margin-right: 1em; padding: 2px; text-align: center">
+                        <span><b>{{ columnKey }}</b></span>
+                        {% for cam in cameras %}
+                        <div id="{{columnKey}}-{{cam}}" style="margin-bottom: 2px">
+                            {% if columnKey=="predictors" %}
+                            -
+                            {% else %}
+                            0
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
+
+    </form>
+
+    <div class="row" style="margin-top: 1em">
+        <div class="col-md-7"></div>
+        <div class="col">
+            {% include "management/events.html" %}
+        </div>
     </div>
+</div>
 
 
 

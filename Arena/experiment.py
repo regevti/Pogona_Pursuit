@@ -20,7 +20,7 @@ import pandas as pd
 import config
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off
+from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command
 from subscribers import Subscriber
 from db_models import ORM
 
@@ -105,7 +105,8 @@ class Experiment:
     def is_ready_for_experiment(self):
         if all([
             self.is_websocket_server_on(),
-            self.is_pogona_hunter_up()
+            self.is_pogona_hunter_up(),
+            self.is_touchscreen_mapped_to_hdmi()
         ]):
             return True
         else:
@@ -125,6 +126,17 @@ class Experiment:
             return res.ok
         except Exception:
             self.logger.error('pogona hunter app is down')
+
+    def is_touchscreen_mapped_to_hdmi(self):
+        try:
+            # if the matrix under "Coordinate Transformation Matrix" has values different than 0,1 - that means
+            # that the mapping is working
+            touchscreen_device_id = 9
+            cmd = f'DISPLAY=":0"  xinput list-props {touchscreen_device_id} | grep "Coordinate Transformation Matrix"'
+            res = next(run_command(cmd)).decode()
+            return any(z not in [0.0, 1.0] for z in [float(x) for x in re.findall(r'\d\.\d+', res)])
+        except Exception:
+            self.logger.error('Touch detection is not mapped to HDMI screen\nFix by running: xinput map-to-output 9 HDMI-0')
 
     def stop_experiment(self, *args):
         self.logger.debug('closing experiment...')

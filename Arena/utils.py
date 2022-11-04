@@ -28,7 +28,7 @@ DISPLAY_CMD = 'DISPLAY=":0" xrandr --output HDMI-0 --{}'
 
 def turn_display_on():
     return os.system('pkill chrome; ' + DISPLAY_CMD.format('auto') + ' --right-of DP-0 && sleep 1 && ' +
-                       '/home/regev/scripts/start_pogona_hunter.sh')
+                       'scripts/start_pogona_hunter.sh')
 
 
 def turn_display_off():
@@ -130,7 +130,7 @@ def run_in_thread(func):
 
 
 def get_sys_metrics():
-    gpu_usage, cpu_usage, memory_usage = None, None, None
+    gpu_usage, cpu_usage, memory_usage, storage = None, None, None, None
     try:
         cmd = 'nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits'
         res = next(run_command(cmd)).decode().replace(' ', '').replace('\n', '')
@@ -152,4 +152,11 @@ def get_sys_metrics():
         memory_usage = int(m.group('used')) / int(m.group('total'))
     except Exception:
         pass
-    return {'gpu_usage': gpu_usage, 'cpu_usage': cpu_usage, 'memory_usage': memory_usage}
+    try:
+        cmd = 'df -h /data | grep -oP "\d+%"'
+        res = next(run_command(cmd)).decode()
+        if res and isinstance(res, str):
+            storage = float(res.replace('%', ''))
+    except Exception:
+        pass
+    return {'gpu_usage': gpu_usage, 'cpu_usage': cpu_usage, 'memory_usage': memory_usage, 'storage': storage}

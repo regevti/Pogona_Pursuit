@@ -28,7 +28,7 @@ class PogonaHeadDetector(Predictor):
         )
         super().loop()
 
-    def predict_frame(self, img):
+    def predict_frame(self, img, timestamp):
         det, img = self.detector.detect_image(img)
         return det, img
 
@@ -38,6 +38,7 @@ class PogonaHeadDetector(Predictor):
             # self.predictions.append((timestamp, None, None, None))
         else:
             xA, yA, xB, yB, confidence = det[0, :].flatten()
+            x_center, y_center = (xA + xB) / 2, (yA + yB) / 2
             self.predictions.append((timestamp, float((xA + xB) / 2), float((yA + yB) / 2), float(confidence)))
 
 

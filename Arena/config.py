@@ -15,8 +15,9 @@ static_files_dir = env('STATIC_FILES_DIR', 'static')
 api_max_blocks_to_show = 20
 LOGGING_LEVEL = env('LOGGING_LEVEL', 'DEBUG')
 UI_LOGGING_LEVEL = env('UI_LOGGING_LEVEL', 'INFO')
-FLASK_PORT = env.int('FLASK_PORT', 5000)
+FLASK_PORT = env.int('FLASK_PORT', 5084)
 POGONA_HUNTER_PORT = env.int('POGONA_HUNTER_PORT', 8080)
+SENTRY_DSN = env('SENTRY_DSN', '')
 management_url = env('MANAGEMENT_URL', f'http://localhost:{FLASK_PORT}')
 
 # Cache (Redis)
@@ -86,6 +87,7 @@ arena_modules = {
 }
 output_dir = env('OUTPUT_DIR', '../output/recordings')
 output_dir_key = 'output_dir'
+capture_images_dir = env('capture_images_dir', '../output/captures')
 pixels2cm = 0.01833304668870419
 temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
 max_video_time_sec = env.int('max_video_time_sec', 60*10)
@@ -94,6 +96,10 @@ max_predictor_rows = env.int('max_predictor_rows', 60*60*5)
 # temperature sensor
 SERIAL_PORT_TEMP = env('SERIAL_PORT_TEMP', '/dev/ttyACM0')
 SERIAL_BAUD = env.int('SERIAL_BAUD', 9600)
+
+# Calibration
+calibration_dir = env('calibration_dir', '../output/calibrations')
+min_calib_images = env.int('min_calib_images', 7)
 
 # Experiments
 experiments_dir = env('EXPERIMENTS_DIR', "../output/experiments")

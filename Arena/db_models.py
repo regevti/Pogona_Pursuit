@@ -8,9 +8,19 @@ from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.dialects.postgresql import JSON
 import config
 from cache import RedisCache, CacheColumns as cc
-
+from loggers import get_logger
 
 Base = declarative_base()
+
+
+class Animal(Base):
+    __tablename__ = 'animals'
+
+    id = Column(Integer, primary_key=True)
+    animal_id = Column(String)
+    start_time = Column(DateTime)
+    end_time = Column(DateTime, nullable=True)
+    sex = Column(String)
 
 
 class Experiment(Base):
@@ -124,12 +134,27 @@ class VideoPrediction(Base):
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
 
 
+class PoseEstimation(Base):
+    __tablename__ = 'pose_estimations'
+
+    id = Column(Integer, primary_key=True)
+    cam_name = Column(String)
+    start_time = Column(DateTime)
+    x = Column(Float)
+    y = Column(Float)
+    angle = Column(Float, nullable=True)
+    engagement = Column(Float, nullable=True)
+    video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
+    block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
+
+
 class ORM:
     def __init__(self):
         self.engine = get_engine()
         self.session = sessionmaker(bind=self.engine)
         self.current_experiment_id = None
         self.cache = RedisCache()
+        self.logger = get_logger('orm')
 
     def commit_experiment(self, exp):
         with self.session() as s:
@@ -170,6 +195,9 @@ class ORM:
         trial_id = trial_dict.get('trial_db_id')
         with self.session() as s:
             trial_model = s.query(Trial).filter_by(id=trial_id).first()
+            if trial_model is None:
+                self.logger.warning(f'Trial DB id: {trial_id} was not found in DB; cancel update.')
+                return
             model_cols = [c.name for c in Trial.__table__.columns]
             for k, v in trial_dict.items():
                 if k in model_cols and k not in ['id', 'trial_db_id']:
@@ -232,12 +260,41 @@ class ORM:
             video_model.calc_fps = 1 / np.diff(timestamps).mean()
             s.commit()
 
-    def commit_predictions(self, predictor_name: str, data: list, video_id: int, start_time: datetime):
+    def commit_video_predictions(self, predictor_name: str, data: list, video_id: int, start_time: datetime):
         vid_pred = VideoPrediction(predictor_name=predictor_name, data={i: x for i, x in enumerate(data)},
                                    video_id=video_id, start_time=start_time)
         with self.session() as s:
             s.add(vid_pred)
             s.commit()
+
+    def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id):
+        pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle,
+                            engagement=engagement, video_id=video_id,
+                            block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
+        )
+        with self.session() as s:
+            s.add(pe)
+            s.commit()
+
+    def commit_animal_id(self, animal_id, sex):
+        with self.session() as s:
+            animal = Animal(animal_id=animal_id, sex=sex, start_time=datetime.now())
+            s.add(animal)
+            s.commit()
+            self.cache.set(cc.CURRENT_ANIMAL_ID, animal_id)
+            self.cache.set(cc.CURRENT_ANIMAL_ID_DB_INDEX, animal.id)
+
+    def update_animal_id_end_time(self):
+        with self.session() as s:
+            db_index = self.cache.get(cc.CURRENT_ANIMAL_ID_DB_INDEX)
+            if db_index is None:
+                self.logger.error('No cached animal ID')
+                return
+            animal_model = s.query(Animal).filter_by(id=db_index).first()
+            animal_model.end_time = datetime.now()
+            s.commit()
+        self.cache.delete(cc.CURRENT_ANIMAL_ID)
+        self.cache.delete(cc.CURRENT_ANIMAL_ID_DB_INDEX)
 
 
 def get_engine():

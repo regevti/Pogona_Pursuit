@@ -1,17 +1,23 @@
+import io
+import cv2
 import json
+import base64
 import psutil
 import logging
-import torch.multiprocessing as mp
 from pathlib import Path
+from PIL import Image
+import torch.multiprocessing as mp
 from flask import Flask, render_template, Response, request, send_from_directory, jsonify
+import sentry_sdk
 import config
+import utils
 from cache import RedisCache, CacheColumns as cc
 from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config
 from db_models import ORM
-import calibration
+from calibration import PoseEstimator
 
 app = Flask('ArenaAPI')
 cache = None
@@ -51,7 +57,7 @@ def check():
         proc_cpus = {}
         for p in cu.processes.copy().values():
             try:
-                proc_cpus[p.name] = psutil.Process(p.pid).cpu_percent(0.1)
+                proc_cpus[p.name] = round(psutil.Process(p.pid).cpu_percent(0.1))
             except:
                 continue
         res.setdefault('processes_cpu', {})[cam_name] = proc_cpus
@@ -127,26 +133,39 @@ def stop_camera_unit():
     return Response('ok')
 
 
-@app.route('/calibrate')
+@app.route('/capture', methods=['POST'])
+def capture():
+    cam = request.form['camera']
+    folder_prefix = request.form.get('folder_prefix')
+    img = arena_mgr.get_frame(cam)
+    dir_path = config.capture_images_dir
+    if folder_prefix:
+        dir_path = Path(dir_path) / folder_prefix
+        dir_path.mkdir(exist_ok=True, parents=True)
+    img_path = f'{dir_path}/{utils.datetime_string()}_{cam}.png'
+    cv2.imwrite(img_path, img)
+    arena_mgr.logger.info(f'Image from {cam} was saved to: {img_path}')
+    return Response('ok')
+
+
+@app.route('/calibrate', methods=['POST'])
 def calibrate():
     """Calibrate camera"""
-    img = arena_mgr.get_frame('front')
+    cam = request.form['camera']
+    img = arena_mgr.get_frame(cam)
+    pe = PoseEstimator(cam)
+    img, ret = pe.find_aruco_markers(img)
+    img = img.astype('uint8')
 
-
-@app.route('/calibrate_aruco')
-def calibrate_aruco():
-    """Calibrate camera"""
-    img = arena_mgr.get_frame('front')
-    try:
-        h, _, h_im, error = calibration.calibrate(img)
-    except Exception as exc:
-        arena_mgr.logger.error(f'Error in calibrate; {exc}')
-        error = str(exc)
-
-    if error:
-        return Response(error)
-    arena_mgr.logger.info('calibration completed')
-    return Response('Calibration completed')
+    # cv2.imwrite(f'../output/calibrations/{cam}.jpg', img)
+    if img.shape[2] == 1:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    img = Image.fromarray(img)
+    rawBytes = io.BytesIO()
+    img.save(rawBytes, "JPEG")
+    rawBytes.seek(0)
+    img_base64 = base64.b64encode(rawBytes.read())
+    return jsonify({'status': str(img_base64)})
 
 
 @app.route('/reward')
@@ -295,6 +314,14 @@ if __name__ == "__main__":
     # h = logging.StreamHandler()
     # h.setFormatter(CustomFormatter())
     # logger.addHandler(h)
+    sentry_sdk.init(
+        dsn=config.SENTRY_DSN,
+        # Set traces_sample_rate to 1.0 to capture 100%
+        # of transactions for performance monitoring.
+        # We recommend adjusting this value in production.
+        traces_sample_rate=1.0
+    )
+
     mp.freeze_support()
     mp.set_start_method('spawn', force=True)
 

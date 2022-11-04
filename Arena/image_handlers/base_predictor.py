@@ -1,11 +1,12 @@
 import datetime
 import time
 import numpy as np
-from arrayqueues.shared_arrays import Empty
 from arena import ImageHandler
 from db_models import ORM
-from cache import RedisCache, CacheColumns as cc
+from cache import RedisCache
+from utils import run_in_thread
 import config
+from calibration import PoseEstimator
 
 
 class Predictor(ImageHandler):
@@ -18,6 +19,8 @@ class Predictor(ImageHandler):
         self.current_db_video_id = None
         self.predictions_start_time = None
         self.last_timestamp = None
+        self.caliber = PoseEstimator(self.cam_name,
+                                     resize_dim=self.pred_image_size[:2][::-1] if self.pred_image_size else None)
 
     def __str__(self):
         return f'Predictor-{self.cam_name}'
@@ -40,8 +43,10 @@ class Predictor(ImageHandler):
 
                 timestamp = self.wait_for_next_frame()
                 img = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
-                # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                det, img = self.predict_frame(img)
+                img = self.before_predict(img)
+                if not self.caliber.is_initiated:
+                    self.caliber.init(img)
+                det, img = self.predict_frame(img, timestamp)
                 # copy the image+predictions to pred_shm
                 if self.pred_image_size is not None:
                     buf_np = np.frombuffer(self.pred_shm.buf, dtype=config.shm_buffer_dtype).reshape(
@@ -59,7 +64,10 @@ class Predictor(ImageHandler):
             self.mp_metadata[self.calc_fps_name].value = 0.0
             self.mp_metadata['pred_delay'].value = 0.0
 
-    def predict_frame(self, img):
+    def before_predict(self, img):
+        return img
+
+    def predict_frame(self, img, timestamp):
         """Return the prediction vector and the image itself in case it was changed"""
         return None, img
 
@@ -72,15 +80,19 @@ class Predictor(ImageHandler):
         raise NotImplemented()
 
     def end_predictions_log(self):
-        if self.current_db_video_id:  # this step is to avoid serialization problems related to float32
-            self.orm.commit_predictions(predictor_name=str(self), data=self.predictions,
-                                        video_id=self.current_db_video_id, start_time=self.predictions_start_time)
+        if self.predictions:
+            self.commit_to_db()
         self.predictions = None
         self.current_db_video_id = None
         self.predictions_start_time = None
 
+    @run_in_thread
+    def commit_to_db(self):
+        self.orm.commit_video_predictions(predictor_name=str(self), data=self.predictions,
+                                          video_id=self.current_db_video_id, start_time=self.predictions_start_time)
+
     def get_db_video_id(self):
-        return self.mp_metadata['db_video_id'].value
+        return self.mp_metadata['db_video_id'].value or None
 
     def wait_for_next_frame(self, timeout=2):
         current_timestamp = self.mp_metadata['shm_frame_timestamp'].value

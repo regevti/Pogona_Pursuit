@@ -25,9 +25,13 @@
 <div class="row">
     <div class="col-xl-7">
         <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0.5em">Pogona Pursuit</h1>
-        <div class="row" id="controls-panel">
-            {% include "management/start_experiment.html" %}
-            {% include "management/cameras_record.html" %}
+        <div class="row top-border bottom-border" id="all-panels">
+            <div class="col-md-5 control-panel right-border">
+                {% include "management/control_metrics.html" %}
+            </div>
+            <div class="col control-panel">
+                {% include "management/cameras_record.html" %}
+            </div>
         </div>
         <pre class="row" id="record-output"></pre>
     </div>
@@ -135,6 +139,7 @@
                     $("#gpuMetric").text(data['gpu_usage'] ? `GPU Usage: ${(data['gpu_usage']*100).toFixed(1)}%` : '')
                     $("#cpuMetric").text(data['cpu_usage'] ? `CPU Usage: ${(data['cpu_usage']).toFixed(1)}%` : '')
                     $("#memMetric").text(data['memory_usage'] ? `Memory Usage: ${(data['memory_usage']*100).toFixed(1)}%` : '')
+                    $("#storageMetric").text(data['storage'] ? `Data Storage: ${(data['storage']).toFixed(0)}%` : '')
                     setTimeout(api_check, apiCheckTimeout)
                 }
             })
@@ -267,6 +272,8 @@
         $("#streamButton").click(function () {
             $.post('/set_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
                 $("#selectStreamCamera").prop("disabled", true);
+                $("#calibrate").prop("disabled", true);
+                $("#captureImage").prop("disabled", true);
                 // $(`input[value=${camera}]`).prop("disabled", true);
                 $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
             })
@@ -278,7 +285,13 @@
                 const sCamera = $("#selectStreamCamera");
                 // $(`input[value=${sCamera.val()}]`).prop("disabled", false);
                 sCamera.prop("disabled", false);
+                $("#calibrate").prop("disabled", false);
+                $("#captureImage").prop("disabled", false);
             })
+        });
+
+        $("#captureImage").click(function () {
+           $.post('/capture', {camera: $("#selectStreamCamera").val(), folder_prefix: $("#videoOutputPrefix").val()})
         });
 
         $("#stopExperiment").click(function () {
@@ -423,9 +436,12 @@
             $.get('/hide_bugs')
             console.log('>> Bugs stopped manually')
         })
+
         $("#calibrate").click(function (e) {
-            $.get('/calibrate', function (data) {
-                console.log(`>> Calibration: ${data}`)
+            $.post(`/calibrate`, {camera: $("#selectStreamCamera").val()}).done( function (data) {
+                let bytestring = data['status']
+                let image = bytestring.split('\'')[1]
+                $("#stream_img").attr('src' , 'data:image/jpeg;base64,'+image)
             })
         })
 
@@ -532,11 +548,24 @@
         z-index: -5;
     }
 
-    #controls-panel {
+    .top-border {
         border-top: 1.5px solid black;
+    }
+
+    .bottom-border {
         border-bottom: 1.5px solid black;
-        padding-top: 1em;
-        padding-bottom: 1em;
+    }
+
+    .left-border {
+        border-left: 1.5px solid black;
+    }
+
+    .right-border {
+        border-right: 1.5px solid black;
+    }
+
+    .control-panel {
+        padding: 1em;
     }
 
     .toggle {
