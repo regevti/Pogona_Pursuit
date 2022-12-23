@@ -21,7 +21,7 @@ import config
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command
-from subscribers import Subscriber
+from subscribers import Subscriber, start_experiment_subscribers
 from db_models import ORM
 
 cache = RedisCache()
@@ -29,13 +29,18 @@ cache = RedisCache()
 
 @dataclass
 class Experiment:
+    cam_units: dict
     animal_id: str
     cameras: dict
+    bug_types: list = field(default_factory=list)
+    reward_bugs: list = field(default_factory=list)
+    background_color: str = ''
     num_blocks: int = 1
     name: str = ''
     blocks: list = field(default_factory=list, repr=False)
     time_between_blocks: int = config.time_between_blocks
     extra_time_recording: int = config.extra_time_recording
+    is_identical_blocks: bool = False
 
     def __post_init__(self):
         self.start_time = datetime.now()
@@ -43,12 +48,15 @@ class Experiment:
         self.name = str(self)
         self.orm = ORM()
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
-        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.orm,
+        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.cam_units, self.orm,
+                             bug_types=self.bug_types, reward_bugs=self.reward_bugs,
+                             background_color=self.background_color,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
-        self.logger = get_logger(f'Experiment')
+        self.logger = get_logger('Experiment')
         self.threads = {}
         self.experiment_stop_flag = threading.Event()
+        self.init_experiment_cache()
 
     def __str__(self):
         return f'EXP{self.day}'
@@ -75,7 +83,6 @@ class Experiment:
         def _start():
             self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}'
                              f' with cameras: {",".join(self.cameras.keys())}')
-            self.init_experiment_cache()
             self.orm.commit_experiment(self)
             self.turn_screen('on')
 
@@ -93,6 +100,7 @@ class Experiment:
             cache.publish_command('end_experiment')
 
         if not self.is_ready_for_experiment():
+            self.stop_experiment()
             return
         self.threads['experiment_stop'] = Subscriber(self.experiment_stop_flag,
                                                      channel=config.subscription_topics['end_experiment'],
@@ -106,7 +114,8 @@ class Experiment:
         if all([
             self.is_websocket_server_on(),
             self.is_pogona_hunter_up(),
-            self.is_touchscreen_mapped_to_hdmi()
+            self.is_touchscreen_mapped_to_hdmi(),
+            is_reward_left()
         ]):
             return True
         else:
@@ -127,16 +136,29 @@ class Experiment:
         except Exception:
             self.logger.error('pogona hunter app is down')
 
-    def is_touchscreen_mapped_to_hdmi(self):
-        try:
-            # if the matrix under "Coordinate Transformation Matrix" has values different than 0,1 - that means
+    def is_touchscreen_mapped_to_hdmi(self, touchscreen_device_id=9):
+
+        def _check_mapped():
+            # if the matrix under "Coordinate Transformation Matrix" has values different from 0,1 - that means
             # that the mapping is working
-            touchscreen_device_id = 9
             cmd = f'DISPLAY=":0"  xinput list-props {touchscreen_device_id} | grep "Coordinate Transformation Matrix"'
             res = next(run_command(cmd)).decode()
             return any(z not in [0.0, 1.0] for z in [float(x) for x in re.findall(r'\d\.\d+', res)])
+
+        try:
+            is_mapped = _check_mapped()
+            if not is_mapped:
+                self.logger.info('Fixing mapping of touchscreen output')
+                run_command(f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {config.TOUCHSCREEN_DEVICE_ID} HDMI-0')
+                time.sleep(0.1)
+                is_mapped = _check_mapped()
+                if not is_mapped:
+                    self.logger.error(
+                        f'Touch detection is not mapped to HDMI screen\nFix by running: xinput map-to-output '
+                        f'{config.TOUCHSCREEN_DEVICE_ID} HDMI-0')
+            return is_mapped
         except Exception:
-            self.logger.error('Touch detection is not mapped to HDMI screen\nFix by running: xinput map-to-output 9 HDMI-0')
+            self.logger.exception('Error in is_touchscreen_mapped_to_hdmi')
 
     def stop_experiment(self, *args):
         self.logger.debug('closing experiment...')
@@ -147,7 +169,10 @@ class Experiment:
         cache.delete(cc.IS_ALWAYS_REWARD)
         cache.delete(cc.EXPERIMENT_NAME)
         cache.delete(cc.EXPERIMENT_PATH)
-        self.threads['main'].join()
+        cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, False)
+        if 'main' in self.threads:
+            self.threads['main'].join()
+        time.sleep(0.2)
         self.logger.info('Experiment ended')
 
     def save(self, data):
@@ -168,6 +193,7 @@ class Experiment:
     def init_experiment_cache(self):
         cache.set(cc.EXPERIMENT_NAME, str(self), timeout=self.experiment_duration)
         cache.set(cc.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
+        cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, True)
 
     @property
     def experiment_path(self):
@@ -184,15 +210,15 @@ class Block:
     cameras: dict
     experiment_name: str
     experiment_path: str
+    cam_units: dict
     orm: ORM
     extra_time_recording: int = config.extra_time_recording
     start_time = None
-
+    bug_types: list = field(default_factory=list)
     num_trials: int = 1
     trial_duration: int = 10
     iti: int = 10
     block_type: str = 'bugs'
-    bug_types: list = field(default_factory=list)
     bug_speed: int = None
     bug_size: int = None
     is_default_bug_size: bool = True
@@ -217,12 +243,12 @@ class Block:
         if isinstance(self.reward_bugs, str):
             self.reward_bugs = self.reward_bugs.split(',')
         elif not self.reward_bugs:
-            self.logger.warning(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
+            self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
 
     @property
     def info(self):
-        non_relevant_fields = ['self', 'cache', 'is_use_predictions', 'cameras', 'experiment_path', 'orm']
+        non_relevant_fields = ['self', 'cache', 'is_use_predictions', 'cameras', 'experiment_path', 'orm', 'cam_units']
         for block_type, block_type_fields in config.experiment_types.items():
             if block_type != self.block_type:
                 non_relevant_fields += block_type_fields
@@ -258,6 +284,8 @@ class Block:
         self.wait(self.extra_time_recording, label='Extra Time Rec')
 
         for trial_id in range(1, self.num_trials + 1):
+            if not is_reward_left():
+                raise EndExperimentException('No reward left; stopping experiment')
             self.start_trial(trial_id)
             self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}')
             self.end_trial()
@@ -272,6 +300,7 @@ class Block:
         cache.publish_command('led_light', 'on')
         cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
         cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
+        self.turn_cameras('on')
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             cache.set_cam_output_dir(cam_name, output_dir)
@@ -282,6 +311,38 @@ class Block:
         cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         for cam_name in self.cameras.keys():
             cache.set_cam_output_dir(cam_name, '')
+        time.sleep(10)
+        self.turn_cameras('off')
+
+    def turn_cameras(self, required_state):
+        """Turn on cameras if needed, and load the experiment predictors"""
+        assert required_state in ['on', 'off']
+        for cam_name, cu in self.cam_units.items():
+            # If there are no predictors configured and camera is on
+            # or writing_fps is 0 - do nothing.
+            if (not cu.get_conf_predictors() and cu.is_on()) or \
+                    (cu.cam_config.get('writing_fps') == 0):
+                continue
+
+            t0 = time.time()
+            # wait maximum 10 seconds if CU is starting or stopping
+            while (cu.is_starting or cu.is_stopping) and (time.time() - t0 < 10):
+                time.sleep(0.1)
+
+            if required_state == 'on':
+                if not cu.is_on():
+                    cu.start(predictors_type='experiment')
+                else:
+                    cu.reload_predictors(predictors_type='experiment')
+
+            else:
+                cu.reload_predictors(predictors_type='general')
+
+        t0 = time.time()
+        # wait maximum 30 seconds for cameras to finish start / stop
+        while any(cu.is_starting or cu.is_stopping for cu in self.cam_units.values()) and \
+                (time.time() - t0 < 30):
+            time.sleep(0.1)
 
     def start_trial(self, trial_id):
         trial_db_id = self.orm.commit_trial({
@@ -440,6 +501,15 @@ class ExperimentCache:
 
 class EndExperimentException(Exception):
     """End Experiment"""
+
+
+def is_reward_left():
+    is_left = False
+    try:
+        is_left = int(cache.get(cc.REWARD_LEFT)) > 0
+    except Exception:
+        pass
+    return is_left
 
 
 def config_log():

@@ -53,7 +53,8 @@ commands_topics = {
     'hide_bugs': 'cmd/visual_app/hide_bugs',
     'hide_media': 'cmd/visual_app/hide_media',
     'reload_app': 'cmd/visual_app/reload_app',
-    'healthcheck': 'cmd/visual_app/healthcheck'
+    'healthcheck': 'cmd/visual_app/healthcheck',
+    'strike_predicted': 'cmd/visual_app/strike_predicted'
 }
 subscription_topics = {
     'arena_operations': 'cmd/arena/*',
@@ -67,6 +68,8 @@ subscription_topics.update(commands_topics)
 # Arena
 default_exposure = 5000
 cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
+TOUCHSCREEN_DEVICE_ID = 9
+ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 
 # Multi-Processing
 array_queue_size_mb = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20)  # I assume that one image is roughly 5Mb
@@ -83,6 +86,7 @@ arena_modules = {
         'pogona_head': ('image_handlers.pogona_head', 'PogonaHeadDetector'),
         'resnet': ('image_handlers.resnet_embedding', 'ResnetEmbedding'),
         'deeplabcut': ('image_handlers.deeplabcut', 'DeepLabCut'),
+        'tongue_out': ('image_handlers.tongue_out_handler', 'TongueOutImageHandler')
     }
 }
 output_dir = env('OUTPUT_DIR', '../output/recordings')
@@ -91,6 +95,8 @@ capture_images_dir = env('capture_images_dir', '../output/captures')
 pixels2cm = 0.01833304668870419
 temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
 max_video_time_sec = env.int('max_video_time_sec', 60*10)
+
+# Predictors
 max_predictor_rows = env.int('max_predictor_rows', 60*60*5)
 
 # temperature sensor
@@ -100,6 +106,9 @@ SERIAL_BAUD = env.int('SERIAL_BAUD', 9600)
 # Calibration
 calibration_dir = env('calibration_dir', '../output/calibrations')
 min_calib_images = env.int('min_calib_images', 7)
+
+# Schedules
+schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
 
 # Experiments
 experiments_dir = env('EXPERIMENTS_DIR', "../output/experiments")

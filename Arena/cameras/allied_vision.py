@@ -62,7 +62,7 @@ class AlliedVisionCamera(Camera):
                     self.stop_signal.wait()
                     cache.remove_from_list(cc.RECORDING_CAMERAS, self.cam_name)
                     if self.stop_signal.is_set():
-                        self.logger.warning('received stop event')
+                        self.logger.debug('received stop event')
                 except KeyboardInterrupt:
                     pass
                 finally:

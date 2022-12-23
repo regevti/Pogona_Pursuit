@@ -1,0 +1,99 @@
+<div>
+    <div class="bottom-border">
+        <div class="p-3">
+            {% include "management/animal_id.html" %}
+        </div>
+
+        <div style="margin: auto; display: table">
+            <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#scheduleModal">
+                Schedule
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#experimentModal">
+                Create Experiment
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#recordModal">
+                Record
+            </button>
+            <button id="stopExperiment" type="button" class="btn btn-sm btn-outline-danger">Stop Experiment</button>
+        </div>
+    </div>
+
+    <div class="p-1">
+        <h5 class="p-2">Upcoming Schedules</h5>
+            <ul class="list-group" style="height: 200px;overflow-y: scroll;">
+                {% for val, label in schedules.items() %}
+                  <li class="list-group-item d-flex justify-content-between align-items-center"
+                      value="{{val}}" id="scheduleItem{{val}}" style="padding: 0.6em">
+                    {{label}}
+                    <button id="clearSchedule{{val}}" class="btn btn-secondary">
+                        <i class="fa fa-trash"></i>
+                    </button>
+                  </li>
+                {% endfor %}
+            </ul>
+    </div>
+</div>
+
+
+<div class="modal fade" id="experimentModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Experiment</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form>
+                <div class="modal-body">
+                    {% include "management/experiment_modal.html" %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="recordModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Record</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form>
+                <div class="modal-body">
+                    {% include "management/record_modal.html" %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="scheduleModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Schedule Experiment</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form>
+                <div class="modal-body">
+                    {% include "management/schedule_modal.html" %}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

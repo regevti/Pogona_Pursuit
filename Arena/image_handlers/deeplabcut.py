@@ -100,7 +100,7 @@ class DeepLabCut(Predictor):
             prev_pos = self.positions.get(bodypart)
             if bodypart in pdf.index:
                 row = pdf.loc[bodypart]
-                current_pos = (row.x, row.y)
+                current_pos = (float(row.x), float(row.y))
                 if not prev_pos or self.is_displaced(current_pos, prev_pos):
                     self.positions[bodypart] = current_pos
                     self.cam_coords[bodypart] = (round(row.cam_x), round(row.cam_y))

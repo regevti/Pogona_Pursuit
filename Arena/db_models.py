@@ -1,8 +1,8 @@
 import json
 
 import numpy as np
-from datetime import datetime, timedelta
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine
+from datetime import datetime, timedelta, date
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.dialects.postgresql import JSON
@@ -21,6 +21,18 @@ class Animal(Base):
     start_time = Column(DateTime)
     end_time = Column(DateTime, nullable=True)
     sex = Column(String)
+    bug_types = Column(String)
+    reward_bugs = Column(String)
+    background_color = Column(String)
+
+
+class Schedule(Base):
+    __tablename__ = 'schedules'
+
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime)
+    animal_id = Column(String)
+    experiment_name = Column(String)
 
 
 class Experiment(Base):
@@ -30,7 +42,7 @@ class Experiment(Base):
     name = Column(String)
     start_time = Column(DateTime)
     end_time = Column(DateTime, nullable=True, default=None)
-    animal_id = Column(Integer)
+    animal_id = Column(String)
     cameras = Column(String)  # list
     num_blocks = Column(Integer)
     extra_time_recording = Column(Integer)
@@ -67,6 +79,8 @@ class Block(Base):
     time_between_bugs = Column(Integer)
     background_color = Column(String, nullable=True)
     strikes = relationship('Strike')
+    trials = relationship('Trial')
+    videos = relationship('Video')
 
 
 class Trial(Base):
@@ -80,6 +94,7 @@ class Trial(Base):
     end_time = Column(DateTime, nullable=True, default=None)
     duration = Column(Float, nullable=True, default=None)
     bug_trajectory = Column(JSON, nullable=True)
+    strikes = relationship('Strike')
 
 
 class Temperature(Base):
@@ -106,6 +121,10 @@ class Strike(Base):
     bug_type = Column(String)
     bug_size = Column(Integer)
     in_block_trial_id = Column(Integer, nullable=True)  # The ID of the trial inside the block. Starts from 1
+    prediction_distance = Column(Float, nullable=True)
+    calc_speed = Column(Float, nullable=True)
+    projected_strike_coords = Column(JSON, nullable=True)
+    projected_leap_coords = Column(JSON, nullable=True)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=True)
 
@@ -120,8 +139,11 @@ class Video(Base):
     fps = Column(Float)
     calc_fps = Column(Float, nullable=True)
     num_frames = Column(Integer, nullable=True)
+    animal_id = Column(String, nullable=True)
     frames = Column(JSON, nullable=True)
+    compression_status = Column(Integer, default=0)  # 0: no compression, 1: compressed, 2: error
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
+    predictions = relationship('VideoPrediction')
 
 
 class VideoPrediction(Base):
@@ -142,9 +164,19 @@ class PoseEstimation(Base):
     start_time = Column(DateTime)
     x = Column(Float)
     y = Column(Float)
+    animal_id = Column(String, nullable=True)
     angle = Column(Float, nullable=True)
     engagement = Column(Float, nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
+    block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
+
+
+class Reward(Base):
+    __tablename__ = 'rewards'
+
+    id = Column(Integer, primary_key=True)
+    time = Column(DateTime)
+    animal_id = Column(String)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
 
 
@@ -166,7 +198,7 @@ class ORM:
             s.commit()
             self.current_experiment_id = exp_model.id
 
-    def commit_block(self, blk):
+    def commit_block(self, blk, is_cache_set=True):
         with self.session() as s:
             kwargs = {c.name: getattr(blk, c.name)
                       for c in Block.__table__.columns if c.name not in ['id', 'end_time']
@@ -178,12 +210,15 @@ class ORM:
             b = Block(**kwargs)
             s.add(b)
             s.commit()
-            self.cache.set(cc.CURRENT_BLOCK_DB_INDEX, b.id)
+            block_id = b.id
+            if is_cache_set:
+                self.cache.set(cc.CURRENT_BLOCK_DB_INDEX, block_id)
+        return block_id
 
     def commit_trial(self, trial_dict):
         kwargs = {c.name: trial_dict.get(c.name)
                   for c in Trial.__table__.columns if c.name not in ['id'] and not c.foreign_keys}
-        kwargs['block_id'] = self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
+        kwargs['block_id'] = trial_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         with self.session() as s:
             trial = Trial(**kwargs)
             s.add(trial)
@@ -204,18 +239,19 @@ class ORM:
                     setattr(trial_model, k, v)
             s.commit()
 
-    def update_block_end_time(self):
-        block_id = self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
+    def update_block_end_time(self, block_id=None, end_time=None):
+        block_id = block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         with self.session() as s:
             block_model = s.query(Block).filter_by(id=block_id).first()
-            block_model.end_time = datetime.now()
+            block_model.end_time = end_time or datetime.now()
             s.commit()
             self.cache.delete(cc.CURRENT_BLOCK_DB_INDEX)
 
-    def update_experiment_end_time(self):
+    def update_experiment_end_time(self, end_time=None):
+        end_time = end_time or datetime.now()
         with self.session() as s:
             exp_model = s.query(Experiment).filter_by(id=self.current_experiment_id).first()
-            exp_model.end_time = datetime.now()
+            exp_model.end_time = end_time
             s.commit()
 
     def commit_temperature(self, temp):
@@ -235,7 +271,7 @@ class ORM:
     def commit_strike(self, strike_dict):
         kwargs = {c.name: strike_dict.get(c.name)
                   for c in Strike.__table__.columns if c.name not in ['id'] and not c.foreign_keys}
-        kwargs['block_id'] = self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
+        kwargs['block_id'] = strike_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         kwargs['trial_id'] = strike_dict.get('trial_id')
 
         with self.session() as s:
@@ -243,9 +279,10 @@ class ORM:
             s.add(strike)
             s.commit()
 
-    def commit_video(self, path, fps, cam_name, start_time):
+    def commit_video(self, path, fps, cam_name, start_time, animal_id=None, block_id=None):
+        animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         vid = Video(path=path, fps=fps, cam_name=cam_name, start_time=start_time,
-                    block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX))
+                    block_id=block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX), animal_id=animal_id)
         with self.session() as s:
             s.add(vid)
             s.commit()
@@ -268,7 +305,8 @@ class ORM:
             s.commit()
 
     def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id):
-        pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle,
+        animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
+        pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle, animal_id=animal_id,
                             engagement=engagement, video_id=video_id,
                             block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         )
@@ -276,25 +314,76 @@ class ORM:
             s.add(pe)
             s.commit()
 
-    def commit_animal_id(self, animal_id, sex):
+    def commit_animal_id(self, animal_id, sex, bug_types, reward_bugs, background_color):
         with self.session() as s:
-            animal = Animal(animal_id=animal_id, sex=sex, start_time=datetime.now())
+
+            animal = Animal(animal_id=animal_id, sex=sex, bug_types=','.join(bug_types),
+                            start_time=datetime.now(), reward_bugs=','.join(reward_bugs or []),
+                            background_color=background_color)
             s.add(animal)
             s.commit()
             self.cache.set(cc.CURRENT_ANIMAL_ID, animal_id)
+            self.cache.set(cc.CURRENT_ANIMAL_SEX, sex)
+            self.cache.set(cc.CURRENT_BUG_TYPES, bug_types)
             self.cache.set(cc.CURRENT_ANIMAL_ID_DB_INDEX, animal.id)
 
-    def update_animal_id_end_time(self):
+    def update_animal_id(self, **kwargs):
         with self.session() as s:
             db_index = self.cache.get(cc.CURRENT_ANIMAL_ID_DB_INDEX)
             if db_index is None:
-                self.logger.error('No cached animal ID')
                 return
             animal_model = s.query(Animal).filter_by(id=db_index).first()
-            animal_model.end_time = datetime.now()
+            if animal_model is None:
+                return
+            for k, v in kwargs.items():
+                if k == 'bug_types':
+                    self.cache.set(cc.CURRENT_BUG_TYPES, v)
+                    v = ','.join(v)
+                elif k == 'reward_bugs':
+                    if isinstance(v, list):
+                        v = ','.join(v)
+                elif k == 'sex':
+                    self.cache.set(cc.CURRENT_ANIMAL_SEX, v)
+                setattr(animal_model, k, v)
             s.commit()
-        self.cache.delete(cc.CURRENT_ANIMAL_ID)
-        self.cache.delete(cc.CURRENT_ANIMAL_ID_DB_INDEX)
+
+        if 'end_time' in kwargs:
+            self.cache.delete(cc.CURRENT_ANIMAL_ID)
+            self.cache.delete(cc.CURRENT_ANIMAL_SEX)
+            self.cache.delete(cc.CURRENT_ANIMAL_ID_DB_INDEX)
+
+    def get_upcoming_schedules(self):
+        with self.session() as s:
+            animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
+            schedules = s.query(Schedule).filter(Schedule.date >= datetime.now(),
+                                                 Schedule.animal_id == animal_id).order_by(Schedule.date)
+        return schedules
+
+    def commit_schedule(self, date, experiment_name):
+        with self.session() as s:
+            animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
+            sch = Schedule(date=date, experiment_name=experiment_name, animal_id=animal_id)
+            s.add(sch)
+            s.commit()
+
+    def delete_schedule(self, schedule_id):
+        with self.session() as s:
+            s.query(Schedule).filter_by(id=int(schedule_id)).delete()
+            s.commit()
+
+    def commit_reward(self, time):
+        with self.session() as s:
+            rwd = Reward(time=time,
+                         animal_id=self.cache.get(cc.CURRENT_ANIMAL_ID),
+                         block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX))
+            s.add(rwd)
+            s.commit()
+
+    def get_todays_amount_strikes_rewards(self):
+        with self.session() as s:
+            strikes = s.query(Strike).filter(cast(Strike.time, Date) == date.today()).all()
+            rewards = s.query(Reward).filter(cast(Reward.time, Date) == date.today()).all()
+        return len(strikes), len(rewards)
 
 
 def get_engine():

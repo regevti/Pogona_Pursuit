@@ -19,21 +19,24 @@
     <script src="{{ url_for('static', filename='fields.js') }}" type="text/javascript"></script>
     <script src="{{ url_for('static', filename='WebSocketClient.js') }}" type="text/javascript"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.4.0/css/font-awesome.css" rel="stylesheet">
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.0/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tempusdominus-bootstrap-4/5.39.0/js/tempusdominus-bootstrap-4.min.js" integrity="sha512-k6/Bkb8Fxf/c1Tkyl39yJwcOZ1P4cRrJu77p83zJjN2Z55prbFHxPs9vN7q3l3+tSMGPDdoH51AEU8Vgo1cgAA==" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tempusdominus-bootstrap-4/5.39.0/css/tempusdominus-bootstrap-4.min.css" integrity="sha512-3JRrEUwaCkFUBLK1N8HehwQgu8e23jTH4np5NHOmQOobuC4ROQxFwFgBLTnhcnQRMs84muMh0PnnwXlPq5MGjg==" crossorigin="anonymous" />
 </head>
 
 <body>
 <div class="row">
     <div class="col-xl-7">
         <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0.5em">Pogona Pursuit</h1>
-        <div class="row top-border bottom-border" id="all-panels">
-            <div class="col-md-5 control-panel right-border">
-                {% include "management/control_metrics.html" %}
+        <div class="row top-border bottom-border" id="all-panels" style="padding-bottom: 0">
+            <div class="col-md-5 control-panel right-border" style="padding: 0">
+                {% include "management/left_panel.html" %}
             </div>
-            <div class="col control-panel">
-                {% include "management/cameras_record.html" %}
+            <div class="col control-panel" style="padding: 0">
+                {% include "management/middle_panel.html" %}
             </div>
         </div>
-        <pre class="row" id="record-output"></pre>
+        <pre class="row scrollable" id="record-output"></pre>
     </div>
     <div class="col">
         {% include "management/stream.html" %}
@@ -48,6 +51,9 @@
 
 <script>
     $(function () {
+        $('#datetimepicker1').datetimepicker({
+            format: "DD/MM/YYYY HH:mm"
+        });
         let wsclient = new WebSocketClient('ws://127.0.0.1:6380', {
             reconnectEnabled: true,
             reconnectInterval: 5000 // time to reconnect in milliseconds
@@ -63,8 +69,11 @@
         })
         const maxBlocks = Number("{{max_blocks}}")
         const cameras = "{{ cameras|join(',') }}".split(',')
+        const schedulesIds = "{{ schedules.keys()|join(',') }}".split(',')
         const $numBlocks = $("#numBlocks")
         const apiCheckTimeout = 1000
+        let currentStreamingCamera = null
+        let settingStreamCamera = false
         let checkedCameras = []
 
         let isToggleCheckPause = false
@@ -124,27 +133,42 @@
                     let expName = data['experiment_name']
                     let blockId = data['block_id']
                     let openAppHost = data['open_app_host']
-                    let tempValue = data['temperature']
-                    let tempColor = 'black'
-                    if (tempValue < 27) {
-                        tempColor = 'blue'
-                    } else if (tempValue > 32) {
-                        tempColor = 'red'
-                    }
+
+                    colorUpdate($("#temperatureValue"), data['temperature'], 'Temperature', '°C', 32, 25)
+                    colorUpdate($("#gpuMetric"), data['gpu_usage']*100, 'GPU Usage', '%', 80)
+                    colorUpdate($("#cpuMetric"), data['cpu_usage'], 'CPU Usage', '%', 80)
+                    colorUpdate($("#memMetric"), data['memory_usage']*100, 'Memory Usage', '%', 80)
+                    colorUpdate($("#storageMetric"), data['storage'], 'Data Storage', '%', 80, undefined, 0)
+
                     $("#currentExperimentName").text(expName ? `Current Experiment: ${expName}` : 'No experiment is running')
                     $("#currentBlockID").text(expName ? `Block ID: ${blockId}` : '')
                     $("#openAppHostDiv").text(openAppHost ? `pogona hunter run on: ${openAppHost}` : 'No APP is running')
-                    // $("#startExperimentButton").prop('disabled', !!expName)
-                    $("#temperatureValue").text(tempValue ? `Temperature: ${tempValue}°C` : 'No Temperature logged').css({'color': tempColor})
-                    $("#gpuMetric").text(data['gpu_usage'] ? `GPU Usage: ${(data['gpu_usage']*100).toFixed(1)}%` : '')
-                    $("#cpuMetric").text(data['cpu_usage'] ? `CPU Usage: ${(data['cpu_usage']).toFixed(1)}%` : '')
-                    $("#memMetric").text(data['memory_usage'] ? `Memory Usage: ${(data['memory_usage']*100).toFixed(1)}%` : '')
-                    $("#storageMetric").text(data['storage'] ? `Data Storage: ${(data['storage']).toFixed(0)}%` : '')
+
+                    $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
+                    $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards']).toFixed(0)}`)
+
+                    $("#rewardCount").text(data['reward_left'] ? data['reward_left'] : 0)
+
+                    if (!settingStreamCamera && currentStreamingCamera && data['streaming_camera'] !== currentStreamingCamera) {
+                        console.log(currentStreamingCamera, data['streaming_camera'])
+                        stopStreaming()
+                    }
+
                     setTimeout(api_check, apiCheckTimeout)
                 }
             })
         }
         api_check()
+
+        function colorUpdate($comp, value, text, units=undefined, maxValue=undefined, minValue=undefined, fixation=1) {
+            let color = 'black'
+            if (!!minValue && value < minValue) {
+                color = 'blue'
+            } else if (!!maxValue && value > maxValue) {
+                color = 'red'
+            }
+            $comp.text(`${text}: ${value.toFixed(fixation)}${units}`).css({'color': color})
+        }
 
         let $startExpButton = $('#startExperimentButton')
         let $recordButton = $("#runRecordButton")
@@ -158,11 +182,11 @@
                 isToggleCheckPause = true
                 let onRequested = $(`#toggle-${cam}`).prop('checked')
                 let url = onRequested ? '/start_camera_unit' : '/stop_camera_unit'
-                let camCheck$ = $(`#camera-${cam}`)
-                camCheck$.prop('disabled', !onRequested)
-                if (!onRequested) {
-                    camCheck$.prop('checked', false)
-                }
+                // let camCheck$ = $(`#camera-${cam}`)
+                // camCheck$.prop('disabled', !onRequested)
+                // if (!onRequested) {
+                //     camCheck$.prop('checked', false)
+                // }
                 $(`#stream-option-${cam}`).prop('disabled', !onRequested)
 
                 $.post(url, {camera: cam}).done(function () {
@@ -171,9 +195,11 @@
                     }, apiCheckTimeout)
                 })
             })
-            $(`#camera-${cam}`).change((res) => {
-                let isChecked = $(`#camera-${cam}`).prop('checked')
 
+            let camCheckBox$ = $(`#camera-${cam}`)
+            camCheckBox$.prop('checked', true)
+            camCheckBox$.change((res) => {
+                let isChecked = $(`#camera-${cam}`).prop('checked')
                 const camIndex = checkedCameras.indexOf(cam)
                 if (camIndex > -1 && !isChecked) {  // in checkedCameras
                     checkedCameras.splice(camIndex, 1)
@@ -186,7 +212,29 @@
                     $startExpButton.prop('disabled', false)
                     $recordButton.prop('disabled', false)
                 }
+            }).trigger('change')
+        })
+
+        $("#rewardCountInput").val('')
+
+        // Get animal ID
+        setTimeout(() => {
+          $.get('/get_current_animal').done(data => {
+              console.log(data)
+              AnimalIDFields.values = data
             })
+        }, 1000)
+
+        // schedules delete buttons
+        schedulesIds.forEach((sid) => {
+            $(`#clearSchedule${sid}`).click(() => {
+                $.post('/delete_schedule', {schedule_id: sid})
+                $(`#scheduleItem${sid}`).remove()
+            })
+        })
+
+        $("#isIdenticalBlocks").change(() => {
+            $numBlocks.trigger('change')
         })
 
         // Number of blocks listener
@@ -197,54 +245,45 @@
             } else {
                 $timeBetweenBlocksDiv.show()
             }
-            for (let i = 1; i <= numBlocks; i++) {
-                $(`#block${i}`).show()
-            }
-            for (let i = numBlocks + 1; i <= maxBlocks; i++) {
-                $(`#block${i}`).hide()
+            let isIdenticalBlocks = $("#isIdenticalBlocks").is(":checked")
+            if (isIdenticalBlocks) {
+                $("#block1Button").text(`Blocks #1-${numBlocks}`)
+                for (let i = 2; i <= maxBlocks; i++) {
+                    $(`#block${i}`).hide()
+                }
+            } else {
+                $("#block1Button").text(`Block #1`)
+                for (let i = 1; i <= numBlocks; i++) {
+                    $(`#block${i}`).show()
+                }
+                for (let i = numBlocks + 1; i <= maxBlocks; i++) {
+                    $(`#block${i}`).hide()
+                }
             }
         }).trigger('change')
 
+        // bug types listener
+        let $bugType = $(`#bugTypeSelect`)
+        $bugType.bsMultiSelect()
+        $bugType.change(() => {
+            let $rewardBug = $(`#rewardBugDiv`)
+            $(`#rewardBugSelect option`).remove()
+            if ($bugType.val().length <= 1) {
+                $rewardBug.hide()
+            } else {
+                let $el = $(`#rewardBugSelect`)
+                $(`#bugTypeSelect option`).each(function (v) {
+                    if (this.selected) {
+                        $el.append($("<option></option>").attr("value", this.value).text(this.text)).attr('selected', true);
+                    }
+                });
+                $el.bsMultiSelect("UpdateData")
+                $rewardBug.show()
+            }
+        })
+
         // Inside block listeners
         for (let i = 1; i <= maxBlocks; i++) {
-            // Bug types selection listener
-            let $bugType = $(`#bugTypeSelect${i}`)
-            let $rewardBug = $(`#rewardBugDiv${i}`)
-            $bugType.bsMultiSelect()
-            $bugType.change(() => {
-                $(`#rewardBugSelect${i} option`).remove()
-                if ($(`#bugTypeSelect${i}`).val().length <= 1) {
-                    $rewardBug.hide()
-                } else {
-                    let $el = $(`#rewardBugSelect${i}`)
-                    $(`#bugTypeSelect${i} option`).each(function (v) {
-                        if (this.selected) {
-                            $el.append($("<option></option>").attr("value", this.value).text(this.text)).attr('selected', true);
-                        }
-                    });
-                    $el.bsMultiSelect("UpdateData")
-                    $rewardBug.show()
-                }
-            })
-            // circle movement is anticlockwise listener
-            let $isAntiClockWiseDiv = $(`#isAntiClockWiseDiv${i}`)
-            let $targetDrift = $(`#targetDrift${i}`)
-            let $bugHeight = $(`#bugHeightDiv${i}`)
-            // $(`#movementTypeSelect${i}`).change(function () {
-            //   let movementType = $(`#movementTypeSelect${i}`).val()
-            //   if (movementType === 'circle') {
-            //     $isAntiClockWiseDiv.show()
-            //   } else {
-            //     $isAntiClockWiseDiv.hide()
-            //   }
-            //   if (['low_horizontal', 'low_horizontal_noise'].indexOf(movementType) !== -1) {
-            //     $targetDrift.show()
-            //     $bugHeight.show()
-            //   } else {
-            //     $targetDrift.hide()
-            //     $bugHeight.hide()
-            //   }
-            // })
             // media or bugs experiment block
             $(`#blockTypeSelect${i}`).change(function () {
                 if (isMediaExperiment(i)) {
@@ -256,7 +295,7 @@
                 } else {
                     $(`.bugs-options${i}`).show()
                     $(`#rewardBugDiv${i}`).hide()
-                    $isAntiClockWiseDiv.hide()
+                    // $isAntiClockWiseDiv.hide()
                     $(`.media-options${i}`).hide()
                 }
             }).trigger('change')
@@ -269,24 +308,37 @@
             }).trigger('change')
         }
 
+        function stopStreaming() {
+            $("#stream_img").attr("src", "{{ url_for('static', filename='video_placeholder.jpg') }}")
+            const sCamera = $("#selectStreamCamera");
+            sCamera.prop("disabled", false);
+            // $("#calibrate").prop("disabled", false);
+            // $("#captureImage").prop("disabled", false);
+            currentStreamingCamera = null
+        }
+
         $("#streamButton").click(function () {
-            $.post('/set_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
+            let camName = $("#selectStreamCamera").val()
+            $.post('/set_stream_camera', {camera: camName}).done(function (camera) {
+                settingStreamCamera = true
                 $("#selectStreamCamera").prop("disabled", true);
-                $("#calibrate").prop("disabled", true);
-                $("#captureImage").prop("disabled", true);
+                // $("#calibrate").prop("disabled", true);
+                // $("#captureImage").prop("disabled", true);
                 // $(`input[value=${camera}]`).prop("disabled", true);
                 $("#stream_img").attr("src", "{{ url_for('video_feed') }}")
+                currentStreamingCamera = camName
+                let tmt = setTimeout(() => {
+                    settingStreamCamera = false
+                    clearTimeout(tmt)
+                }, 1000)
+            }).fail(function () {
+                stopStreaming()
             })
         });
 
         $("#stopStream").click(function () {
             $.post('/stop_stream_camera', {camera: $("#selectStreamCamera").val()}).done(function (camera) {
-                $("#stream_img").attr("src", "{{ url_for('static', filename='video_placeholder.jpg') }}")
-                const sCamera = $("#selectStreamCamera");
-                // $(`input[value=${sCamera.val()}]`).prop("disabled", false);
-                sCamera.prop("disabled", false);
-                $("#calibrate").prop("disabled", false);
-                $("#captureImage").prop("disabled", false);
+                stopStreaming()
             })
         });
 
@@ -304,8 +356,10 @@
             })
         });
 
-        $("#experiment_form").submit(function (event) {
-            event.preventDefault();
+        let experimentModal$ = $('#experimentModal')
+        let saveExperimentModal$ = $('#saveExperimentModal')
+
+        $startExpButton.click(function (event) {
             $.ajax({
                 url: "/start_experiment",
                 type: "POST",
@@ -315,10 +369,12 @@
                     console.log(data.responseText)
                 }
             })
+            experimentModal$.modal('toggle');
         });
 
         $("#saveExperiment").click(() => {
             let params = AllFields.values
+            console.log(params)
             params['name'] = $('#saveExperimentName').val()
             $.ajax({
                 url: "/save_experiment",
@@ -330,11 +386,11 @@
                 },
                 success: function (res) {
                     console.log(`>> experiment ${params.name} was saved successfully`)
-                    $('#saveExperimentModal').modal('toggle');
+                    saveExperimentModal$.modal('hide');
                 },
                 error: function (data) {
                     console.log(data.responseText)
-                    $('#saveExperimentModal').modal('toggle');
+                    saveExperimentModal$.modal('hide');
                 }
             })
         })
@@ -344,12 +400,70 @@
             $.get(`/load_experiment/${experiment}`, (data) => {
                 console.log(data)
                 AllFields.values = data
-                $('#loadExperimentModal').modal('toggle');
+                $('#loadExperimentModal').modal('hide');
             })
         })
 
-        $("#record_form").submit(function (event) {
-            event.preventDefault();
+        $(".closeSaveExperiment").click(() => {
+            saveExperimentModal$.modal('hide');
+        })
+
+        $(".closeLoadExperiment").click(() => {
+            $('#loadExperimentModal').modal('hide');
+        })
+
+        $("#saveScheduleButton").click(() => {
+            $.post('/commit_schedule', {
+                    date: $("#datetimepicker1").data().date,
+                    experiment_name: $("#cachedExperimentsSelectSchedule").val()
+            })
+            $("#scheduleModal").modal('toggle');
+        });
+
+        $("#updateRewardCount").click(() => {
+            $.ajax({
+                url: "/update_reward_count",
+                type: "POST",
+                data: JSON.stringify({'reward_count': $("#rewardCountInput").val()}),
+                contentType: "application/json",
+                error: function (data) {
+                    console.log(data.responseText)
+                }
+            })
+        })
+
+        $("#updateAnimalId").click(() => {
+            $("#validateAnimalModal").modal('toggle');
+        })
+
+        function updateAnimalId() {
+            $.ajax({
+                url: "/update_animal_id",
+                type: "POST",
+                data: JSON.stringify(AnimalIDFields.values),
+                contentType: "application/json",
+                error: function (data) {
+                    console.log(data.responseText)
+                }
+            })
+        }
+
+        $("#yesUpdateAnimalId").click(() => {
+            updateAnimalId()
+            $("#validateAnimalModal").modal('toggle');
+        })
+
+        $("#openAnimalSettings").click(() => {
+            $("#animalSettingsModal").modal('toggle');
+        })
+
+        $("#updateAnimalSettings").click(() => {
+            updateAnimalId()
+            $("#animalSettingsModal").modal('toggle');
+        })
+
+        $recordButton.click(function (event) {
+            // event.preventDefault();
             $.ajax({
                 url: "/record",
                 type: "POST",
@@ -365,7 +479,9 @@
                     console.log(res.responseText)
                 }
             })
+            $("#recordModal").modal('toggle');
         });
+
         $("#stopRecord").click(function () {
             $.get("/manual_record_stop", function (data) {
                 console.log(data)
@@ -525,7 +641,7 @@
             }
             container.style.color = color
             $("#record-output").queue(function () {
-                $(this).append(container).dequeue()
+                $(this).prepend(container).dequeue()
             })
         }
 
@@ -553,6 +669,7 @@
     }
 
     .bottom-border {
+        padding-bottom: 1em;
         border-bottom: 1.5px solid black;
     }
 
@@ -561,6 +678,7 @@
     }
 
     .right-border {
+        padding-right: 1em;
         border-right: 1.5px solid black;
     }
 
@@ -577,9 +695,12 @@
         width: 3em;
     }
 
-    #record-output {
+    .scrollable {
         white-space: pre-wrap;
         overflow-y: auto;
+    }
+
+    #record-output {
         height: 250px;
         display: block;
     }
@@ -592,6 +713,10 @@
         border: 0;
         background: transparent;
     }
+
+    .modal {
+      overflow-y: auto;
+     }
 
 </style>
 

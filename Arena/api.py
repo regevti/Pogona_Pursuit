@@ -6,8 +6,9 @@ import psutil
 import logging
 from pathlib import Path
 from PIL import Image
+from datetime import datetime
 import torch.multiprocessing as mp
-from flask import Flask, render_template, Response, request, send_from_directory, jsonify
+from flask import Flask, render_template, Response, request, send_from_directory, jsonify, send_file
 import sentry_sdk
 import config
 import utils
@@ -15,31 +16,32 @@ from cache import RedisCache, CacheColumns as cc
 from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics
 from experiment import ExperimentCache
 from arena import ArenaManager
-from loggers import init_logger_config
-from db_models import ORM
+from loggers import init_logger_config, create_arena_handler
 from calibration import PoseEstimator
+from periphery import Periphery
+from analysis.strikes import StrikeAnalyzer, Loader
 
 app = Flask('ArenaAPI')
 cache = None
 arena_mgr = None
-orm = None
+periphery_mgr = None
 
 
 @app.route('/')
 def index():
     """Video streaming ."""
-    cached_experiments = [c.stem for c in Path(config.experiment_cache_path).glob('*.json')]
+    cached_experiments = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
     with open('../pogona_hunter/src/config.json', 'r') as f:
         app_config = json.load(f)
     if arena_mgr is None:
         cameras = list(config.cameras.keys())
     else:
-        cameras = list(arena_mgr.detected_cameras.keys())
+        cameras = list(arena_mgr.units.keys())
     return render_template('index.html', cameras=cameras, exposure=config.default_exposure,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
                            max_blocks=config.api_max_blocks_to_show, cached_experiments=cached_experiments,
-                           extra_time_recording=config.extra_time_recording,
+                           extra_time_recording=config.extra_time_recording, schedules=arena_mgr.schedules,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -49,7 +51,10 @@ def check():
     res['experiment_name'] = cache.get_current_experiment()
     res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
     res['open_app_host'] = cache.get(cc.OPEN_APP_HOST)
-    res['temperature'] = orm.get_temperature()
+    res['temperature'] = arena_mgr.orm.get_temperature()
+    res['n_strikes'], res['n_rewards'] = arena_mgr.orm.get_todays_amount_strikes_rewards()
+    res['reward_left'] = cache.get(cc.REWARD_LEFT)
+    res['streaming_camera'] = arena_mgr.get_streaming_camera()
     for cam_name, cu in arena_mgr.units.items():
         res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
         res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}
@@ -111,6 +116,56 @@ def stop_experiment():
     return Response('No available experiment')
 
 
+@app.route('/commit_schedule', methods=['POST'])
+def commit_schedule():
+    data = dict(request.form)
+    data['date'] = datetime.strptime(data['date'], '%d/%m/%Y %H:%M')
+    arena_mgr.orm.commit_schedule(**data)
+    arena_mgr.update_upcoming_schedules()
+    return Response('ok')
+
+
+@app.route('/delete_schedule', methods=['POST'])
+def delete_schedule():
+    arena_mgr.orm.delete_schedule(request.form['schedule_id'])
+    arena_mgr.update_upcoming_schedules()
+    return Response('ok')
+
+
+@app.route('/update_reward_count', methods=['POST'])
+def update_reward_count():
+    data = request.json
+    reward_count = int(data.get('reward_count', 0))
+    cache.set(cc.REWARD_LEFT, reward_count)
+    return Response('ok')
+
+
+@app.route('/update_animal_id', methods=['POST'])
+def update_animal_id():
+    data = request.json
+    animal_id = data['animal_id']
+    current_animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
+    if animal_id != current_animal_id:
+        if current_animal_id:
+            arena_mgr.orm.update_animal_id(end_time=datetime.now())
+        if animal_id:
+            arena_mgr.orm.commit_animal_id(**data)
+            arena_mgr.logger.info(f'Animal ID was updated to {animal_id} ({data["sex"]})')
+    else:
+        data.pop('animal_id')
+        arena_mgr.orm.update_animal_id(**data)
+    return Response('ok')
+
+
+@app.route('/get_current_animal', methods=['GET'])
+def get_current_animal():
+    return jsonify({
+        'animal_id': cache.get(cc.CURRENT_ANIMAL_ID),
+        'sex': cache.get(cc.CURRENT_ANIMAL_SEX),
+        'bug_types': cache.get(cc.CURRENT_BUG_TYPES)
+    })
+
+
 @app.route('/start_camera_unit', methods=['POST'])
 def start_camera_unit():
     cam_name = request.form['camera']
@@ -130,6 +185,8 @@ def stop_camera_unit():
         return Response('')
 
     arena_mgr.units[cam_name].stop()
+    if cam_name == arena_mgr.get_streaming_camera():
+        arena_mgr.stop_stream()
     return Response('ok')
 
 
@@ -153,8 +210,14 @@ def calibrate():
     """Calibrate camera"""
     cam = request.form['camera']
     img = arena_mgr.get_frame(cam)
-    pe = PoseEstimator(cam)
-    img, ret = pe.find_aruco_markers(img)
+    conf_preds = arena_mgr.units[cam].get_conf_predictors()
+    pred_image_size = list(conf_preds.values())[0][:2] if conf_preds else img.shape[:2]
+    try:
+        pe = PoseEstimator(cam, pred_image_size)
+        img, ret = pe.find_aruco_markers(img)
+    except Exception as exc:
+        arena_mgr.logger.error(f'Error in calibrate; {exc}')
+        return Response('error')
     img = img.astype('uint8')
 
     # cv2.imwrite(f'../output/calibrations/{cam}.jpg', img)
@@ -171,7 +234,8 @@ def calibrate():
 @app.route('/reward')
 def reward():
     """Activate Feeder"""
-    cache.publish_command('reward')
+    # cache.publish_command('reward')
+    periphery_mgr.feed()
     return Response('ok')
 
 
@@ -292,6 +356,21 @@ def video_feed():
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+@app.route('/strike_analysis/<strike_id>')
+def get_strike_analysis(strike_id):
+    ld = Loader(strike_id, 'front')
+    sa = StrikeAnalyzer(ld)
+    img = sa.plot_strike_analysis(only_return=True)
+    img = Image.fromarray(img.astype('uint8'))
+    # create file-object in memory
+    file_object = io.BytesIO()
+    # write PNG in file-object
+    img.save(file_object, 'PNG')
+    # move to beginning of file so `send_file()` it will read from start
+    file_object.seek(0)
+    return send_file(file_object, mimetype='image/PNG')
+
+
 def initialize():
     logger = logging.getLogger(app.name)
     logger.setLevel(logging.DEBUG)
@@ -300,6 +379,90 @@ def initialize():
     formatter = logging.Formatter("""%(levelname)s in %(module)s [%(pathname)s:%(lineno)d]:\n%(message)s""")
     ch.setFormatter(formatter)
     logger.addHandler(ch)
+
+
+import os
+import re
+
+
+def get_chunk(filename, byte1=None, byte2=None):
+    filesize = os.path.getsize(filename)
+    yielded = 0
+    yield_size = 1024 * 1024
+
+    if byte1 is not None:
+        if not byte2:
+            byte2 = filesize
+        yielded = byte1
+        filesize = byte2
+
+    with open(filename, 'rb') as f:
+        content = f.read()
+
+    while True:
+        remaining = filesize - yielded
+        if yielded == filesize:
+            break
+        if remaining >= yield_size:
+            yield content[yielded:yielded+yield_size]
+            yielded += yield_size
+        else:
+            yield content[yielded:yielded+remaining]
+            yielded += remaining
+
+
+@app.route('/play_video11')
+def get_file():
+    filename = '/data/Pogona_Pursuit/Arena/static/back_20221106T093511.mp4'
+    filesize = os.path.getsize(filename)
+    range_header = request.headers.get('Range', None)
+
+    if range_header:
+        byte1, byte2 = None, None
+        match = re.search(r'(\d+)-(\d*)', range_header)
+        groups = match.groups()
+
+        if groups[0]:
+            byte1 = int(groups[0])
+        if groups[1]:
+            byte2 = int(groups[1])
+
+        if not byte2:
+            byte2 = byte1 + 1024 * 1024
+            if byte2 > filesize:
+                byte2 = filesize
+
+        length = byte2 + 1 - byte1
+
+        resp = Response(
+            get_chunk(filename, byte1, byte2),
+            status=206, mimetype='video/mp4',
+            content_type='video/mp4',
+            direct_passthrough=True
+        )
+
+        resp.headers.add('Content-Range',
+                         'bytes {0}-{1}/{2}'
+                         .format(byte1,
+                                 length,
+                                 filesize))
+        return resp
+
+    return Response(
+        get_chunk(filename),
+        status=200, mimetype='video/mp4'
+    )
+
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Accept-Ranges', 'bytes')
+    return response
+
+
+@app.route('/play_video')
+def play():
+    return render_template('management/play_video.html')
 
 
 if __name__ == "__main__":
@@ -327,11 +490,13 @@ if __name__ == "__main__":
 
     import torch
     torch.cuda.set_device(0)
-
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
     init_logger_config()
+    arena_handler = create_arena_handler('API')
+    app.logger.addHandler(arena_handler)
     cache = RedisCache()
     arena_mgr = ArenaManager()
-    orm = ORM()
+    periphery_mgr = Periphery()
 
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
+

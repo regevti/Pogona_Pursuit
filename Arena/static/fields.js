@@ -67,7 +67,7 @@ class Cameras {
 
   set value(cameras) {
     $(".cam-checkbox").each(function (i, obj) {
-      this.checked = cameras.includes(obj.value)
+      this.checked = cameras.hasOwnProperty(obj.value)
     });
   }
 }
@@ -83,6 +83,24 @@ class FieldObject {
 
   getField(blockId = null) {
     return new this.objClass(this.objName, blockId, this.conditions)
+  }
+}
+
+const AnimalIDFields = {
+  get values() {
+    return Object.keys(_animalIDFiels).reduce((obj, x) => {
+      obj[x] = _animalIDFiels[x].getField().value
+      return obj
+    }, {})
+  },
+  set values(fieldsValues) {
+    for (const [name, value] of Object.entries(fieldsValues)) {
+      let obj = _animalIDFiels[name]
+      if (!obj) {
+        continue
+      }
+      obj.getField().value = value
+    }
   }
 }
 
@@ -114,8 +132,10 @@ const Blocks = {
   get values() {
     let blocks = []
     const numBlocks = mainFields.num_blocks.getField().value
+    let isIdenticalBlocks = mainFields.is_identical_blocks.getField().value
     for (let i = 1; i <= numBlocks; i++) {
-      blocks.push(new Block(i).values)
+      let j = isIdenticalBlocks ? 1 : i
+      blocks.push(new Block(j).values)
     }
     return blocks
   },
@@ -170,9 +190,9 @@ class Block {
     let fields = this.getFields()
     for (const [name, field] of Object.entries(fields)) {
       block[name] = field.value
-      if (name === 'reward_bugs' && !field.value) {
-        block[name] = fields.bug_types.value
-      }
+      // if (name === 'reward_bugs' && !field.value) {
+      //   block[name] = fields.bug_types.value
+      // }
     }
     return block
   }
@@ -193,10 +213,14 @@ class Block {
 const mainFields = {
   // name: new FieldObject('experimentName', Field),
   animal_id: new FieldObject('animalId', Field),
+  bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
   time_between_blocks: new FieldObject('timeBetweenBlocks', NumericalField),
   extra_time_recording: new FieldObject('extraTimeRecording', NumericalField),
   cameras: new FieldObject('cameras', Cameras),
-  num_blocks: new FieldObject('numBlocks', NumericalField)
+  num_blocks: new FieldObject('numBlocks', NumericalField),
+  is_identical_blocks: new FieldObject('isIdenticalBlocks', CheckField),
+  reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
+  background_color: new FieldObject('backgroundColor', Field),
 }
 
 const blockFields = {
@@ -208,17 +232,22 @@ const blockFields = {
   },
   bugs: {
     reward_type: new FieldObject('rewardTypeSelect', Field),
-    bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
-    reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
     bug_speed: new FieldObject('bugSpeed', NumericalField),
-    // movement_type: new FieldObject('movementTypeSelect', Field),
+    movement_type: new FieldObject('movementTypeSelect', Field),
     is_default_bug_size: new FieldObject('isDefaultBugSize', CheckField),
     bug_size: new FieldObject('bugSize', NumericalField, {is_default_bug_size: false}),
-    background_color: new FieldObject('backgroundColor', Field),
     exit_hole: new FieldObject('exitHolePositionSelect', Field),
     reward_any_touch_prob: new FieldObject('rewardAnyTouchProb', NumericalField)
   },
   media: {
     media_url: new FieldObject('media-url', Field)
   }
+}
+
+const _animalIDFiels = {
+  animal_id: new FieldObject('animalId', Field),
+  sex: new FieldObject('animalSex', Field),
+  bug_types: new FieldObject('bugTypeSelect', MultiSelectField),
+  reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
+  background_color: new FieldObject('backgroundColor', Field),
 }

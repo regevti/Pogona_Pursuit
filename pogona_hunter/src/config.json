@@ -100,8 +100,10 @@
     "holes": "holes",
     "random": "random walk",
     "circle": "circle",
+    "half_circle": "half circle",
     "low_horizontal": "low horizontal",
-    "low_horizontal_noise": "low horizontal + noise"
+    "low_horizontal_noise": "low horizontal + noise",
+    "jump_up": "jump up"
   },
   "targetDrifts": {
     "leftBottom": {

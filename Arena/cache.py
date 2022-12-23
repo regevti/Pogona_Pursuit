@@ -10,7 +10,10 @@ class Column:
 
 
 class CacheColumns:
-    """Cache Columns used by RedisCache"""
+    """
+    Cache Columns used by RedisCache
+    set "static" for timeout to prevent deleting of column after arena init
+    """
     EXPERIMENT_NAME = Column('EXPERIMENT_NAME', str, config.experiments_timeout)
     EXPERIMENT_PATH = Column('EXPERIMENT_PATH', str, config.experiments_timeout)
     EXPERIMENT_BLOCK_ID = Column('EXPERIMENT_BLOCK_ID', int, config.experiments_timeout)
@@ -24,8 +27,12 @@ class CacheColumns:
     RECORDING_CAMERAS = Column('RECORDING_CAMERAS', list, config.experiments_timeout)
     CURRENT_BLOCK_DB_INDEX = Column('CURRENT_BLOCK_DB_INDEX', int, config.experiments_timeout)
     OPEN_APP_HOST = Column('OPEN_APP_HOST', str, 60)
-    CURRENT_ANIMAL_ID = Column('CURRENT_ANIMAL_ID', str, None)
-    CURRENT_ANIMAL_ID_DB_INDEX = Column('CURRENT_ANIMAL_ID_DB_INDEX', int, None)
+    CURRENT_ANIMAL_ID = Column('CURRENT_ANIMAL_ID', str, 'static')
+    CURRENT_ANIMAL_SEX = Column('CURRENT_ANIMAL_SEX', str, 'static')
+    CURRENT_BUG_TYPES = Column('CURRENT_BUG_TYPES', list, 'static')
+    CURRENT_ANIMAL_ID_DB_INDEX = Column('CURRENT_ANIMAL_ID_DB_INDEX', int, 'static')
+    REWARD_LEFT = Column('REWARD_LEFT', int, 'static')
+    IS_EXPERIMENT_CONTROL_CAMERAS = Column('IS_EXPERIMENT_CONTROL_CAMERAS', bool, config.experiments_timeout)
 
 
 class RedisCache:
@@ -48,7 +55,7 @@ class RedisCache:
         assert isinstance(value, cache_column.type), \
             f'Bad type for {cache_column.name}; received {type(value)} expected {cache_column.type}'
 
-        if not timeout and cache_column.timeout:
+        if not timeout and cache_column.timeout and cache_column.timeout != 'static':
             timeout = cache_column.timeout
 
         if cache_column.type == bool:

@@ -1,14 +1,115 @@
 <div class="row pl-3 pr-3 form-group">
-    <label for="animalId" class="col col-form-label">Animal ID</label>
-    <div class="col-sm-3">
+    <div class="col-sm-3" style="padding: 1%;">
+        <label for="animalId" class="col-form-label" style="white-space: nowrap">Animal ID</label>
         <input type="text" class="form-control" id="animalId">
     </div>
-    <label for="animalSex" class="col-form-label">Sex</label>
-    <div class="col-sm-3">
+    <div class="col-sm-3" style="padding: 1%; max-width: 21%">
+        <label for="animalSex" class="col-form-label">Sex</label>
         <select id="animalSex" class="form-control">
             <option value="male">male</option>
             <option value="female">female</option>
         </select>
     </div>
-    <button id="updateAnimalId" type="button" class="btn btn-primary">Update</button>
+    <div class="col-sm-2" style="padding: 1%;">
+        <label for="updateAnimalId" class="col-form-label" style="height: 45%"></label>
+        <button id="updateAnimalId" type="button" class="btn btn-sm btn-outline-info">Update</button>
+    </div>
+
+    <div class="col" style="margin-left: 0.5em;">
+        <label for="openAnimalSettings" class="col-form-label" style="height: 75%"></label>
+        <button id="openAnimalSettings" type="button" class="btn btn-sm btn-outline-info">Animal Settings</button>
+    </div>
+</div>
+
+<div class="form-group row pr-3 pl-3">
+    <div class="col-sm-4" style="max-width: 25.5%; padding-right: 0">
+        <label for="rewardCount" class="col-form-label">Reward Left:</label>
+    </div>
+    <div class="col" id="rewardCount" style="padding-top: 8px"></div>
+    <div class="col-sm-3">
+        <input type="number" class="form-control" id="rewardCountInput">
+    </div>
+    <div class="col" style="flex-basis: content; padding-left: 0">
+        <label for="updateRewardCount" class="col-form-label"></label>
+        <button id="updateRewardCount" type="button" class="btn btn-sm btn-outline-info">Update</button>
+    </div>
+</div>
+
+<div class="modal fade" id="validateAnimalModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Are you sure?</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-2">
+                            <button type="button" id="yesUpdateAnimalId" class="btn btn-primary">Yes</button>
+                        </div>
+                        <div class="col">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">No</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="animalSettingsModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Animal Settings</h3>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form>
+                <div class="modal-body">
+
+                    <div class="form-group row pr-3">
+                        <label for="bugTypeSelect" class="col col-form-label">Bug Types</label>
+                        <div class="col">
+                            <select id="bugTypeSelect" class="form-control" multiple="multiple" style="display: none;">
+                                {% for bugType in config.get('bugTypes', {}).keys() %}
+                                <option value="{{bugType}}">{{bugType}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group row pr-3" id="rewardBugDiv">
+                        <label for="rewardBugSelect" class="col col-form-label">Reward Bug</label>
+                        <div class="col">
+                            <select id="rewardBugSelect" class="form-control col" multiple="multiple"
+                                    style="display: none;">
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group row pr-3" id="backgroundColorDiv">
+                        <label for="backgroundColor" class="col col-form-label">Background Color</label>
+                        <div class="col-sm-5">
+                            <input type="color" class="form-control" id="backgroundColor" value="#e8eaf6">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col">
+                            <button id="updateAnimalSettings" type="button"
+                                    class="btn btn-sm btn-outline-info float-right">Update</button>
+                        </div>
+                    </div>
+
+                </div>
+            </form>
+        </div>
+    </div>
 </div>

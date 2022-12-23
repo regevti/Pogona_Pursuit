@@ -23,10 +23,11 @@ import config
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, datetime_string, run_in_thread
 from loggers import get_process_logger, logger_thread
-from experiment import Experiment
+from experiment import Experiment, ExperimentCache
 from subscribers import start_management_subscribers, start_experiment_subscribers
 from db_models import ORM
 from scheduler import Scheduler
+from image_handlers.video_writers import OpenCVWriter, ImageIOWriter
 
 cache = RedisCache()
 
@@ -38,6 +39,10 @@ def signal_handler(signum, frame):
 
 
 signal.signal(signal.SIGINT, signal_handler)
+
+
+class QueueException(Exception):
+    """"""
 
 
 class ArenaProcess(mp.Process):
@@ -64,6 +69,8 @@ class ArenaProcess(mp.Process):
             self._run()
             if self.calc_fps_name:
                 self.clear_fps()
+        except QueueException as exc:
+            self.logger.error(str(exc))
         except Exception as exc:
             sentry_sdk.capture_exception(exc)
             self.logger.exception(exc)
@@ -138,7 +145,7 @@ class ImageSink(ArenaProcess):
                 self.calc_fps(time.time())
 
             except Empty:
-                self.logger.warning('Empty queue')
+                self.logger.debug('Empty queue')
                 self.stop_signal.set()
                 break
 
@@ -147,14 +154,18 @@ class ImageSink(ArenaProcess):
                 self.stop_signal.set()
                 break
 
-        self.logger.warning('sink stopped')
+        self.logger.debug('sink stopped')
 
     def write_to_shm(self, frame, timestamp):
+        datetime_text = datetime.datetime.fromtimestamp(timestamp).strftime('%d/%m/%Y %H:%M:%S')
+        frame = cv2.putText(frame, datetime_text, (20, 30), cv2.FONT_HERSHEY_PLAIN, 1.8, (0, 0, 255), 2, cv2.LINE_AA)
         buf_np = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
         np.copyto(buf_np, frame)
         self.mp_metadata['shm_frame_timestamp'].value = timestamp
 
     def write_to_video_file(self, frame, timestamp):
+        if self.cam_config['writing_fps'] == '0':
+            return
         output_path = self.cam_config[config.output_dir_key]
         if not output_path or (self.write_output_dir and self.write_output_dir != output_path):
             if self.video_out is not None:
@@ -185,20 +196,6 @@ class ImageSink(ArenaProcess):
         if rec_time > config.max_video_time_sec:
             self.close_video_out()
 
-    def init_video_out(self, frame):
-        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        h, w = frame.shape[:2]
-        self.write_output_dir = self.cam_config[config.output_dir_key]
-        self.video_path = self.get_video_path()
-        self.logger.info(f'start video writing to {self.video_path}')
-        writing_fps = int(self.cam_config['writing_fps'])
-        self.video_out = cv2.VideoWriter(self.video_path, fourcc, writing_fps, (w, h), True)
-        self.db_video_id = self.orm.commit_video(path=self.video_path, fps=writing_fps,
-                                                 cam_name=self.cam_name, start_time=datetime.datetime.now())
-        self.mp_metadata['db_video_id'].value = self.db_video_id
-        self.write_video_timestamps = []
-        self.start_writing_thread()
-
     def start_writing_thread(self):
         def loop(q):
             while not self.stop_signal.is_set() and not self.writing_stop_event.is_set():
@@ -214,12 +211,25 @@ class ImageSink(ArenaProcess):
         self.writing_thread = threading.Thread(target=loop, args=(self.writing_queue,))
         self.writing_thread.start()
 
+    def init_video_out(self, frame):
+        self.write_output_dir = self.cam_config[config.output_dir_key]
+        is_color = self.cam_config.get('is_color', False)
+        self.video_out = OpenCVWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
+        # self.video_out = ImageIOWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
+        self.video_path = self.video_out.video_path
+        self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}')
+        self.db_video_id = self.orm.commit_video(path=self.video_path, fps=self.writing_fps,
+                                                 cam_name=self.cam_name, start_time=datetime.datetime.now())
+        self.mp_metadata['db_video_id'].value = self.db_video_id
+        self.write_video_timestamps = []
+        self.start_writing_thread()
+
     def close_video_out(self):
         if self.writing_thread is not None:
             self.writing_stop_event.set()
             self.writing_thread.join()
             self.writing_thread = None
-        self.video_out.release()
+        self.video_out.close()
         calc_fps = 1 / np.diff(self.write_video_timestamps).mean()
         self.logger.info(f'Video with {len(self.write_video_timestamps)} frames and calc_fps={calc_fps:.1f} '
                          f'saved into {self.video_path}')
@@ -234,12 +244,13 @@ class ImageSink(ArenaProcess):
         return not self.write_video_timestamps or \
                (timestamp - self.write_video_timestamps[-1]) >= (1 / float(self.cam_config['writing_fps'])) * 0.9
 
-    def get_video_path(self):
-        return f'{self.write_output_dir}/{self.cam_name}_{datetime_string()}.avi'
-
     @run_in_thread
     def commit_video_frames_to_db(self):
         self.orm.commit_video_frames(self.write_video_timestamps, self.db_video_id)
+
+    @property
+    def writing_fps(self):
+        return int(self.cam_config['writing_fps'])
 
 
 class ImageHandler(ArenaProcess):
@@ -269,6 +280,7 @@ class ImageHandler(ArenaProcess):
             self.predictor.loop()
         except RuntimeError as exc:
             self.logger.error(f'GPU out of memory. Close other GPU processes; {exc}')
+            raise exc
 
 
 class CameraUnit:
@@ -283,6 +295,7 @@ class CameraUnit:
         self.log_queue = log_queue
         self.processes = {}
         self.is_stopping = False
+        self.is_starting = False
         self.frames_queue = TimestampedArrayQueue(config.array_queue_size_mb)
         self.shm_manager = SharedMemoryManager()
         self.shm_manager.start()
@@ -301,6 +314,8 @@ class CameraUnit:
         self.stop_signal.set()
         self.logger = get_process_logger(str(self), self.log_queue)
         self.listen_stop_events()
+        self.start_time = time.time()
+        self.preds_start_time = None
 
     def __str__(self):
         return f'CU-{self.cam_name}'
@@ -310,26 +325,35 @@ class CameraUnit:
             self.stop()
         self.shm_manager.shutdown()
 
-    def start(self):
-        if self.processes:
-            alive_procs = [proc_name for proc_name, proc in self.processes.items() if proc.is_alive()]
-            if any([pn not in alive_procs for pn in ['cam', 'sink']]):
-                self.stop_signal.set()
-                self.stop()
-            else:
-                self.logger.warning(f'cannot stop camera-unit since the following processes are still alive: {alive_procs}')
-                return
-        self.logger.debug('start camera unit')
-        self.stop_signal.clear()
-        cache.delete_cam_dict(self.cam_name)
-        cache.update_cam_dict(self.cam_name, **self.cam_config)
-        self.processes['cam'] = self.cam_cls(*self.proc_args)
-        self.processes['sink'] = ImageSink(*self.proc_args, shm=self.shm)
+    def start(self, predictors_type='general'):
+        if self.is_starting:
+            return
+        self.is_starting = True
+        try:
+            if self.processes:
+                alive_procs = [proc_name for proc_name, proc in self.processes.items() if proc.is_alive()]
+                if any([pn not in alive_procs for pn in ['cam', 'sink']]):
+                    self.stop_signal.set()
+                    self.stop()
+                else:
+                    self.logger.debug(f'cannot stop camera-unit since the following processes are still alive: {alive_procs}')
+                    return
+            self.logger.debug('start camera unit')
+            self.start_time = time.time()
+            self.stop_signal.clear()
+            cache.delete_cam_dict(self.cam_name)
+            cache.update_cam_dict(self.cam_name, **self.cam_config)
+            self.processes['cam'] = self.cam_cls(*self.proc_args)
+            self.processes['sink'] = ImageSink(*self.proc_args, shm=self.shm)
 
-        self.listen_stop_events()
-        [proc.start() for proc in self.processes.values()]
-        cache.append_to_list(cc.ACTIVE_CAMERAS, self.cam_name)
-        self.start_predictors()
+            self.listen_stop_events()
+            [proc.start() for proc in self.processes.values()]
+            cache.append_to_list(cc.ACTIVE_CAMERAS, self.cam_name)
+            self.start_predictors(predictors_type)
+        except Exception as exc:
+            self.logger.error(exc)
+        finally:
+            self.is_starting = False
 
     def stop(self):
         if self.is_stopping or not self.processes:
@@ -383,12 +407,16 @@ class CameraUnit:
             if len(self.pred_shm) > 1:
                 self.logger.warning(f'More than 2 predictors configured, but no stream_predictor was defined. '
                                     f'using {stream_pred} for streaming')
-        pred_image_size = self.cam_config['predictors'][stream_pred]
+
+        conf_preds = self.get_conf_predictors()
+        pred_image_size = conf_preds[stream_pred]
         img = np.frombuffer(self.pred_shm[stream_pred].buf, dtype=config.shm_buffer_dtype).reshape(pred_image_size)
         return img
 
-    def start_predictors(self):
-        for predictor_name, pred_image_size in self.cam_config.get('predictors', {}).items():
+    def start_predictors(self, predictors_type='general'):
+        assert predictors_type in ['general', 'experiment']
+        predictors = self.cam_config.get(f'{predictors_type}_predictors', {})
+        for predictor_name, pred_image_size in predictors.items():
             self.logger.debug(f'start predictor {predictor_name}')
             if pred_image_size is not None:
                 self.pred_shm[predictor_name] = self.shm_manager.SharedMemory(size=int(np.prod(pred_image_size)))
@@ -397,6 +425,22 @@ class CameraUnit:
             prd.start()
             self.processes[predictor_name] = prd
             self.logger.info(f'Predictor {predictor_name} is up')
+        self.preds_start_time = time.time()
+
+    def reload_predictors(self, predictors_type):
+        """start the configured experiment predictors. If any predictors are already running - stop them"""
+        assert predictors_type in ['general', 'experiment']
+        for pred in self.get_alive_predictors():
+            if self.processes.get(pred) is not None:
+                self.is_stopping = True
+                self.logger.debug(f'terminating predictor {pred}')
+                self.processes[pred].terminate()
+                del self.processes[pred]
+                self.is_stopping = False
+
+        self.is_starting = True
+        self.start_predictors(predictors_type)
+        self.is_starting = False
 
     def is_on(self):
         return not self.stop_signal.is_set()
@@ -407,12 +451,21 @@ class CameraUnit:
         return bool(d.get(config.output_dir_key))
 
     def get_alive_predictors(self):
+        """return the process names of the live predictors"""
         alive_preds = []
-        for predictor_name in self.cam_config.get('predictors', []):
+        conf_predictors = list(self.cam_config.get('general_predictors', {}).keys()) + \
+            list(self.cam_config.get('experiment_predictors', {}).keys())
+        for predictor_name in set(conf_predictors):
             prd = self.processes.get(predictor_name)
             if prd is not None and prd.is_alive():
                 alive_preds.append(predictor_name)
         return alive_preds
+
+    def get_conf_predictors(self) -> dict:
+        """Get dictionary with all the configured predictors of the camera unit"""
+        conf_preds = self.cam_config.get('general_predictors', {})
+        conf_preds.update(self.cam_config.get('experiment_predictors', {}))
+        return conf_preds
 
     @property
     def proc_args(self):
@@ -428,6 +481,7 @@ class ArenaManager(SyncManager):
         self.camera_modules = []
         self.units = {}  # activated camera units
         self.threads = {}
+        self.schedules = {}  # experiment schedules
         self.reset_cache()
 
         self.global_stop_event = self.Event()
@@ -441,6 +495,8 @@ class ArenaManager(SyncManager):
         self.cache_lock = self.Lock()
         self._streaming_camera = None
 
+        self.orm = ORM()
+        self.update_upcoming_schedules()
         self.start_management_listeners()
         self.camera_init()
         self.logger.info('Arena manager created.')
@@ -477,18 +533,18 @@ class ArenaManager(SyncManager):
 
     def arena_shutdown(self, *args) -> None:
         self.logger.warning('shutdown start')
-        self.logger.info(f'open threads: {list(self.threads.keys())}')
+        self.logger.debug(f'open threads: {list(self.threads.keys())}')
         self.arena_shutdown_event.set()
         [cu.stop() for cu in self.units.values()]
         for name, t in self.threads.items():
             if threading.current_thread().name != t.name:
                 try:
                     t.join()
-                    self.logger.info(f'thread {name} is down')
+                    self.logger.debug(f'thread {name} is down')
                 except:
                     self.logger.exception(f'Error joining thread {name}')
         self.units, self.threads = {}, {}
-        self.logger.info('closing logging thread')
+        self.logger.info('Closing logging thread; Arena is down')
         self.stop_logging_event.set()
         self.logging_thread.join()
         self.shutdown()
@@ -499,13 +555,19 @@ class ArenaManager(SyncManager):
         if not cameras_dict:
             self.logger.error('unable to start experiment with no cameras specified')
             return
-        e = Experiment(**kwargs)
-        self.start_experiment_listeners()
+
+        e = Experiment(cam_units=self.units, **kwargs)
+        self.start_experiment_listeners(e.experiment_stop_flag)
         # for cam_name, d in cameras_dict.items():
         #     if d.get('is_use_predictions'):
         #         self.units[cam_name].start_predictions()
         time.sleep(0.1)
         e.start()
+
+    def start_cached_experiment(self, experiment_name):
+        data = ExperimentCache().load(experiment_name)
+        data['animal_id'] = cache.get(cc.CURRENT_ANIMAL_ID)
+        self.start_experiment(**data)
 
     def start_management_listeners(self):
         subs_dict = {
@@ -517,14 +579,19 @@ class ArenaManager(SyncManager):
         self.threads['scheduler'] = Scheduler(self)
         self.threads['scheduler'].start()
 
-    def start_experiment_listeners(self):
+    def start_experiment_listeners(self, exp_stop_flag):
         # start experiment listeners
-        exp_subs = start_experiment_subscribers(self.arena_shutdown_event, self.log_queue)
+        exp_subs = start_experiment_subscribers(exp_stop_flag, self.log_queue)
         self.threads.update(exp_subs)
+
+    def update_upcoming_schedules(self):
+        self.schedules = {}
+        for s in self.orm.get_upcoming_schedules().all():
+            self.schedules[s.id] = f'{s.date.strftime(config.schedule_date_format)} - {s.experiment_name}'
 
     def reset_cache(self):
         for name, col in cc.__dict__.items():
-            if name.startswith('_'):
+            if name.startswith('_') or col.timeout == 'static':
                 continue
             cache.delete(col)
 
@@ -561,6 +628,9 @@ class ArenaManager(SyncManager):
 
     def get_frame(self, cam_name):
         return self.units[cam_name].get_frame()
+
+    def get_streaming_camera(self):
+        return self._streaming_camera
 
     def set_streaming_camera(self, cam_name):
         self._streaming_camera = cam_name

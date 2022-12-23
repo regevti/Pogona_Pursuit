@@ -75,16 +75,21 @@ def get_process_logger(name, q: mp.Queue):
 def get_logger(name):
     logger = logging.getLogger(name)
     logger.setLevel(logging.getLevelName(config.LOGGING_LEVEL))
+    h = create_arena_handler(name)
+    logger.addHandler(h)
+    logger.propagate = False
+    _loggers[name] = logger
+    return logger
+
+
+def create_arena_handler(name):
     if _handlers.get(name):
         h = _handlers[name]
     else:
         h = ArenaHandler()
         h.setFormatter(logging.Formatter(DEFAULT_FORMAT, DEFAULT_DATEFMT))
         _handlers[name] = h
-    logger.addHandler(h)
-    logger.propagate = False
-    _loggers[name] = logger
-    return logger
+    return h
 
 
 class CustomFormatter(logging.Formatter):

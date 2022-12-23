@@ -1,6 +1,6 @@
 Arena/experiments/*
 Arena/events/*
-Arena/output/*
+output/*
 docker/*
 **/*.jpg
 **/*.png

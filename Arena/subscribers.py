@@ -2,17 +2,22 @@ import re
 import json
 import time
 import inspect
+import queue
 import threading
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-from parallel_port import ParallelPort
 
 from cache import CacheColumns as cc, RedisCache
 import config
 from loggers import get_logger, get_process_logger
-from utils import Serializer
+from utils import Serializer, run_in_thread
 from db_models import ORM
+from periphery import Periphery
+
+
+class DoubleEvent(Exception):
+    """Double event"""
 
 
 class Subscriber(threading.Thread):
@@ -84,6 +89,8 @@ class ExperimentLogger(Subscriber):
                 self.save_to_csv(payload)
             if self.config.get('is_write_db'):
                 self.commit_to_db(payload)
+        except DoubleEvent:
+            pass
         except Exception as exc:
             self.logger.exception(f'Unable to parse log payload of {self.name}: {exc}')
 
@@ -149,15 +156,53 @@ class ExperimentLogger(Subscriber):
 
 
 class TouchLogger(ExperimentLogger):
+    def __init__(self, *args, **kwargs):
+        super(TouchLogger, self).__init__(*args, **kwargs)
+        self.periphery = Periphery()
+        self.touches_queue = queue.Queue()
+        self.start_touches_receiver_thread()
+
     def payload_action(self, payload):
-        self.handle_hit(payload)
+        try:
+            self.touches_queue.put_nowait(payload)
+        except queue.Full:
+            pass
+        except Exception as exc:
+            self.logger.error(f'Error in image sink; {exc}')
+
+    def start_touches_receiver_thread(self):
+        def loop(q):
+            self.logger.info('touch listener has started')
+            last_touch_ts = None
+            while not self.stop_event.is_set():
+                try:
+                    payload = q.get_nowait()
+                    ts = payload.get('time')
+                    if isinstance(ts, str):
+                        ts = datetime.fromisoformat(ts)
+
+                    dt = (ts - last_touch_ts).total_seconds() if last_touch_ts else 0
+                    if last_touch_ts and ts and dt < 0.2:
+                        continue
+
+                    last_touch_ts = ts
+                    self.logger.info(f'Received touch event; timestamp={ts}; '
+                                     f'time passed from last reward: {dt:.1f} seconds')
+                    self.handle_hit(payload)
+                except queue.Empty:
+                    pass
+            self.logger.debug('touches receiver thread is closed')
+
+        t = threading.Thread(target=loop, args=(self.touches_queue,))
+        t.start()
 
     def handle_hit(self, payload):
-        if (self.cache.get(cc.IS_ALWAYS_REWARD) and (payload.get('is_hit')) or
-           (payload.get('is_reward_any_touch')) and payload.get('is_reward_bug')):
-            self.cache.publish_command('reward')
+        if self.cache.get(cc.IS_ALWAYS_REWARD) and payload.get('is_reward_bug') and \
+                (payload.get('is_hit') or payload.get('is_reward_any_touch')):
+            self.periphery.feed()
             return True
 
+    @run_in_thread
     def commit_to_db(self, payload):
         self.orm.commit_strike(payload)
 
@@ -203,53 +248,6 @@ class TemperatureLogger(Subscriber):
             self.logger.exception('Error committing temperature to DB')
 
 
-class ArenaOperations(Subscriber):
-    sub_name = 'arena_operations'
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Initialize the parallel port
-        self.parport = None
-        self.last_reward_time = None
-        if config.is_use_parport:
-            try:
-                self.parport = ParallelPort()
-                self.logger.debug('Parallel port is ready')
-            except Exception as exc:
-                self.logger.exception(f'Error loading feeder: {exc}')
-        else:
-            self.logger.warning('Parallel port is not configured. some arena operation cannot work')
-
-    def _run(self, channel, data):
-        if self.parport is None:
-            return
-        channel = channel.split('/')[-1]
-        if channel == 'reward':
-            ret = self.reward()
-            if ret:
-                self.logger.info('Manual reward was given')
-            else:
-                self.logger.warning('Could not give manual reward')
-
-        elif channel == 'led_light':
-            if self.parport:
-                self.logger.debug(f'LED lights turned {data}')
-                self.parport.led_lighting(data)
-
-        elif channel == 'heat_light':
-            if self.parport:
-                self.logger.debug(f'Heat lights turned {data}')
-                self.parport.heat_lighting(data)
-
-    def reward(self):
-        if self.parport and not self.cache.get(cc.IS_REWARD_TIMEOUT):
-            self.parport.feed()
-            self.last_reward_time = time.time()
-            self.cache.set(cc.IS_REWARD_TIMEOUT, True)
-            self.cache.publish('cmd/visual_app/reward_given')
-            return True
-
-
 class AppHealthCheck(Subscriber):
     sub_name = 'healthcheck'
 
@@ -292,8 +290,6 @@ def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
                                     config.subscription_topics[topic], callback)
         threads[topic].start()
 
-    threads['arena_operations'] = ArenaOperations(arena_shutdown_event, log_queue)
-    threads['arena_operations'].start()
     threads['temperature'] = TemperatureLogger(arena_shutdown_event, log_queue)
     threads['temperature'].start()
     threads['healthcheck'] = AppHealthCheck(arena_shutdown_event, log_queue)
@@ -317,13 +313,3 @@ def start_experiment_subscribers(arena_shutdown_event, log_queue):
                                           channel=config.subscription_topics[channel_name])
         threads[thread_name].start()
     return threads
-
-
-# def block_log(data):
-#     try:
-#         block_path = Path(cache.get(cc.EXPERIMENT_BLOCK_PATH))
-#         if block_path.exists():
-#             with (block_path / 'block.log').open('a') as f:
-#                 f.write(f'{datetime.now().isoformat()} - {data}\n')
-#     except Exception as exc:
-#         print(f'Error writing block_log; {exc}')

@@ -1,0 +1,34 @@
+<form class="col" id="schedule-experiment-form">
+    <div class="container">
+        <div class="row">
+            <div class="col-sm-7">
+                <div class="form-group">
+                    <div class="input-group date" id="datetimepicker1" data-target-input="nearest">
+                        <input type="text" class="form-control datetimepicker-input" data-target="#datetimepicker1"/>
+                        <div class="input-group-append" data-target="#datetimepicker1" data-toggle="datetimepicker">
+                            <div class="input-group-text"><i class="fa fa-calendar"></i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-sm-7">
+                <label for="cachedExperimentsSelectSchedule" class="col-form-label">Experiment Name</label>
+                <select id="cachedExperimentsSelectSchedule" class="form-control">
+                    {% for exp in cached_experiments %}
+                    <option value="{{exp}}">{{exp}}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col">
+            <button id="saveScheduleButton" type="button" class="btn btn-primary" style="float: right">
+                Save
+            </button>
+        </div>
+    </div>
+</form>

@@ -1,38 +1,49 @@
 # conventions:
 # - if no predictors, set empty dict
 # - if more than one predictor, you need to specify "stream_predictor", otherwise 1st predictor will be set to stream
-top:
+back:
     id: DEV_1AB22C017E6D
     module: allied_vision
     exposure: 6000
     image_size: [1088, 1456, 3]
     output_dir:
-    fps: 60
-    writing_fps: 60
+    always_on: 1
+    fps: 30
+    writing_fps: 30
     is_color: 1
-    predictors:
-        pogona_head: [480, 640, 3]
+    experiment_predictors: {
+    }
+    general_predictors: {
 #        deeplabcut: [544, 728, 1]
-back:
+    }
+
+top:
     id: DEV_1AB22C017E72
     module: allied_vision
     exposure: 2000
     image_size: [1088, 1456, 1]
     output_dir:
+    always_on: 1
     fps: 15
-    writing_fps: 15
-    predictors: {}
-#        deeplabcut: [544, 728, 1]
+    writing_fps: 0
+    experiment_predictors: {}
+    general_predictors: {
+        pogona_head: [480, 640, 3]
+    }
+
 front:
     id: DEV_1AB22C017E6F
     module: allied_vision
     exposure: 3000
     image_size: [1088, 1456, 1]
     output_dir:
-    fps: 120
+    fps: 60
     writing_fps: 60
-    predictors:
-        pogona_head: [480, 640, 3]
+    experiment_predictors: {
+        tongue_out: [480, 640]
+    }
+    general_predictors: {
+    }
 
 test:
     id: DEV_1AB22C017E70

@@ -1,5 +1,5 @@
 <template>
-  <div class="board-canvas-wrapper" oncontextmenu="return false;" v-on:mousedown="analyzeScreenTouch">
+  <div class="board-canvas-wrapper" oncontextmenu="return false;" v-on:mousedown="analyzeScreenTouch" v-on:click.right="jumpBugs">
     <div id="bugs-board" v-if="!isMedia">
       <audio ref="audio1">
         <source src="@/assets/sounds/2.mp3" type="audio/mpeg">
@@ -31,7 +31,7 @@
 import bug from './bug'
 import holeBugs from './holeBugs'
 import {distance, randomRange} from '@/js/helpers'
-import {handlePrediction, showPogona} from '../js/predictions'
+import {showPogona} from '../js/predictions'
 import SlideMenu from './slideMenu'
 import media from './media'
 import { v4 as uuidv4 } from 'uuid'
@@ -44,16 +44,16 @@ export default {
       configOptions: require('@/config.json'),
       bugsProps: [],
       bugsSettings: {
-        numOfBugs: 1,
+        numOfBugs: 0,
         trialID: null,
         trialDBId: null,
         trialStartTime: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
-        trialDuration: 10,
+        trialDuration: 40,
         iti: 5,
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
-        movementType: 'low_horizontal',
+        movementType: 'random',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,
@@ -121,8 +121,9 @@ export default {
       'cmd/visual_app/show_pogona': (numFrames) => {
         showPogona(this.canvas, numFrames)
       },
-      'cmd/visual_app/strike_predicted': (options) => {
-        handlePrediction(options, this.ctx, this.canvasParams)
+      'cmd/visual_app/strike_predicted': (payload) => {
+        console.log('received strike_predicted command')
+        this.jumpBugs()
       },
       'cmd/visual_app/reload_app': (payload) => {
         location.reload()
@@ -227,6 +228,11 @@ export default {
         console.log(e)
         cancelAnimationFrame(this.animationHandler)
       }
+    },
+    jumpBugs() {
+      if (this.$refs.bugChild) {
+          this.$refs.bugChild.forEach(bug => bug.jump())
+        }
     },
     setCanvasTouch(event) {
       for (let touch of event.touches) {

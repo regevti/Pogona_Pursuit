@@ -23,16 +23,28 @@ def run_command(cmd):
     yield stdout
 
 
-DISPLAY_CMD = 'DISPLAY=":0" xrandr --output HDMI-0 --{}'
+DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 
 def turn_display_on():
-    return os.system('pkill chrome; ' + DISPLAY_CMD.format('auto') + ' --right-of DP-0 && sleep 1 && ' +
-                       'scripts/start_pogona_hunter.sh')
+    cmds = [
+        'pkill chrome || true',  # kill all existing chrome processes
+        f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-0',  # turn touch screen on
+        f'{DISPLAY} xinput enable {config.TOUCHSCREEN_DEVICE_ID}',  # enable touch
+        f'{DISPLAY} xinput map-to-output {config.TOUCHSCREEN_DEVICE_ID} HDMI-0',
+        'sleep 1',
+        'scripts/start_pogona_hunter.sh'  # start chrome with the bug application
+    ]
+    return os.system(' && '.join(cmds))
 
 
 def turn_display_off():
-    return os.system('pkill chrome; ' + DISPLAY_CMD.format('off'))
+    cmds = [
+        'pkill chrome || true',
+        f'{DISPLAY} xrandr --output HDMI-0 --off',  # turn touchscreen off
+        f'{DISPLAY} xinput disable {config.TOUCHSCREEN_DEVICE_ID}',  # disable touch
+    ]
+    return os.system(' && '.join(cmds))
 
 
 def async_call_later(seconds, callback):
@@ -160,3 +172,73 @@ def get_sys_metrics():
     except Exception:
         pass
     return {'gpu_usage': gpu_usage, 'cpu_usage': cpu_usage, 'memory_usage': memory_usage, 'storage': storage}
+
+
+class KalmanFilter:
+    def __init__(self):
+        """
+        Parameters:
+        x: initial state 4-tuple of location and velocity: (x0, x1, x0_dot, x1_dot)
+        P: initial uncertainty convariance matrix
+        measurement: observed position
+        R: measurement noise
+        motion: external motion added to state vector x
+        Q: motion noise (same shape as P)
+        """
+        self.x = None
+        self.P = np.matrix(np.eye(4)) * 1000  # initial uncertainty
+        self.R = 0.01**2
+        self.F = np.matrix('''
+                      1. 0. 1. 0.;
+                      0. 1. 0. 1.;
+                      0. 0. 1. 0.;
+                      0. 0. 0. 1.
+                      ''')
+        self.H = np.matrix('''
+                      1. 0. 0. 0.;
+                      0. 1. 0. 0.''')
+        self.motion = np.matrix('0. 0. 0. 0.').T
+        self.Q = np.matrix(np.eye(4))
+
+    def get_filtered(self, pos):
+        if self.x is None:
+            self.x = np.matrix([*pos, 0, 0]).T
+        else:
+            if pos is not None:
+                self.update(pos)
+            self.predict()
+
+        return np.array(self.x).ravel()[:2]
+
+    def update(self, measurement):
+        '''
+        Parameters:
+        x: initial state
+        P: initial uncertainty convariance matrix
+        measurement: observed position (same shape as H*x)
+        R: measurement noise (same shape as H)
+        motion: external motion added to state vector x
+        Q: motion noise (same shape as P)
+        F: next state function: x_prime = F*x
+        H: measurement function: position = H*x
+
+        Return: the updated and predicted new values for (x, P)
+
+        See also http://en.wikipedia.org/wiki/Kalman_filter
+
+        This version of kalman can be applied to many different situations by
+        appropriately defining F and H
+        '''
+        # UPDATE x, P based on measurement m
+        # distance between measured and current position-belief
+        y = np.matrix(measurement).T - self.H * self.x
+        S = self.H * self.P * self.H.T + self.R  # residual convariance
+        K = self.P * self.H.T * S.I  # Kalman gain
+        self.x = self.x + K * y
+        I = np.matrix(np.eye(self.F.shape[0]))  # identity matrix
+        self.P = (I - K * self.H) * self.P
+
+    def predict(self):
+        # PREDICT x, P based on motion
+        self.x = self.F * self.x + self.motion
+        self.P = self.F * self.P * self.F.T + self.Q

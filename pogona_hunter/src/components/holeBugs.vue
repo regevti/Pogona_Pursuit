@@ -51,6 +51,16 @@ export default {
     currentAngle: function () {
       return Math.atan2(this.vx, this.vy)
     },
+    jump_distance: function () {
+      return this.currentBugSize * 1.5
+    },
+    upper_edge: function () {
+      let edge = this.currentBugSize / 2
+      if (this.isJumpUpMovement) {
+        edge += this.jump_distance
+      }
+      return edge
+    },
     numImagesPerBug: function () {
       return this.bugTypeOptions[this.currentBugType].numImagesPerBug
     },
@@ -60,11 +70,32 @@ export default {
     timeBetweenBugs: function () {
       return (this.bugsSettings.iti || 2) * 1000
     },
+    isRightExit: function () {
+      return this.bugsSettings.exitHole === 'bottomRight'
+    },
+    isLeftExit: function () {
+      return this.bugsSettings.exitHole === 'bottomLeft'
+    },
     isMoveInCircles: function () {
       return this.bugsSettings.movementType === 'circle'
     },
+    isHalfCircleMovement: function () {
+      return this.bugsSettings.movementType === 'half_circle'
+    },
     isRandomMovement: function () {
       return this.bugsSettings.movementType === 'random'
+    },
+    isLowHorizontalMovement: function () {
+      return this.bugsSettings.movementType === 'low_horizontal'
+    },
+    isJumpUpMovement: function () {
+      return this.bugsSettings.movementType === 'jump_up'
+    },
+    isNoisyLowHorizontalMovement: function () {
+      return this.bugsSettings.movementType === 'low_horizontal_noise'
+    },
+    isCounterClockWise: function () {
+      return this.isLeftExit
     }
   },
   mounted() {
@@ -85,19 +116,31 @@ export default {
       this.isRetreated = false
       this.isHoleRetreatStarted = false
       this.isChangingDirection = false
+      this.isCircleTrackReached = true
       this.currentBugSize = this.getRadiusSize()
       this.x = this.entranceHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
       this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
+      this.lowHorizontalNoiseStart = (this.x + this.xTarget) / 2
+      this.isNoisyPartReached = false
       switch (this.bugsSettings.movementType) {
         case 'circle':
-          this.theta = Math.PI + (Math.PI / 4) // - Math.PI / 20 // used for circular movement
+          // this.setNextAngle(this.isRightExit ? -Math.PI / 4 : -3 * Math.PI / 4)
+          this.theta = this.isRightExit ? (Math.PI + (Math.PI / 5)) : (Math.PI + (2 * Math.PI / 3))
+          this.r = (Math.abs(this.xTarget - this.x) / 5)
+          this.r0 = [(this.x + this.xTarget) / 2, this.y / 2]
+          break
+        case 'half_circle':
+          this.theta = this.isCounterClockWise ? (Math.PI + (Math.PI / 4)) : (Math.PI + (Math.PI / 4)) // used for circular movement
           this.r = (Math.abs(this.xTarget - this.x) / 2)
           this.r0 = [(this.x + this.xTarget) / 2, this.y + (this.r / 2.3)]
           break
         case 'low_horizontal':
           this.startRetreat()
+          break
+        case 'low_horizontal_noise':
+          this.setRetreatSpeeds()
           break
         default:
           this.setNextAngle()
@@ -111,23 +154,58 @@ export default {
       this.frameCounter++
       this.edgeDetection()
       this.checkHoleRetreat()
-      switch (this.bugsSettings.movementType) {
-      case 'circle':
-        this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
-        this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.bugsSettings.isAntiClockWise ? -1 : 1)
-        this.y = this.r0[1] + this.r * Math.sin(this.theta)
-        break
-      default:
+      // half-circle
+      if (this.isHalfCircleMovement) {
+        this.circularMove()
+      // circle
+      } else if (this.isMoveInCircles && !this.isHoleRetreatStarted) {
+        this.circularMove()
+        // if (!this.isCircleTrackReached) {
+        //   this.straightMove(0)
+        //   this.isCircleTrackReached = distance(
+        //     this.x, this.y, this.r0[0] + (this.r * Math.cos(this.theta)), this.r0[1] + this.r * Math.sin(this.theta)
+        //   ) < 200
+        // } else {
+        //   this.circularMove()
+        // }
+      // low horizontal noise
+      } else if (this.isNoisyLowHorizontalMovement) {
+        this.checkNoisyTrack()
+        if (this.isNoisyPartReached) {
+          this.noisyMove()
+        } else {
+          this.straightMove(0)
+        }
+      // random + low_horizontal
+      } else {
         this.straightMove()
       }
       this.draw()
     },
-    straightMove() {
+    straightMove(noiseWeight = 0.5) {
       let randNoise = this.getRandomNoise()
-      this.dx = this.vx + 0.5 * randNoise
-      this.dy = this.vy + 0.5 * randNoise
+      this.dx = this.vx + noiseWeight * randNoise
+      this.dy = this.vy + noiseWeight * randNoise
       this.x += this.dx
       this.y += this.dy
+    },
+    circularMove() {
+      this.theta += Math.abs(this.currentSpeed) * Math.sqrt(2) / this.r
+      this.x = this.r0[0] + (this.r * Math.cos(this.theta)) * (this.isCounterClockWise ? -1 : 1)
+      this.y = this.r0[1] + this.r * Math.sin(this.theta)
+    },
+    noisyMove() {
+      let randNoise = this.getRandomNoise()
+      this.dx = this.vx + 0.5 * randNoise
+      this.dy = 0.00008 * (this.yTarget - this.y) + 0.7 * randNoise + 0.6 * this.dy
+      this.x += this.dx
+      this.y += this.dy
+    },
+    jump() {
+      if (!this.isJumpUpMovement) {
+        return
+      }
+      this.y -= this.jump_distance
     },
     edgeDetection() {
       if (this.isChangingDirection) {
@@ -136,7 +214,7 @@ export default {
       // borders
       let radius = this.currentBugSize / 2
       if (this.x < radius || this.x > this.canvas.width - radius ||
-          this.y < radius || this.y > this.canvas.height - radius) {
+          this.y < this.upper_edge || this.y > this.canvas.height - radius) {
         this.setNextAngle()
       // holes edges
       } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
@@ -191,18 +269,24 @@ export default {
       }
       return angles
     },
-    setNextAngle() {
-      let openAngles = this.getNotBlockedAngles()
-      openAngles = openAngles.sort()
-      for (let i = 0; i < openAngles.length - 1; i++) {
-        // in order to maintain the continuity in angles range, in cases of missing angles add 2π to the angles
-        // right before the missing ones.
-        if ((openAngles[i + 1] - openAngles[i]) > (Math.PI / 2)) {
-          openAngles[i] += 2 * Math.PI
-        }
+    setNextAngle(angle = null) {
+      if (this.isNoisyLowHorizontalMovement && this.isNoisyPartReached) {
+        return
       }
-      openAngles = openAngles.sort()
-      let nextAngle = Math.random() * (openAngles[openAngles.length - 1] - openAngles[0]) + openAngles[0]
+      let nextAngle = angle
+      if (!angle) {
+        let openAngles = this.getNotBlockedAngles()
+        openAngles = openAngles.sort()
+        for (let i = 0; i < openAngles.length - 1; i++) {
+          // in order to maintain the continuity in angles range, in cases of missing angles add 2π to the angles
+          // right before the missing ones.
+          if ((openAngles[i + 1] - openAngles[i]) > (Math.PI / 2)) {
+            openAngles[i] += 2 * Math.PI
+          }
+        }
+        openAngles = openAngles.sort()
+        nextAngle = Math.random() * (openAngles[openAngles.length - 1] - openAngles[0]) + openAngles[0]
+      }
       this.vx = this.currentSpeed * Math.cos(nextAngle)
       this.vy = this.currentSpeed * Math.sin(nextAngle)
     },
@@ -235,8 +319,8 @@ export default {
       }
     },
     getAngleRadians() {
-      if (this.isMoveInCircles) {
-        return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + (this.bugsSettings.isAntiClockWise ? 0 : Math.PI)
+      if (this.isHalfCircleMovement || (this.isMoveInCircles && this.isCircleTrackReached && !this.isHoleRetreatStarted)) {
+        return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + (this.isCounterClockWise ? 0 : Math.PI)
       }
       return Math.atan2(this.dy, this.dx) + Math.PI / 2
     },
@@ -290,12 +374,31 @@ export default {
     },
     startRetreat() {
       if (!this.isHoleRetreatStarted) {
-        let xd = this.xTarget - this.x
-        let yd = this.yTarget - this.y
-        let T = yd / xd
-        this.vx = Math.sign(xd) * (this.currentSpeed / Math.sqrt(1 + T ** 2))
-        this.vy = Math.sign(yd) * Math.sqrt((this.currentSpeed ** 2) - (this.vx ** 2))
+        this.setRetreatSpeeds()
         this.isHoleRetreatStarted = true
+      }
+    },
+    setRetreatSpeeds() {
+      let xd = this.xTarget - this.x
+      let yd = this.yTarget - this.y
+      let T = yd / xd
+      this.vx = Math.sign(xd) * (this.currentSpeed / Math.sqrt(1 + T ** 2))
+      this.vy = Math.sign(yd) * Math.sqrt((this.currentSpeed ** 2) - (this.vx ** 2))
+    },
+    checkNoisyTrack() {
+      if (this.isHoleRetreatStarted) {
+        return
+      }
+      if (!this.isNoisyPartReached) {
+        if (((this.exitHolePos[0] > this.lowHorizontalNoiseStart) && (this.x > this.lowHorizontalNoiseStart)) ||
+        ((this.exitHolePos[0] < this.lowHorizontalNoiseStart) && (this.x < this.lowHorizontalNoiseStart))) {
+            this.isNoisyPartReached = true
+          }
+      }
+      if (((this.exitHolePos[0] > this.lowHorizontalNoiseStart) && (this.x > this.exitHolePos[0] - 10)) ||
+         ((this.exitHolePos[0] < this.lowHorizontalNoiseStart) && (this.x < this.exitHolePos[0] + 10))) {
+        this.isNoisyPartReached = false
+        this.startRetreat()
       }
     }
   }
