@@ -39,6 +39,7 @@ class Loader:
         self.cam_name = cam_name
         self.is_load_pose = is_load_pose
         self.orm = ORM()
+        self.dlc_pose = DLCPose()
         self.bug_traj_strike_id = None
         self.strike_frame_id = None
         self.video_path = None
@@ -70,10 +71,13 @@ class Loader:
                 video_path = Path(vid.path).resolve()
                 assert video_path.exists(), f'Video {video_path} does not exist'
                 self.video_path = video_path
-                self.frames_df = self.load_frames_times(vid)
+                self.frames_df = self.dlc_pose.load_frames_times(vid)
                 if is_load_pose and not self.frames_df.empty and \
                         (self.frames_df.iloc[0].time <= strk.time <= self.frames_df.iloc[-1].time):
-                    self.load_pose_df(video_path)
+                    try:
+                        self.dlc_pose.load_pose_df(vid=vid, frames_df=self.frames_df.copy())
+                    except Exception as exc:
+                        raise MissingStrikeData(str(exc))
                     break
             if self.frames_df.empty:
                 raise MissingStrikeData()
@@ -81,30 +85,6 @@ class Loader:
             self.strike_frame_id = (strk.time - self.frames_df.time).dt.total_seconds().abs().idxmin()
             self.bug_traj_strike_id = (strk.time - self.traj_df.time).dt.total_seconds().abs().idxmin()
             self.load_tongues_out()
-
-    def load_frames_times(self, vid) -> pd.DataFrame:
-        if vid.frames is None:
-            print(f'{str(self)} - frame times does not exist')
-            return self.frames_df
-        frames_ts = pd.DataFrame(vid.frames.items(), columns=['frame_id', 'time']).set_index('frame_id')
-        frames_ts['time'] = pd.to_datetime(frames_ts.time, unit='s', utc=True).dt.tz_convert('Asia/Jerusalem').dt.tz_localize(None)
-        frames_ts.index = frames_ts.index.astype(int)
-        return frames_ts
-
-    def load_pose_df(self, video_path: Path):
-        pred_path = DLCPose.get_cache_path(video_path)
-        if not pred_path.exists():
-            raise MissingStrikeData(f'could not find pose predictions file in {pred_path}')
-        pdf = pd.read_parquet(pred_path)
-        frames_df_ = self.frames_df.copy()
-        if len(frames_df_) > len(pdf):
-            frames_df_ = frames_df_.iloc[:len(pdf)]
-        elif 1 <= (len(pdf) - len(frames_df_)) <= 10:
-            pdf = pdf.iloc[:len(frames_df_)]
-        if len(frames_df_) != len(pdf):
-            raise MissingStrikeData(f'different length to frames_df ({len(frames_df_)}) and pose_df ({len(pdf)})')
-        frames_df_.columns = pd.MultiIndex.from_tuples([('time', '')])
-        self.frames_df = pd.concat([frames_df_, pdf], axis=1)
 
     def get_strike_frame(self) -> np.ndarray:
         for _, frame in self.gen_frames_around_strike(0, 1):

@@ -37,6 +37,7 @@ class DLCPose:
         self.detector = DLCLive(EXPORTED_MODEL, processor=self.processor)
         self.is_initialized = False
         self.caliber = None
+        self.orm = ORM()
 
     def init(self, img):
         if self.is_initialized:
@@ -121,6 +122,46 @@ class DLCPose:
         cache_path = self.get_cache_path(video_path)
         pdf.to_parquet(cache_path)
 
+    def load_pose_df(self, vid: Video = None,
+                     video_path: str = None,
+                     frames_df: pd.DataFrame = None):
+        assert not (vid is not None and video_path), 'must only provide one of the two: vid, video_path'
+        if vid is not None:
+            video_path = Path(vid.path).resolve()
+        elif video_path:
+            video_path = Path(video_path)
+            vid = self.get_video_db(video_path)
+        assert video_path.exists(), f'Video {video_path} does not exist'
+        pred_path = self.get_cache_path(video_path)
+        if not pred_path.exists():
+            raise Exception(f'could not find pose predictions file in {pred_path}')
+        pdf = pd.read_parquet(pred_path)
+        if frames_df is None:
+            frames_df = self.load_frames_times(vid)
+        if len(frames_df) > len(pdf):
+            frames_df = frames_df.iloc[:len(pdf)]
+        elif 1 <= (len(pdf) - len(frames_df)) <= 10:
+            pdf = pdf.iloc[:len(frames_df)]
+        if len(frames_df) != len(pdf):
+            raise Exception(f'different length to frames_df ({len(frames_df)}) and pose_df ({len(pdf)})')
+        frames_df.columns = pd.MultiIndex.from_tuples([('time', '')])
+        return pd.concat([frames_df, pdf], axis=1)
+
+    def get_video_db(self, video_path: Path):
+        with self.orm.session() as s:
+            vid = s.query(Video).filter(Video.path.contains(video_path.stem)).first()
+        return vid
+
+    def load_frames_times(self, vid: Video) -> pd.DataFrame:
+        frames_df = pd.DataFrame()
+        if vid.frames is None:
+            print(f'{str(self)} - frame times does not exist')
+            return frames_df
+        frames_ts = pd.DataFrame(vid.frames.items(), columns=['frame_id', 'time']).set_index('frame_id')
+        frames_ts['time'] = pd.to_datetime(frames_ts.time, unit='s', utc=True).dt.tz_convert('Asia/Jerusalem').dt.tz_localize(None)
+        frames_ts.index = frames_ts.index.astype(int)
+        return frames_ts
+
     @staticmethod
     def get_cache_path(video_path) -> Path:
         preds_dir = Path(video_path).parent / 'predictions'
@@ -195,8 +236,8 @@ class SpatialAnalyzer:
             return
         coords = np.array([(r.x, r.y) for r in res])
 
-        fig, ax = plt.subplots(1,1,figsize=(10, 20))
-        ax.scatter(coords[:,0], coords[:,1])
+        fig, ax = plt.subplots(1, 1, figsize=(10, 20))
+        ax.scatter(coords[:, 0], coords[:, 1])
         rect = patches.Rectangle((0, -2), 42, 80, linewidth=1, edgecolor='k', facecolor='none')
         ax.add_patch(rect)
         screen = patches.Rectangle((2, -3), 38, 2, linewidth=1, edgecolor='k', facecolor='k')
