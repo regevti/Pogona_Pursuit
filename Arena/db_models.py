@@ -164,6 +164,7 @@ class PoseEstimation(Base):
     start_time = Column(DateTime)
     x = Column(Float)
     y = Column(Float)
+    model = Column(String, nullable=True)
     animal_id = Column(String, nullable=True)
     angle = Column(Float, nullable=True)
     engagement = Column(Float, nullable=True)

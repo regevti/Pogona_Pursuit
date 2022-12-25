@@ -1,6 +1,7 @@
 import cv2
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import numpy as np
 import yaml
 from dlclive import DLCLive, Processor
@@ -10,9 +11,11 @@ from pathlib import Path
 import os
 if Path('.').resolve().name != 'Arena':
     os.chdir('..')
+import config
 from calibration import PoseEstimator
 from loggers import get_logger
-from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike
+from sqlalchemy import cast, Date
+from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, PoseEstimation
 
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 DLC_FOLDER = '/media/sil2/Data/regev/pose_estimation/deeplabcut/projects/dlc_pogona_mini'
@@ -162,17 +165,66 @@ class PredPlotter:
         return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
 
 
+class SpatialAnalyzer:
+    def __init__(self, animal_id, day=None, cam_name=None):
+        self.animal_id = animal_id
+        self.day = day
+        self.cam_name = cam_name
+
+    def query(self):
+        orm = ORM()
+        with orm.session() as s:
+            q = s.query(PoseEstimation).filter_by(animal_id=self.animal_id)
+            if self.cam_name:
+                q = q.filter_by(cam_name=self.cam_name)
+            q = q.filter(cast(PoseEstimation.start_time, Date) == self.day)
+            res = q.all()
+        return res
+
+    def get_bug_exit_hole(self):
+        orm = ORM()
+        with orm.session() as s:
+            q = s.query(Block).filter(cast(Block.start_time, Date) == self.day)
+            res = q.all()
+        return set([r.exit_hole for r in res])
+
+    def plot_spatial(self):
+        res = self.query()
+        if not res:
+            print('No pose recordings found')
+            return
+        coords = np.array([(r.x, r.y) for r in res])
+
+        fig, ax = plt.subplots(1,1,figsize=(10, 20))
+        ax.scatter(coords[:,0], coords[:,1])
+        rect = patches.Rectangle((0, -2), 42, 80, linewidth=1, edgecolor='k', facecolor='none')
+        ax.add_patch(rect)
+        screen = patches.Rectangle((2, -3), 38, 2, linewidth=1, edgecolor='k', facecolor='k')
+        ax.add_patch(screen)
+        ax.set_title(f'{self.animal_id}, {self.day}, {self.get_bug_exit_hole()}')
+        plt.show()
+
+
+def load_pose_from_videos(cam_name):
+    for p in Path(config.experiments_dir).rglob(f'predictions/{cam_name}*.parquet'):
+        df = pd.read_parquet(p)
+        df
+
+
 if __name__ == '__main__':
-    orm = ORM()
-    desired_cam_name, desired_animal_id = 'front', 'PV80'
-    dp = DLCPose(desired_cam_name)
-    with orm.session() as s:
-        for exp in s.query(Experiment).filter_by(animal_id=desired_animal_id).all():
-            for blk in exp.blocks:
-                for vid in blk.videos:
-                    if vid.cam_name != desired_cam_name:
-                        continue
-                    try:
-                        dp.predict_video(vid.path, vid.frames)
-                    except Exception as exc:
-                        print(f'ERROR; {vid.path}; {exc}')
+    load_pose_from_videos('front')
+    # SpatialAnalyzer('PV80', day='2022-12-15').plot_spatial()
+
+    # orm = ORM()
+    # desired_cam_name, desired_animal_id = 'front', 'PV80'
+    # dp = DLCPose(desired_cam_name)
+    # with orm.session() as s:
+    #     for exp in s.query(Experiment).filter_by(animal_id=desired_animal_id).all():
+    #         for blk in exp.blocks:
+    #             for vid in blk.videos:
+    #                 if vid.cam_name != desired_cam_name:
+    #                     continue
+    #                 try:
+    #                     dp.predict_video(vid.path, vid.frames)
+    #                 except Exception as exc:
+    #                     print(f'ERROR; {vid.path}; {exc}')
