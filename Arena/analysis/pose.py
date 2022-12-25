@@ -246,14 +246,21 @@ class SpatialAnalyzer:
         plt.show()
 
 
-def load_pose_from_videos(cam_name):
-    for p in Path(config.experiments_dir).rglob(f'predictions/{cam_name}*.parquet'):
-        df = pd.read_parquet(p)
-        df
+def load_pose_from_videos(animal_id, cam_name):
+    dlc_pose = DLCPose(cam_name=cam_name)
+    exp_dir = Path(config.experiments_dir) / animal_id
+    for p in exp_dir.rglob(f'{cam_name}_*.mp4'):
+        if dlc_pose.get_cache_path(p).exists():
+            df = dlc_pose.load_pose_df(video_path=p)
+            df
+
 
 
 if __name__ == '__main__':
-    load_pose_from_videos('front')
+    img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
+    plt.imshow(img)
+    plt.show()
+    # load_pose_from_videos('PV80', 'front')
     # SpatialAnalyzer('PV80', day='2022-12-15').plot_spatial()
 
     # orm = ORM()
