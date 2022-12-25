@@ -145,7 +145,9 @@ class DLCPose:
         if len(frames_df) != len(pdf):
             raise Exception(f'different length to frames_df ({len(frames_df)}) and pose_df ({len(pdf)})')
         frames_df.columns = pd.MultiIndex.from_tuples([('time', '')])
-        return pd.concat([frames_df, pdf], axis=1)
+        pose_df = pd.concat([frames_df, pdf], axis=1)
+        pose_df = self.convert_to_real_world(pose_df)
+        return pose_df
 
     def get_video_db(self, video_path: Path):
         with self.orm.session() as s:
@@ -257,10 +259,10 @@ def load_pose_from_videos(animal_id, cam_name):
 
 
 if __name__ == '__main__':
-    img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
-    plt.imshow(img)
-    plt.show()
-    # load_pose_from_videos('PV80', 'front')
+    # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
+    # plt.imshow(img)
+    # plt.show()
+    load_pose_from_videos('PV80', 'front')
     # SpatialAnalyzer('PV80', day='2022-12-15').plot_spatial()
 
     # orm = ORM()

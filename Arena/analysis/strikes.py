@@ -39,7 +39,7 @@ class Loader:
         self.cam_name = cam_name
         self.is_load_pose = is_load_pose
         self.orm = ORM()
-        self.dlc_pose = DLCPose()
+        self.dlc_pose = DLCPose(cam_name)
         self.bug_traj_strike_id = None
         self.strike_frame_id = None
         self.video_path = None
