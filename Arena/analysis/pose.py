@@ -241,7 +241,7 @@ class SpatialAnalyzer:
             res = q.all()
         return set([r.exit_hole for r in res])
 
-    def plot_spatial(self, pose=None):
+    def plot_spatial(self, pose=None, ax=None):
         if pose is None:
             res = self.query_pose()
             if res:
@@ -249,44 +249,54 @@ class SpatialAnalyzer:
                 return
             pose = pd.DataFrame([(r.x, r.y) for r in res], columns=['x', 'y'])
 
-        fig, ax = plt.subplots(1, 1, figsize=(10, 20))
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=(10, 20))
         ax.scatter(pose['x'], pose['y'])
         rect = patches.Rectangle((0, -2), 42, 80, linewidth=1, edgecolor='k', facecolor='none')
         ax.add_patch(rect)
         screen = patches.Rectangle((2, -3), 38, 2, linewidth=1, edgecolor='k', facecolor='k')
         ax.add_patch(screen)
         ax.set_title(f'{self.animal_id}, {self.day}, {self.get_bug_exit_hole()}')
-        plt.show()
+        if ax is None:
+            plt.show()
 
 
 def get_day_from_path(p):
     return p.stem.split('_')[1].split('T')[0]
 
 
-def load_pose_from_videos(animal_id, cam_name, day=None):
+def load_pose_from_videos(animal_id, cam_name, day=None, cols=4):
     dlc_pose = DLCPose(cam_name=cam_name)
     dlc_pose.init_calibrator(None, (1088, 1456))
     exp_dir = Path(config.experiments_dir) / animal_id
-    reg = f'{cam_name}_*.mp4' if not day else f'{cam_name}_{day}T*.mp4'
-    pose_dfs = []
-    for p in exp_dir.rglob(reg):
-        if dlc_pose.get_cache_path(p).exists():
-            df = dlc_pose.load_pose_df(video_path=p, keypoint='nose')
-            pose_dfs.append(df)
+    days = [day] if day else [p.stem for p in exp_dir.glob('*') if p.is_dir()]
+    cols = min(cols, len(days))
+    rows = int(np.ceil(len(days) / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(25, 5*rows))
+    axes = axes.flatten()
+    for i, day in enumerate(days):
+        pose_dfs = []
+        for p in exp_dir.rglob(f'{cam_name}_{day}T*.mp4'):
+            if dlc_pose.get_cache_path(p).exists():
+                df = dlc_pose.load_pose_df(video_path=p, keypoint='nose')
+                pose_dfs.append(df)
 
-    if pose_dfs:
-        pose_dfs = pd.concat(pose_dfs).sort_values(by='time')
-        sa = SpatialAnalyzer(animal_id, day, cam_name)
-        sa.plot_spatial(pose_dfs)
-    else:
-        print('found no pose_dfs')
+        if pose_dfs:
+            pose_dfs = pd.concat(pose_dfs).sort_values(by='time')
+            sa = SpatialAnalyzer(animal_id, day, cam_name)
+            sa.plot_spatial(pose_dfs, ax=axes[i])
+        else:
+            print(f'found no pose_dfs for day: {day}')
+
+    fig.tight_layout()
+    plt.show()
 
 
 if __name__ == '__main__':
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
-    load_pose_from_videos('PV80', 'front', day='20221201')
+    load_pose_from_videos('PV80', 'front')
     # SpatialAnalyzer('PV80', day='2022-12-15').plot_spatial()
 
     # orm = ORM()
