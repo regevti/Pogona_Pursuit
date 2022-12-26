@@ -234,12 +234,12 @@ class SpatialAnalyzer:
             res = q.all()
         return res
 
-    def get_bug_exit_hole(self):
+    def get_bug_exit_hole(self) -> list:
         orm = ORM()
         with orm.session() as s:
             q = s.query(Block).filter(cast(Block.start_time, Date) == self.day)
             res = q.all()
-        return set([r.exit_hole for r in res])
+        return list(set([r.exit_hole for r in res]))
 
     def plot_spatial(self, pose=None, ax=None):
         if pose is None:
@@ -252,11 +252,11 @@ class SpatialAnalyzer:
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(10, 20))
         ax.scatter(pose['x'], pose['y'])
-        rect = patches.Rectangle((0, -2), 42, 80, linewidth=1, edgecolor='k', facecolor='none')
+        rect = patches.Rectangle((-3, -2), 58, 80, linewidth=1, edgecolor='k', facecolor='none')
         ax.add_patch(rect)
-        screen = patches.Rectangle((2, -3), 38, 2, linewidth=1, edgecolor='k', facecolor='k')
+        screen = patches.Rectangle((-1, -3), 53, 2, linewidth=1, edgecolor='k', facecolor='k')
         ax.add_patch(screen)
-        ax.set_title(f'{self.animal_id}, {self.day}, {self.get_bug_exit_hole()}')
+        ax.set_title(f'{self.day} - {",".join(self.get_bug_exit_hole())}')
         if ax is None:
             plt.show()
 
@@ -265,7 +265,7 @@ def get_day_from_path(p):
     return p.stem.split('_')[1].split('T')[0]
 
 
-def load_pose_from_videos(animal_id, cam_name, day=None, cols=4):
+def load_pose_from_videos(animal_id, cam_name, day=None, cols=6):
     dlc_pose = DLCPose(cam_name=cam_name)
     dlc_pose.init_calibrator(None, (1088, 1456))
     exp_dir = Path(config.experiments_dir) / animal_id
@@ -273,13 +273,16 @@ def load_pose_from_videos(animal_id, cam_name, day=None, cols=4):
     cols = min(cols, len(days))
     rows = int(np.ceil(len(days) / cols))
     fig, axes = plt.subplots(rows, cols, figsize=(25, 5*rows))
-    axes = axes.flatten()
+    axes = axes.flatten() if len(days) > 1 else [axes]
     for i, day in enumerate(days):
         pose_dfs = []
         for p in exp_dir.rglob(f'{cam_name}_{day}T*.mp4'):
             if dlc_pose.get_cache_path(p).exists():
-                df = dlc_pose.load_pose_df(video_path=p, keypoint='nose')
-                pose_dfs.append(df)
+                try:
+                    df = dlc_pose.load_pose_df(video_path=p, keypoint='nose')
+                    pose_dfs.append(df)
+                except Exception as exc:
+                    print(f'ERROR; {p}: {exc}')
 
         if pose_dfs:
             pose_dfs = pd.concat(pose_dfs).sort_values(by='time')
@@ -296,7 +299,7 @@ if __name__ == '__main__':
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
-    load_pose_from_videos('PV80', 'front')
+    load_pose_from_videos('PV80', 'front', '20221211')
     # SpatialAnalyzer('PV80', day='2022-12-15').plot_spatial()
 
     # orm = ORM()
