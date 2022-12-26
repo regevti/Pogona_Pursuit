@@ -286,7 +286,7 @@ if __name__ == '__main__':
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
-    load_pose_from_videos('PV80', 'front', day='20221211')
+    load_pose_from_videos('PV80', 'front', day='20221201')
     # SpatialAnalyzer('PV80', day='2022-12-15').plot_spatial()
 
     # orm = ORM()
