@@ -1,6 +1,7 @@
 import cv2
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import matplotlib.patches as patches
 import numpy as np
 import yaml
@@ -251,7 +252,7 @@ class SpatialAnalyzer:
 
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(10, 20))
-        ax.scatter(pose['x'], pose['y'])
+        self.plot_hist2d(pose, ax)
         rect = patches.Rectangle((-3, -2), 58, 80, linewidth=1, edgecolor='k', facecolor='none')
         ax.add_patch(rect)
         screen = patches.Rectangle((-1, -3), 53, 2, linewidth=1, edgecolor='k', facecolor='k')
@@ -259,6 +260,11 @@ class SpatialAnalyzer:
         ax.set_title(f'{self.day} - {",".join(self.get_bug_exit_hole())}')
         if ax is None:
             plt.show()
+
+    def plot_hist2d(self, df, ax):
+        sns.histplot(data=df, x='x', y='y', ax=ax,
+                     bins=(30, 30), cmap='Greens', stat='probability', pthresh=.0,
+                     cbar=True, cbar_kws=dict(shrink=.75, label='Probability'))
 
 
 def get_day_from_path(p):
