@@ -43,9 +43,13 @@ class DLCPose:
         if self.is_initialized:
             return
         self.detector.init_inference(img)
-        self.caliber = PoseEstimator(self.cam_name, resize_dim=img.shape[:2][::-1])
-        self.caliber.init(img)
+        self.init_calibrator(img)
         self.is_initialized = True
+
+    def init_calibrator(self, img, img_shape=None):
+        img_shape = img_shape or img.shape[:2][::-1]
+        self.caliber = PoseEstimator(self.cam_name, resize_dim=img_shape)
+        self.caliber.init(img, img_shape=img_shape)
 
     def predict(self, img, timestamp, frame_id=0):
         self.init(img)
@@ -124,7 +128,8 @@ class DLCPose:
 
     def load_pose_df(self, vid: Video = None,
                      video_path: str = None,
-                     frames_df: pd.DataFrame = None):
+                     frames_df: pd.DataFrame = None,
+                     keypoint: str = None):
         assert not (vid is not None and video_path), 'must only provide one of the two: vid, video_path'
         if vid is not None:
             video_path = Path(vid.path).resolve()
@@ -145,9 +150,11 @@ class DLCPose:
         if len(frames_df) != len(pdf):
             raise Exception(f'different length to frames_df ({len(frames_df)}) and pose_df ({len(pdf)})')
         frames_df.columns = pd.MultiIndex.from_tuples([('time', '')])
-        pose_df = pd.concat([frames_df, pdf], axis=1)
-        pose_df = self.convert_to_real_world(pose_df)
-        return pose_df
+        pdf = pd.concat([frames_df, pdf], axis=1)
+        if keypoint:
+            pdf = pd.concat([pdf.time, pdf[keypoint]], axis=1)
+        pdf, _ = self.convert_to_real_world(pdf)
+        return pdf
 
     def get_video_db(self, video_path: Path):
         with self.orm.session() as s:
@@ -214,7 +221,7 @@ class SpatialAnalyzer:
         self.day = day
         self.cam_name = cam_name
 
-    def query(self):
+    def query_pose(self):
         orm = ORM()
         with orm.session() as s:
             q = s.query(PoseEstimation).filter_by(animal_id=self.animal_id)
@@ -231,15 +238,16 @@ class SpatialAnalyzer:
             res = q.all()
         return set([r.exit_hole for r in res])
 
-    def plot_spatial(self):
-        res = self.query()
-        if not res:
-            print('No pose recordings found')
-            return
-        coords = np.array([(r.x, r.y) for r in res])
+    def plot_spatial(self, pose=None):
+        if pose is None:
+            res = self.query_pose()
+            if res:
+                print('No pose recordings found')
+                return
+            pose = pd.DataFrame([(r.x, r.y) for r in res], columns=['x', 'y'])
 
         fig, ax = plt.subplots(1, 1, figsize=(10, 20))
-        ax.scatter(coords[:, 0], coords[:, 1])
+        ax.scatter(pose['x'], pose['y'])
         rect = patches.Rectangle((0, -2), 42, 80, linewidth=1, edgecolor='k', facecolor='none')
         ax.add_patch(rect)
         screen = patches.Rectangle((2, -3), 38, 2, linewidth=1, edgecolor='k', facecolor='k')
@@ -248,21 +256,28 @@ class SpatialAnalyzer:
         plt.show()
 
 
-def load_pose_from_videos(animal_id, cam_name):
-    dlc_pose = DLCPose(cam_name=cam_name)
-    exp_dir = Path(config.experiments_dir) / animal_id
-    for p in exp_dir.rglob(f'{cam_name}_*.mp4'):
-        if dlc_pose.get_cache_path(p).exists():
-            df = dlc_pose.load_pose_df(video_path=p)
-            df
+def get_day_from_path(p):
+    return p.stem.split('_')[1].split('T')[0]
 
+
+def load_pose_from_videos(animal_id, cam_name, day=None):
+    dlc_pose = DLCPose(cam_name=cam_name)
+    dlc_pose.init_calibrator(None, (1088, 1456))
+    exp_dir = Path(config.experiments_dir) / animal_id
+    reg = f'{cam_name}_*.mp4' if not day else f'{cam_name}_{day}T*.mp4'
+    for p in exp_dir.rglob(reg):
+        if dlc_pose.get_cache_path(p).exists():
+            df = dlc_pose.load_pose_df(video_path=p, keypoint='nose')
+            day_ = day or get_day_from_path(p)
+            sa = SpatialAnalyzer(animal_id, day_, cam_name)
+            sa.plot_spatial(df)
 
 
 if __name__ == '__main__':
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
-    load_pose_from_videos('PV80', 'front')
+    load_pose_from_videos('PV80', 'front', day='20221211')
     # SpatialAnalyzer('PV80', day='2022-12-15').plot_spatial()
 
     # orm = ORM()

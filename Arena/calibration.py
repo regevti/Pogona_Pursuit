@@ -147,19 +147,21 @@ class PoseEstimator:
         self.state = 0  # 0 - not initiated, 1 - failure, 2 - initiated
         self.markers = {}
 
-    def init(self, img, is_plot=False):
+    def init(self, img, img_shape=None, is_plot=False):
         try:
+            if img_shape is None:
+                img_shape = img.shape[:2]
             if not self.resize_dim:
-                self.resize_dim = img.shape[:2]
-            elif json.dumps(img.shape[:2]) != json.dumps(self.resize_dim):
-                raise Exception(f'Image size does not fit. expected: {tuple(self.resize_dim)}, received: {tuple(img.shape[:2])}')
+                self.resize_dim = img_shape
+            elif json.dumps(img_shape) != json.dumps(self.resize_dim):
+                raise Exception(f'Image size does not fit. expected: {tuple(self.resize_dim)}, received: {tuple(img_shape)}')
 
             for marker_id in ARUCO_IDS:
                 self.load_marker(marker_id)
             self.align_axes()
             self.state = 2
             if self.is_debug:
-                self.logger.info(f'started pose-estimator caliber for frames of shape: {img.shape}')
+                self.logger.info(f'started pose-estimator caliber for frames of shape: {img_shape}')
             if is_plot:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
                 img = self.plot_calibrated_line(img)
