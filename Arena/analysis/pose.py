@@ -6,6 +6,7 @@ import numpy as np
 import yaml
 from dlclive import DLCLive, Processor
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
+from scipy.signal import savgol_filter
 from tqdm.auto import tqdm
 from pathlib import Path
 import os
@@ -103,6 +104,8 @@ class DLCPose:
         is_converted = False
         if self.caliber.is_on:
             zf[['x', 'y']] = zf[['cam_x', 'cam_y']].apply(lambda pos: self.caliber.get_location(*pos), axis=1).tolist()
+            for c in ['x', 'y']:
+                zf[c] = savgol_filter(zf[c], window_length=37, polyorder=0)
             is_converted = True
         return zf, is_converted
 
@@ -265,12 +268,18 @@ def load_pose_from_videos(animal_id, cam_name, day=None):
     dlc_pose.init_calibrator(None, (1088, 1456))
     exp_dir = Path(config.experiments_dir) / animal_id
     reg = f'{cam_name}_*.mp4' if not day else f'{cam_name}_{day}T*.mp4'
+    pose_dfs = []
     for p in exp_dir.rglob(reg):
         if dlc_pose.get_cache_path(p).exists():
             df = dlc_pose.load_pose_df(video_path=p, keypoint='nose')
-            day_ = day or get_day_from_path(p)
-            sa = SpatialAnalyzer(animal_id, day_, cam_name)
-            sa.plot_spatial(df)
+            pose_dfs.append(df)
+
+    if pose_dfs:
+        pose_dfs = pd.concat(pose_dfs).sort_values(by='time')
+        sa = SpatialAnalyzer(animal_id, day, cam_name)
+        sa.plot_spatial(pose_dfs)
+    else:
+        print('found no pose_dfs')
 
 
 if __name__ == '__main__':
