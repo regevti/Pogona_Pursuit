@@ -5,10 +5,10 @@ import bbox
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
-from image_handlers.base_predictor import Predictor
+from image_handlers.predictor_handlers import PredictHandler
 
 
-class ResnetEmbedding(Predictor):
+class ResnetEmbedding(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.detector = ResNetPretrained()

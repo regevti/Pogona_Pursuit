@@ -27,11 +27,12 @@ DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 
 def turn_display_on():
+    touch_device_id = get_hdmi_xinput_id()
     cmds = [
         'pkill chrome || true',  # kill all existing chrome processes
-        f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-0',  # turn touch screen on
-        f'{DISPLAY} xinput enable {config.TOUCHSCREEN_DEVICE_ID}',  # enable touch
-        f'{DISPLAY} xinput map-to-output {config.TOUCHSCREEN_DEVICE_ID} HDMI-0',
+        f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4',  # turn touch screen on
+        f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
+        f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
         'sleep 1',
         'scripts/start_pogona_hunter.sh'  # start chrome with the bug application
     ]
@@ -39,12 +40,20 @@ def turn_display_on():
 
 
 def turn_display_off():
+    touch_device_id = get_hdmi_xinput_id()
     cmds = [
         'pkill chrome || true',
         f'{DISPLAY} xrandr --output HDMI-0 --off',  # turn touchscreen off
-        f'{DISPLAY} xinput disable {config.TOUCHSCREEN_DEVICE_ID}',  # disable touch
+        f'{DISPLAY} xinput disable {touch_device_id}',  # disable touch
     ]
     return os.system(' && '.join(cmds))
+
+
+def get_hdmi_xinput_id():
+    out = next(run_command('DISPLAY=":0" xinput | grep -i weida')).decode()
+    m = re.search(r'id=(\d+)', out)
+    if m:
+        return m.group(1)
 
 
 def async_call_later(seconds, callback):

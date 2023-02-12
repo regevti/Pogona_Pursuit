@@ -35,6 +35,25 @@ class Schedule(Base):
     experiment_name = Column(String)
 
 
+class ModelGroup(Base):
+    __tablename__ = 'model_groups'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    versions = relationship('ModelVersion')
+
+
+class ModelVersion(Base):
+    __tablename__ = 'model_versions'
+
+    id = Column(Integer, primary_key=True)
+    create_date = Column(DateTime)
+    version = Column(String)
+    folder = Column(String)
+    model_group_id = Column(Integer, ForeignKey('model_groups.id'))
+    is_active = Column(Boolean, default=True)
+
+
 class Experiment(Base):
     __tablename__ = 'experiments'
 
@@ -125,8 +144,12 @@ class Strike(Base):
     calc_speed = Column(Float, nullable=True)
     projected_strike_coords = Column(JSON, nullable=True)
     projected_leap_coords = Column(JSON, nullable=True)
+    max_acceleration = Column(Float, nullable=True)
+    strike_frame = Column(Integer, nullable=True)
+    leap_frame = Column(Integer, nullable=True)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=True)
+    video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
 
 
 class Video(Base):
@@ -305,10 +328,10 @@ class ORM:
             s.add(vid_pred)
             s.commit()
 
-    def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id):
-        animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
+    def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model, animal_id=None):
+        animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle, animal_id=animal_id,
-                            engagement=engagement, video_id=video_id,
+                            engagement=engagement, video_id=video_id, model=model,
                             block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         )
         with self.session() as s:

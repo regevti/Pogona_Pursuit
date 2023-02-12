@@ -20,7 +20,7 @@ import pandas as pd
 import config
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command
+from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id
 from subscribers import Subscriber, start_experiment_subscribers
 from db_models import ORM
 
@@ -136,7 +136,11 @@ class Experiment:
         except Exception:
             self.logger.error('pogona hunter app is down')
 
-    def is_touchscreen_mapped_to_hdmi(self, touchscreen_device_id=9):
+    def is_touchscreen_mapped_to_hdmi(self):
+        touchscreen_device_id = get_hdmi_xinput_id()
+        if not touchscreen_device_id:
+            self.logger.error('unable to find touch USB')
+            return
 
         def _check_mapped():
             # if the matrix under "Coordinate Transformation Matrix" has values different from 0,1 - that means
@@ -149,13 +153,15 @@ class Experiment:
             is_mapped = _check_mapped()
             if not is_mapped:
                 self.logger.info('Fixing mapping of touchscreen output')
-                run_command(f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {config.TOUCHSCREEN_DEVICE_ID} HDMI-0')
-                time.sleep(0.1)
+                cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+                turn_display_on()
+                time.sleep(5)
+                next(run_command(cmd))
+                time.sleep(1)
                 is_mapped = _check_mapped()
                 if not is_mapped:
                     self.logger.error(
-                        f'Touch detection is not mapped to HDMI screen\nFix by running: xinput map-to-output '
-                        f'{config.TOUCHSCREEN_DEVICE_ID} HDMI-0')
+                        f'Touch detection is not mapped to HDMI screen\nFix by running: {cmd}')
             return is_mapped
         except Exception:
             self.logger.exception('Error in is_touchscreen_mapped_to_hdmi')

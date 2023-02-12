@@ -1,6 +1,7 @@
 import io
 import cv2
 import json
+import warnings
 import base64
 import psutil
 import logging
@@ -20,6 +21,8 @@ from loggers import init_logger_config, create_arena_handler
 from calibration import PoseEstimator
 from periphery import Periphery
 from analysis.strikes import StrikeAnalyzer, Loader
+import matplotlib
+matplotlib.use('Agg')
 
 app = Flask('ArenaAPI')
 cache = None
@@ -358,9 +361,11 @@ def video_feed():
 
 @app.route('/strike_analysis/<strike_id>')
 def get_strike_analysis(strike_id):
-    ld = Loader(strike_id, 'front')
+    ld = Loader(strike_id, 'front', is_debug=False)
     sa = StrikeAnalyzer(ld)
-    img = sa.plot_strike_analysis(only_return=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        img = sa.plot_strike_analysis(only_return=True)
     img = Image.fromarray(img.astype('uint8'))
     # create file-object in memory
     file_object = io.BytesIO()
@@ -477,13 +482,14 @@ if __name__ == "__main__":
     # h = logging.StreamHandler()
     # h.setFormatter(CustomFormatter())
     # logger.addHandler(h)
-    sentry_sdk.init(
-        dsn=config.SENTRY_DSN,
-        # Set traces_sample_rate to 1.0 to capture 100%
-        # of transactions for performance monitoring.
-        # We recommend adjusting this value in production.
-        traces_sample_rate=1.0
-    )
+    if not config.IS_ANALYSIS_ONLY:
+        sentry_sdk.init(
+            dsn=config.SENTRY_DSN,
+            # Set traces_sample_rate to 1.0 to capture 100%
+            # of transactions for performance monitoring.
+            # We recommend adjusting this value in production.
+            traces_sample_rate=1.0
+        )
 
     mp.freeze_support()
     mp.set_start_method('spawn', force=True)
@@ -494,9 +500,11 @@ if __name__ == "__main__":
     init_logger_config()
     arena_handler = create_arena_handler('API')
     app.logger.addHandler(arena_handler)
+    app.logger.setLevel(logging.INFO)
     cache = RedisCache()
-    arena_mgr = ArenaManager()
-    periphery_mgr = Periphery()
+    if not config.IS_ANALYSIS_ONLY:
+        arena_mgr = ArenaManager()
+        periphery_mgr = Periphery()
 
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
 

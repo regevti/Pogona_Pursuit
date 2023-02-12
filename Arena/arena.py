@@ -271,7 +271,7 @@ class ImageHandler(ArenaProcess):
         return f'Image-Handler-{self.cam_name}'
 
     def _run(self):
-        prd_module, prd_class = config.arena_modules['predictors'][self.predictor_name]
+        prd_module, prd_class = config.arena_modules['image_handlers'][self.predictor_name]
         prd_module = importlib.import_module(prd_module)
         prd_class = getattr(prd_module, prd_class)
         try:

@@ -99,6 +99,7 @@
     "static": "static",
     "holes": "holes",
     "random": "random walk",
+    "random_speeds": "random speeds",
     "circle": "circle",
     "half_circle": "half circle",
     "low_horizontal": "low horizontal",

@@ -11,9 +11,9 @@ from pathlib import Path
 from cache import CacheColumns as cc, RedisCache
 import config
 from loggers import get_logger, get_process_logger
-from utils import Serializer, run_in_thread
+from utils import Serializer, run_in_thread, run_command
 from db_models import ORM
-from periphery import Periphery
+from periphery import Periphery, TemperatureListener, MQTTListener
 
 
 class DoubleEvent(Exception):
@@ -225,21 +225,17 @@ class TemperatureLogger(Subscriber):
         self.orm = ORM()
 
     def run(self):
-        ser = Serializer(logger=self.logger)
+        def callback(payload):
+            self.cache.publish(config.subscription_topics['temperature'], payload)
+            self.commit_to_db(payload)
+
+        try:
+            listener = TemperatureListener(is_debug=False, stop_event=self.stop_event, callback=callback)
+        except Exception as exc:
+            self.logger.error(f'Error loading temperature listener; {exc}')
+            return
         self.logger.debug('read_temp started')
-        grace_count = 0
-        while not self.stop_event.is_set() and grace_count < self.n_tries:
-            try:
-                line = ser.read_line()
-                if line and isinstance(line, bytes):
-                    m = re.search(r'Temperature is: ([\d.]+)', line.decode())
-                    if m:
-                        self.cache.publish(config.subscription_topics['temperature'], m[1])
-                        self.commit_to_db(m[1])
-            except Exception as exc:
-                self.logger.exception(f'Error in read_temp: {exc}')
-                grace_count += 1
-            time.sleep(config.temperature_logging_delay_sec)
+        listener.loop()
 
     def commit_to_db(self, payload):
         try:
@@ -249,7 +245,7 @@ class TemperatureLogger(Subscriber):
 
 
 class AppHealthCheck(Subscriber):
-    sub_name = 'healthcheck'
+    sub_name = 'app_healthcheck'
 
     def run(self):
         try:
@@ -257,7 +253,7 @@ class AppHealthCheck(Subscriber):
             p.psubscribe(self.channel)
             self.logger.debug(f'start listening on {self.channel}')
             while not self.stop_event.is_set():
-                self.cache.publish_command('healthcheck')
+                self.cache.publish_command(self.sub_name)
                 time.sleep(0.01)
                 open_apps_hosts = set()
                 for _ in range(3):
@@ -282,6 +278,44 @@ class AppHealthCheck(Subscriber):
             self.logger.exception(f'Error in subscriber {self.name}')
 
 
+class PeripheryHealthCheck(Subscriber):
+    sub_name = 'periphery_healthcheck'
+
+    def __init__(self, stop_event: threading.Event, log_queue=None, channel=None, callback=None):
+        super().__init__(stop_event, log_queue, channel, callback)
+        self.last_health_check_time = time.time()
+        self.last_publish_error_time = None
+        self.last_action_time = None
+        self.max_check_delay = 20  # if there's no new healthcheck message for 10 seconds log error
+        self.max_publish_delay = 120
+        self.max_action_delay = 60 * 60
+
+    def run(self):
+        try:
+            def hc_callback(payload):
+                self.last_health_check_time = time.time()
+
+            listener = MQTTListener(topics=['healthcheck'], is_debug=False, callback=hc_callback)
+            self.logger.debug('periphery_healthcheck started')
+            while not self.stop_event.is_set():
+                listener.loop()
+                time.sleep(0.1)
+                if time.time() - self.last_health_check_time > self.max_check_delay:
+                    if self.last_publish_error_time and time.time() - self.last_publish_error_time < self.max_publish_delay:
+                        continue
+                    self.logger.error('Arena periphery MQTT bridge is down')
+                    if not self.last_action_time or time.time() - self.last_action_time > self.max_action_delay:
+                        self.logger.warning('Running restart for arena periphery process')
+                        next(run_command('supervisorctl restart reptilearn_arena'))
+                        self.last_action_time = time.time()
+                        time.sleep(4)
+
+                    self.last_publish_error_time = time.time()
+
+        except:
+            self.logger.exception(f'Error in subscriber {self.name}')
+
+
 def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
     """Start all subscribers that must listen as long as an arena management instance initiated"""
     threads = {}
@@ -292,8 +326,10 @@ def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
 
     threads['temperature'] = TemperatureLogger(arena_shutdown_event, log_queue)
     threads['temperature'].start()
-    threads['healthcheck'] = AppHealthCheck(arena_shutdown_event, log_queue)
-    threads['healthcheck'].start()
+    threads['app_healthcheck'] = AppHealthCheck(arena_shutdown_event, log_queue)
+    threads['app_healthcheck'].start()
+    threads['periphery_healthcheck'] = PeripheryHealthCheck(arena_shutdown_event, log_queue, channel='mqtt')
+    threads['periphery_healthcheck'].start()
     return threads
 
 

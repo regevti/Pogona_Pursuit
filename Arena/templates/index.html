@@ -167,7 +167,7 @@
             } else if (!!maxValue && value > maxValue) {
                 color = 'red'
             }
-            $comp.text(`${text}: ${value.toFixed(fixation)}${units}`).css({'color': color})
+            $comp.text(`${text}: ${!!value ? value.toFixed(fixation): value}${units}`).css({'color': color})
         }
 
         let $startExpButton = $('#startExperimentButton')

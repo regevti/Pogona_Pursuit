@@ -37,23 +37,23 @@ import media from './media'
 import { v4 as uuidv4 } from 'uuid'
 
 export default {
-  name: 'board',
+  name: 'Board',
   components: {SlideMenu, bug, media, holeBugs},
   data() {
     return {
       configOptions: require('@/config.json'),
       bugsProps: [],
       bugsSettings: {
-        numOfBugs: 0,
+        numOfBugs: process.env.NUM_BUGS,
         trialID: null,
         trialDBId: null,
         trialStartTime: null,
         numTrials: null, // deprecated. Trials are governed by the experiment
-        trialDuration: 40,
+        trialDuration: 15,
         iti: 5,
         bugTypes: ['cockroach'],
         rewardBugs: 'cockroach',
-        movementType: 'random',
+        movementType: 'random_speeds',
         speed: 0, // if 0 config default for bug will be used
         bugSize: 0, // if 0 config default for bug will be used
         bloodDuration: 2000,

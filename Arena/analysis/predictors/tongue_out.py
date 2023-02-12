@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from tqdm.auto import tqdm
+from dataclasses import dataclass
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 import torch
@@ -19,19 +20,23 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import seaborn as sns
+if Path('.').parent.name != 'Arena':
+    import os
+    os.chdir('/data/Pogona_Pursuit/Arena')
 from analysis.image_embedding import ResNetPretrained
 from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, Trial
+from analysis.trainer import ClassificationTrainer
 
 DATASET_PATH = Path('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset')
 TONGUE_PREDICTED_DIR = '/data/Pogona_Pursuit/output/datasets/pogona_tongue/predicted/tongues'
-# MODEL_PATH = '/data/Pogona_Pursuit/output/models/20221215_091700'
-MODEL_PATH = '/data/Pogona_Pursuit/output/models/20221216_170652'
-# MODEL_PATH = '/data/Pogona_Pursuit/output/models/20221217_174652'
+# MODEL_PATH = '/data/Pogona_Pursuit/output/models/tongue_out/20221216_170652'
+MODEL_PATH = '/data/Pogona_Pursuit/output/models/tongue_out/20230114_221722'
+RESIZE_SHAPE = (480, 640)
 THRESHOLD = 0.95
 TONGUE_CLASS = 'tongues'
 
 
-class Classifier(nn.Module):
+class TongueModel(nn.Module):
     def __init__(self, input_size=512, is_embedded_input=False):
         super().__init__()
         self.is_embedded_input = is_embedded_input
@@ -54,202 +59,35 @@ class Classifier(nn.Module):
         return x
 
 
-class EmbeddingDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        self.y = y
+@dataclass
+class TongueTrainer(ClassificationTrainer):
+    batch_size = 16
+    num_epochs = 30
+    targets = ['no_tongues', 'tongues']
+    monitored_metric = 'auc'
+    transforms = [
+        Grayscale(),
+        Resize(RESIZE_SHAPE),
+        ToTensor(),
+        Normalize((0.5,), (0.5,))
+    ]
 
-    def __len__(self):
-        return len(self.y)
+    def get_dataset(self):
+        dataset = ImageFolder(DATASET_PATH.as_posix(), transform=Compose(self.transforms))
+        return dataset
 
-    def __getitem__(self, idx):
-        return self.X.iloc[idx].values, self.y[idx]
+    def get_model(self):
+        return TongueModel()
 
-
-def train_val_dataset(dataset, val_split=0.25):
-    train_idx, val_idx = train_test_split(list(range(len(dataset))), test_size=val_split)
-    datasets = dict()
-    datasets['train'] = Subset(dataset, train_idx)
-    datasets['val'] = Subset(dataset, val_idx)
-    return datasets
-
-
-class TongueDetector:
-    def __init__(self, model_path=MODEL_PATH, use_cv2_resize=True, threshold=THRESHOLD):
-        self.model = Classifier()
-        self.label_encoder = None
-        self.use_cv2_resize = use_cv2_resize
-        self.resize_dim = (480, 640)
-        self.threshold = threshold
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.transforms = [
-            ToPILImage(),
-            Resize(self.resize_dim),
-            ToTensor(),
-            # Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            Normalize((0.5,), (0.5,))
-        ]
-        if model_path:
-            self.load(model_path)
-
-    def inference_init(self):
-        self.model.to(torch.device('cpu'))
+    def predict(self, frame):
         self.model.eval()
-        im = torch.empty((1, 1, *self.resize_dim), dtype=torch.float, device=torch.device('cpu'))
-        self.model(im)
-        self.model.to(self.device)
-        return self
-
-    @torch.no_grad()
-    def predict_image(self, frame: np.ndarray) -> (str, np.ndarray):
-        img_tensor, frame = self.transform_frame(frame)
-        res = self.model(img_tensor)
-        predicted = self._predict(res)
-        label = self.index_to_label(predicted.item())
-        return label, frame
-
-    def transform_frame(self, frame: np.ndarray):
-        if self.use_cv2_resize:
-            frame = cv2.resize(frame, self.resize_dim[::-1])
-            img_tensor = torch.as_tensor(frame)
-            img_tensor = img_tensor.to(self.device)
-            img_tensor = img_tensor.unsqueeze(0)  # 1 channel (grey)
-            img_tensor = (img_tensor - 127.5) / 127.5
-            img_tensor = Normalize((0.5,), (0.5,))(img_tensor)
-        else:
-            trans_ = self.transforms
-            img_tensor = Compose(trans_)(frame)
-
-        img_tensor = img_tensor.unsqueeze(0)
-        return img_tensor, frame
-
-    def _predict(self, outputs: torch.Tensor):
-        p = F.softmax(outputs, dim=1)
-        pmax, predicted = torch.max(p, dim=1)
-        predicted[pmax < self.threshold] = self.label_encoder['no_tongues']
-        return predicted
-
-    def index_to_label(self, idx):
-        for key, i in self.label_encoder.items():
-            if i == idx:
-                return key
-
-    def train(self, num_epochs=30, is_plot=False):
-        best_accuracy, best_model_ = 0.0, None
-        train_loader, test_loader = self.get_loaders()
-        self.model = Classifier()
-        self.model.to(self.device)
-        loss_fn = nn.CrossEntropyLoss()
-        optimizer = Adam(self.model.parameters(), lr=0.0001, weight_decay=0.0001)
-        print("The model will be running on", self.device, "device")
-        metrics = {'loss': [], 'accuracy': []}
-        with tqdm(range(num_epochs)) as pbar:
-            for _ in pbar:
-                mean_loss = self.train_epoch(train_loader, optimizer, loss_fn)
-                accuracy = self.test_accuracy(test_loader)
-                pbar.desc = f'Accuracy={accuracy:.1f}% (Best={best_accuracy:.1f}%)'
-                metrics['loss'].append(mean_loss)
-                metrics['accuracy'].append(accuracy)
-                if accuracy > best_accuracy:
-                    best_model_ = self.model.state_dict()
-                    best_accuracy = accuracy
-
-        self.model.load_state_dict(best_model_)
-        self.save_model()
-        if is_plot:
-            self.plot_train_metrics(metrics, num_epochs)
-        return self
-
-    def train_epoch(self, train_loader, optimizer, loss_fn):
-        """run a train epoch and return the mean loss"""
-        loss_ = []
-        self.model.train()
-        for i, (embs, labels) in enumerate(train_loader, 0):
-            embs = embs.to(self.device)
-            labels = labels.to(self.device)
-            # zero the parameter gradients
-            optimizer.zero_grad()
-            # predict classes using images from the training set
-            outputs = self.model(embs)
-            # compute the loss based on model output and real labels
-            loss = loss_fn(outputs, labels)
-            # back-propagate the loss
-            loss.backward()
-            # adjust parameters based on the calculated gradients
-            optimizer.step()
-            loss_.append(loss.item())
-        return np.mean(loss_)
-
-    def get_loaders(self):
-        dataset = ImageFolder(DATASET_PATH.as_posix(), transform=Compose([Grayscale()] + self.transforms[1:]))
-        self.label_encoder = dataset.class_to_idx
-        datasets = train_val_dataset(dataset, val_split=0.25)
-        self.print_dataset_info(datasets)
-
-        params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6, 'drop_last': True}
-        train_loader = DataLoader(datasets['train'], **params)
-        test_loader = DataLoader(datasets['val'], **params)
-        return train_loader, test_loader
-
-    @staticmethod
-    def print_dataset_info(datasets: dict):
-        for key, dataset in datasets.items():
-            s = pd.Series([y[1] for y in dataset.samples]).value_counts()
-            s.index = s.index.map({v: k for k, v in dataset.class_to_idx.items()})
-            text = ', '.join(f'{k}: {v}' for k, v in s.iteritems())
-            print(f'{key} dataset distribution: {text}')
-
-    @staticmethod
-    def load_labels():
-        classes_names = ['tongues', 'no_tongues']
-        print(f'loading labels: {classes_names} from directory {DATASET_PATH}')
-        classes = {}
-        for cl in classes_names:
-            img_names = [p.stem for p in (DATASET_PATH / cl).glob('*.jpg')]
-            for img_name in img_names:
-                classes[img_name] = cl
-        return classes
-
-    def load(self, model_path):
-        model_path = Path(model_path)
-        assert model_path.exists() and model_path.is_dir(), f'{model_path} does not exist or not a directory'
-        self.model.load_state_dict(torch.load(model_path / 'clf.pth'))
-        # self.model.to(self.device)
-        self.label_encoder = torch.load(model_path / 'label_encoder.pth')
-
-    def save_model(self):
-        dir_path = Path(f"/data/Pogona_Pursuit/output/models/{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        dir_path.mkdir(exist_ok=True)
-        torch.save(self.model.state_dict(), dir_path / 'clf.pth')
-        torch.save(self.label_encoder, dir_path / 'label_encoder.pth')
-        print(f'model saved to {dir_path}')
-
-    @staticmethod
-    def plot_train_metrics(metrics, num_epochs):
-        fig, axes = plt.subplots(1, 2, figsize=(20, 5))
-        epochs = np.arange(1, num_epochs + 1)
-        for i, key in enumerate(['loss', 'accuracy']):
-            axes[i].plot(epochs, metrics[key])
-            axes[i].set_title(key)
-        fig.tight_layout()
-        plt.show()
-
-    def test_accuracy(self, test_loader):
-        self.model.eval()
-        accuracy, total = 0.0, 0.0
-        with torch.no_grad():
-            for data in test_loader:
-                images, labels = [x.to(self.device) for x in data]
-                # run the model on the test set to predict labels
-                outputs = self.model(images)
-                # the label with the highest energy will be our prediction
-                predicted = self._predict(outputs)
-                total += labels.size(0)
-                accuracy += (predicted == labels).sum().item()
-
-        # compute the accuracy over all test images
-        accuracy = (100 * accuracy / total)
-        return accuracy
+        transforms = [ToPILImage()] + self.transforms
+        img_tensor = Compose(transforms)(frame).to(self.device)
+        outputs = self.model(img_tensor.unsqueeze(0))
+        y_pred, y_score = self.predict_proba(outputs)
+        label = self.targets[y_pred.item()]
+        prob = y_score.item()
+        return label, prob
 
 
 PREDICTION_STACK_DURATION = 0.25  # sec
@@ -258,10 +96,12 @@ NUM_TONGUES_IN_STACK = 6  # number of predicted tongues in the prediction stack 
 
 
 class TongueOutAnalyzer:
-    def __init__(self, td=None, action_callback=None, identifier=None, is_write_detected_image=False):
-        self.td = TongueDetector(use_cv2_resize=True).inference_init() if td is None else td
+    def __init__(self, td: TongueTrainer = None, action_callback=None, identifier=None, is_write_detected_image=False,
+                 is_debug=True):
+        self.tr = TongueTrainer(model_path=MODEL_PATH, is_debug=is_debug) if td is None else td
         self.identifier = identifier
         self.action_callback = action_callback
+        self.is_debug = is_debug
         self.is_write_detected_image = is_write_detected_image
         self.last_action_timestamp = None
         self.last_tongue_detect_timestamp = None
@@ -269,7 +109,8 @@ class TongueOutAnalyzer:
         self.last_predicted_frame = None
 
     def predict(self, frame, timestamp):
-        label, resized_frame = self.td.predict_image(frame)
+        label, _ = self.tr.predict(frame)
+        resized_frame = cv2.resize(frame, RESIZE_SHAPE)
         self.push_to_predictions_stack(label, timestamp)
         is_tongue = label == TONGUE_CLASS
         is_action = self.tongue_detected(frame, timestamp) if is_tongue else False
@@ -364,7 +205,7 @@ class TonguesOutVideoAnalyzer(TongueOutAnalyzer):
         return vid.frames['0'], vid.frames[list(vid.frames.keys())[-1]]
 
 
-def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, max_dist=15, is_delete=False):
+def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, min_dist=15, is_delete=False):
     images = []
     input_dir = Path(input_dir)
     img_files = list(input_dir.glob('*.jpg'))
@@ -398,7 +239,7 @@ def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, max_dist=15, is_
     else:
         M = np.load(cache_file)['M']
 
-    r, c = np.where((0 < M) & (M < max_dist))
+    r, c = np.where((0 < M) & (M < min_dist))
 
     def get_neighs(i):
         idx = np.where(r == i)[0]
@@ -439,15 +280,29 @@ def clean_wrong_size_images():
 
 
 if __name__ == '__main__':
-    import os
-    os.chdir('..')
-    # td = TongueDetector(use_cv2_resize=True)
-    # td.train(is_plot=True, num_epochs=70)
     # vidpath = '/data/Pogona_Pursuit/output/experiments/PV80/20221213/block3/videos/front_20221213T101615.mp4'
     # vidpath = '/data/Pogona_Pursuit/output/experiments/PV80/20221216/block1/videos/front_20221216T155149.mp4'
-    vidpath = '/data/Pogona_Pursuit/output/experiments/PV80/20221215/block2/videos/front_20221215T183722.mp4'
-    tde = TonguesOutVideoAnalyzer(vidpath)
-    tde.predict_video()
+    # vidpath = '/data/Pogona_Pursuit/output/experiments/PV80/20221215/block2/videos/front_20221215T183722.mp4'
+    # tde = TonguesOutVideoAnalyzer(vidpath)
+    # tde.predict_video()
 
-    # check_dataset('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset/tongues', is_load=False, max_dist=10, is_delete=False)
+    # check_dataset('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset/tongues', is_load=False, min_dist=15, is_delete=True)
     # clean_wrong_size_images()
+
+    # TongueTrainer().train(is_plot=True, is_save=True)
+
+    tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
+    tr.all_data_evaluation()
+    # tr.plot_confusion_matrix()
+
+    # target_ = 'tongues'
+    # res = {}
+    # images_ = list(Path(f'/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset/{target_}').glob('*.jpg'))
+    # for p in tqdm(images_):
+    #     frame_ = cv2.imread(p.as_posix())
+    #     label, prob = tr.predict(frame_)
+    #     if label != target_:
+    #         res[p.stem] = prob
+    #
+    # print(res)
+    # print(f'{len(res)}/{len(images_)} have bad result')

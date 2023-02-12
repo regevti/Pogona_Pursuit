@@ -11,7 +11,7 @@ from dlclive import DLCLive, Processor
 from dlclive.processor import KalmanFilterPredictor
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 
-from image_handlers.base_predictor import Predictor
+from image_handlers.predictor_handlers import PredictHandler
 from utils import run_in_thread
 
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
@@ -28,7 +28,7 @@ MAX_JUMP = 4  # cm. Maximum distance difference for 2 consecutive values.
 PREDICTION_GRACE = 10  # number of preceded frames without prediction to be kept with the previous prediction
 
 
-class DeepLabCut(Predictor):
+class DeepLabCut(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dlc_config = {}

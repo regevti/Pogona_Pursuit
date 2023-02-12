@@ -94,6 +94,9 @@ export default {
     isNoisyLowHorizontalMovement: function () {
       return this.bugsSettings.movementType === 'low_horizontal_noise'
     },
+    isRandomSpeeds: function () {
+      return this.bugsSettings.movementType === 'random_speeds'
+    },
     isCounterClockWise: function () {
       return this.isLeftExit
     }
@@ -142,6 +145,10 @@ export default {
         case 'low_horizontal_noise':
           this.setRetreatSpeeds()
           break
+        case 'random_speeds':
+          this.bugsSettings.speed = randomRange(2, 10)
+          this.setNextAngle()
+          break
         default:
           this.setNextAngle()
       }
@@ -160,14 +167,6 @@ export default {
       // circle
       } else if (this.isMoveInCircles && !this.isHoleRetreatStarted) {
         this.circularMove()
-        // if (!this.isCircleTrackReached) {
-        //   this.straightMove(0)
-        //   this.isCircleTrackReached = distance(
-        //     this.x, this.y, this.r0[0] + (this.r * Math.cos(this.theta)), this.r0[1] + this.r * Math.sin(this.theta)
-        //   ) < 200
-        // } else {
-        //   this.circularMove()
-        // }
       // low horizontal noise
       } else if (this.isNoisyLowHorizontalMovement) {
         this.checkNoisyTrack()
@@ -183,7 +182,7 @@ export default {
       this.draw()
     },
     straightMove(noiseWeight = 0.5) {
-      let randNoise = this.getRandomNoise()
+      let randNoise = this.isRandomSpeeds ? 0 : this.getRandomNoise()
       this.dx = this.vx + noiseWeight * randNoise
       this.dy = this.vy + noiseWeight * randNoise
       this.x += this.dx
@@ -197,7 +196,7 @@ export default {
     noisyMove() {
       let randNoise = this.getRandomNoise()
       this.dx = this.vx + 0.5 * randNoise
-      this.dy = 0.00008 * (this.yTarget - this.y) + 0.7 * randNoise + 0.6 * this.dy
+      this.dy = 0.00008 * (this.yTarget - this.y) + 0.9 * randNoise + 0.65 * this.dy
       this.x += this.dx
       this.y += this.dy
     },
@@ -218,7 +217,7 @@ export default {
         this.setNextAngle()
       // holes edges
       } else if (this.frameCounter > 100 && this.isInsideHoleBoundaries()) {
-        if ((this.isHoleRetreatStarted && this.isInsideExitHoleBoundaries()) || !this.isRandomMovement) {
+        if ((this.isHoleRetreatStarted && this.isInsideExitHoleBoundaries()) || !(this.isRandomMovement || this.isRandomSpeeds)) {
           this.hideBug()
         } else {
           this.setNextAngle()

@@ -9,6 +9,7 @@ env.read_env()
 version = '2.2'
 is_debug_mode = env.bool('DEBUG', False)
 is_use_parport = env.bool('IS_USE_PARPORT', False)
+IS_ANALYSIS_ONLY = env.bool('IS_ANALYSIS_ONLY', False)
 
 # API
 static_files_dir = env('STATIC_FILES_DIR', 'static')
@@ -53,7 +54,7 @@ commands_topics = {
     'hide_bugs': 'cmd/visual_app/hide_bugs',
     'hide_media': 'cmd/visual_app/hide_media',
     'reload_app': 'cmd/visual_app/reload_app',
-    'healthcheck': 'cmd/visual_app/healthcheck',
+    'app_healthcheck': 'cmd/visual_app/healthcheck',
     'strike_predicted': 'cmd/visual_app/strike_predicted'
 }
 subscription_topics = {
@@ -68,7 +69,6 @@ subscription_topics.update(commands_topics)
 # Arena
 default_exposure = 5000
 cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
-TOUCHSCREEN_DEVICE_ID = 9
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 
 # Multi-Processing
@@ -82,11 +82,16 @@ arena_modules = {
     'cameras': {
         'allied_vision': ('cameras.allied_vision', 'AlliedVisionCamera'),
     },
-    'predictors': {
+    'image_handlers': {
         'pogona_head': ('image_handlers.pogona_head', 'PogonaHeadDetector'),
         'resnet': ('image_handlers.resnet_embedding', 'ResnetEmbedding'),
         'deeplabcut': ('image_handlers.deeplabcut', 'DeepLabCut'),
         'tongue_out': ('image_handlers.tongue_out_handler', 'TongueOutImageHandler')
+    },
+    'predictors': {
+        'deeplabcut': ('analysis.predictors.deeplabcut', 'DLCPose'),
+        'tongue_out': ('analysis.predictors.tongue_out', 'TongueOutAnalyzer'),
+        'pogona_head': ('analysis.predictors.tongue_out', 'TongueOutAnalyzer')
     }
 }
 output_dir = env('OUTPUT_DIR', '../output/recordings')
@@ -95,9 +100,12 @@ capture_images_dir = env('capture_images_dir', '../output/captures')
 pixels2cm = 0.01833304668870419
 temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
 max_video_time_sec = env.int('max_video_time_sec', 60*10)
-
-# Predictors
-max_predictor_rows = env.int('max_predictor_rows', 60*60*5)
+mqtt = {
+    'host': 'localhost',
+    'port': 1883,
+    'publish_topic': 'arena_command',
+    'temperature_sensor_name': 'Temp_front'
+}
 
 # temperature sensor
 SERIAL_PORT_TEMP = env('SERIAL_PORT_TEMP', '/dev/ttyACM0')
