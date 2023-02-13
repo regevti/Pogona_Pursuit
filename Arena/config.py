@@ -66,11 +66,6 @@ metric_channel_prefix = 'log/metric'
 subscription_topics.update({k: f'{metric_channel_prefix}/{k}' for k in experiment_metrics.keys()})
 subscription_topics.update(commands_topics)
 
-# Arena
-default_exposure = 5000
-cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
-ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
-
 # Multi-Processing
 array_queue_size_mb = env.int('ARRAY_QUEUE_SIZE_MB', 5 * 20)  # I assume that one image is roughly 5Mb
 count_timestamps_for_fps_calc = env.int('count_timestamps_for_fps_calc', 200)  # how many timestamps to gather for calculating FPS
@@ -84,8 +79,6 @@ arena_modules = {
     },
     'image_handlers': {
         'pogona_head': ('image_handlers.pogona_head', 'PogonaHeadDetector'),
-        'resnet': ('image_handlers.resnet_embedding', 'ResnetEmbedding'),
-        'deeplabcut': ('image_handlers.deeplabcut', 'DeepLabCut'),
         'tongue_out': ('image_handlers.tongue_out_handler', 'TongueOutImageHandler')
     },
     'predictors': {
@@ -94,6 +87,9 @@ arena_modules = {
         'pogona_head': ('analysis.predictors.tongue_out', 'TongueOutAnalyzer')
     }
 }
+default_exposure = 5000
+cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
+ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 output_dir = env('OUTPUT_DIR', '../output/recordings')
 output_dir_key = 'output_dir'
 capture_images_dir = env('capture_images_dir', '../output/captures')

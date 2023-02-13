@@ -6,7 +6,7 @@ from arena import ImageHandler, QueueException
 from cache import RedisCache
 from utils import run_in_thread
 from analysis.predictors.tongue_out import TongueOutAnalyzer, TONGUE_CLASS, TONGUE_PREDICTED_DIR
-from analysis.pose import ArenaPose
+from analysis.predictors.pogona_head import YOLOv5Detector
 
 
 class PredictHandler(ImageHandler):
@@ -31,6 +31,7 @@ class PredictHandler(ImageHandler):
         pass
 
     def loop(self):
+        self.logger.info('start predictor loop')
         try:
             while not self.stop_signal.is_set():
                 db_video_id = self.get_db_video_id()
@@ -86,8 +87,6 @@ class PredictHandler(ImageHandler):
 
 
 class TongueOutPredictHandler(PredictHandler):
-    is_use_caliber = False
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.analyzer = TongueOutAnalyzer(action_callback=self.publish_tongue_out)
@@ -95,10 +94,6 @@ class TongueOutPredictHandler(PredictHandler):
 
     def __str__(self):
         return f'tongue-out-{self.cam_name}'
-
-    def loop(self):
-        self.logger.info(f'Tongue-out model was loaded')
-        super().loop()
 
     def publish_tongue_out(self):
         self.cache.publish_command('strike_predicted')
@@ -127,6 +122,16 @@ class TongueOutPredictHandler(PredictHandler):
         font, color = cv2.FONT_HERSHEY_SIMPLEX, (255, 0, 255)
         img = cv2.putText(img, f'Tongue Detected!', (20, h - 30), font, 1, color, 2, cv2.LINE_AA)
         return img
+
+
+class PogonaHeadPredictHandler(PredictHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.detector = YOLOv5Detector(return_neareast_detection=False, logger=self.logger)
+        self.detector.load()
+
+    def init(self, img):
+        pass
 
 
 class PogonaHeadDetector(PredictHandler):

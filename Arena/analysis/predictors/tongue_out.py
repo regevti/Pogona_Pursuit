@@ -20,7 +20,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import seaborn as sns
-if Path('.').parent.name != 'Arena':
+if Path('.').resolve().name != 'Arena':
     import os
     os.chdir('/data/Pogona_Pursuit/Arena')
 from analysis.image_embedding import ResNetPretrained

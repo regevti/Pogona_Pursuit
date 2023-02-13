@@ -24,8 +24,6 @@ from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_o
 from subscribers import Subscriber, start_experiment_subscribers
 from db_models import ORM
 
-cache = RedisCache()
-
 
 @dataclass
 class Experiment:
@@ -41,6 +39,7 @@ class Experiment:
     time_between_blocks: int = config.time_between_blocks
     extra_time_recording: int = config.extra_time_recording
     is_identical_blocks: bool = False
+    cache = RedisCache()
 
     def __post_init__(self):
         self.start_time = datetime.now()
@@ -48,7 +47,7 @@ class Experiment:
         self.name = str(self)
         self.orm = ORM()
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
-        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.cam_units, self.orm,
+        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.cam_units, self.orm, self.cache,
                              bug_types=self.bug_types, reward_bugs=self.reward_bugs,
                              background_color=self.background_color,
                              extra_time_recording=self.extra_time_recording, **kwargs)
@@ -92,12 +91,12 @@ class Experiment:
                         time.sleep(self.time_between_blocks)
                     block.start()
             except EndExperimentException as exc:
-                self.logger.warning('Experiment stopped externally')
+                self.logger.warning(f'Experiment stopped externally; {exc}')
 
             self.turn_screen('off')
             time.sleep(3)
             self.orm.update_experiment_end_time()
-            cache.publish_command('end_experiment')
+            self.cache.publish_command('end_experiment')
 
         if not self.is_ready_for_experiment():
             self.stop_experiment()
@@ -115,7 +114,7 @@ class Experiment:
             self.is_websocket_server_on(),
             self.is_pogona_hunter_up(),
             self.is_touchscreen_mapped_to_hdmi(),
-            is_reward_left()
+            is_reward_left(self.cache)
         ]):
             return True
         else:
@@ -169,13 +168,13 @@ class Experiment:
     def stop_experiment(self, *args):
         self.logger.debug('closing experiment...')
         self.experiment_stop_flag.set()
-        cache.delete(cc.IS_VISUAL_APP_ON)
-        cache.delete(cc.EXPERIMENT_BLOCK_ID)
-        cache.delete(cc.EXPERIMENT_BLOCK_PATH)
-        cache.delete(cc.IS_ALWAYS_REWARD)
-        cache.delete(cc.EXPERIMENT_NAME)
-        cache.delete(cc.EXPERIMENT_PATH)
-        cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, False)
+        self.cache.delete(cc.IS_VISUAL_APP_ON)
+        self.cache.delete(cc.EXPERIMENT_BLOCK_ID)
+        self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
+        self.cache.delete(cc.IS_ALWAYS_REWARD)
+        self.cache.delete(cc.EXPERIMENT_NAME)
+        self.cache.delete(cc.EXPERIMENT_PATH)
+        self.cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, False)
         if 'main' in self.threads:
             self.threads['main'].join()
         time.sleep(0.2)
@@ -197,9 +196,9 @@ class Experiment:
             self.logger.exception(f'Error turning off screen: {exc}')
 
     def init_experiment_cache(self):
-        cache.set(cc.EXPERIMENT_NAME, str(self), timeout=self.experiment_duration)
-        cache.set(cc.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
-        cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, True)
+        self.cache.set(cc.EXPERIMENT_NAME, str(self), timeout=self.experiment_duration)
+        self.cache.set(cc.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
+        self.cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, True)
 
     @property
     def experiment_path(self):
@@ -218,6 +217,7 @@ class Block:
     experiment_path: str
     cam_units: dict
     orm: ORM
+    cache: RedisCache
     extra_time_recording: int = config.extra_time_recording
     start_time = None
     bug_types: list = field(default_factory=list)
@@ -270,7 +270,7 @@ class Block:
 
         mkdir(self.block_path)
         if self.is_always_reward:
-            cache.set(cc.IS_ALWAYS_REWARD, True, timeout=self.block_duration)
+            self.cache.set(cc.IS_ALWAYS_REWARD, True, timeout=self.block_duration)
         self.hide_visual_app_content()
         try:
             self.run_block()
@@ -290,7 +290,7 @@ class Block:
         self.wait(self.extra_time_recording, label='Extra Time Rec')
 
         for trial_id in range(1, self.num_trials + 1):
-            if not is_reward_left():
+            if not is_reward_left(self.cache):
                 raise EndExperimentException('No reward left; stopping experiment')
             self.start_trial(trial_id)
             self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}')
@@ -303,20 +303,21 @@ class Block:
     def init_block(self):
         mkdir(self.block_path)
         self.save_block_log_files()
-        cache.publish_command('led_light', 'on')
-        cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
-        cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
+        self.cache.publish_command('led_light', 'on')
+        self.cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
+        self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
+        # start cameras for experiment with their predictors and set the output dir for videos
         self.turn_cameras('on')
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
-            cache.set_cam_output_dir(cam_name, output_dir)
+            self.cache.set_cam_output_dir(cam_name, output_dir)
 
     def end_block(self):
-        cache.publish_command('led_light', 'off')
-        cache.delete(cc.EXPERIMENT_BLOCK_ID)
-        cache.delete(cc.EXPERIMENT_BLOCK_PATH)
+        self.cache.publish_command('led_light', 'off')
+        self.cache.delete(cc.EXPERIMENT_BLOCK_ID)
+        self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         for cam_name in self.cameras.keys():
-            cache.set_cam_output_dir(cam_name, '')
+            self.cache.set_cam_output_dir(cam_name, '')
         time.sleep(10)
         self.turn_cameras('off')
 
@@ -361,8 +362,8 @@ class Block:
                 command, options = 'init_bugs', self.bug_options
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
-            cache.publish_command(command, json.dumps(options))
-            cache.set(cc.IS_VISUAL_APP_ON, True)
+            self.cache.publish_command(command, json.dumps(options))
+            self.cache.set(cc.IS_VISUAL_APP_ON, True)
             time.sleep(1)  # wait for data to be sent
         self.logger.info(f'Trial #{trial_id} started')
 
@@ -374,9 +375,9 @@ class Block:
         if self.is_blank_block:
             return
         if self.is_media_block:
-            cache.publish_command('hide_media')
+            self.cache.publish_command('hide_media')
         else:
-            cache.publish_command('hide_bugs')
+            self.cache.publish_command('hide_bugs')
 
     def save_block_log_files(self):
         with open(f'{self.block_path}/info.yaml', 'w') as f:
@@ -392,10 +393,10 @@ class Block:
         t0 = time.time()
         while time.time() - t0 < duration:
             # check for external stop of the experiment
-            if not cache.get(cc.EXPERIMENT_NAME):
+            if not self.cache.get(cc.EXPERIMENT_NAME):
                 raise EndExperimentException()
             # check for visual app finish (due to bug catch, etc...)
-            if check_visual_app_on and not self.is_blank_block and not cache.get(cc.IS_VISUAL_APP_ON):
+            if check_visual_app_on and not self.is_blank_block and not self.cache.get(cc.IS_VISUAL_APP_ON):
                 self.logger.debug('Trial ended')
                 return
             time.sleep(0.1)
@@ -447,7 +448,7 @@ class Block:
         log_string += 2 * '\n'
 
         if num_hits and self.reward_type == 'end_trial':
-            cache.publish(config.subscription_topics['reward'], '')
+            self.cache.publish(config.subscription_topics['reward'], '')
 
         return log_string
 
@@ -509,7 +510,7 @@ class EndExperimentException(Exception):
     """End Experiment"""
 
 
-def is_reward_left():
+def is_reward_left(cache):
     is_left = False
     try:
         is_left = int(cache.get(cc.REWARD_LEFT)) > 0

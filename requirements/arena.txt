@@ -7,7 +7,6 @@ matplotlib
 seaborn
 scikit-learn==1.1.2
 bbox==0.9.2
-sympy==1.11.1
 
 # API
 Flask==2.2.2

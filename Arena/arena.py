@@ -450,11 +450,10 @@ class CameraUnit:
         d = cache.get_cam_dict(self.cam_name)
         return bool(d.get(config.output_dir_key))
 
-    def get_alive_predictors(self):
+    def get_alive_predictors(self) -> list:
         """return the process names of the live predictors"""
         alive_preds = []
-        conf_predictors = list(self.cam_config.get('general_predictors', {}).keys()) + \
-            list(self.cam_config.get('experiment_predictors', {}).keys())
+        conf_predictors = list(self.get_conf_predictors().keys())
         for predictor_name in set(conf_predictors):
             prd = self.processes.get(predictor_name)
             if prd is not None and prd.is_alive():
@@ -558,9 +557,6 @@ class ArenaManager(SyncManager):
 
         e = Experiment(cam_units=self.units, **kwargs)
         self.start_experiment_listeners(e.experiment_stop_flag)
-        # for cam_name, d in cameras_dict.items():
-        #     if d.get('is_use_predictions'):
-        #         self.units[cam_name].start_predictions()
         time.sleep(0.1)
         e.start()
 

@@ -40,7 +40,7 @@ front:
     fps: 60
     writing_fps: 60
     experiment_predictors: {
-#        tongue_out: [480, 640]
+        tongue_out: [480, 640]
     }
     general_predictors: {
     }

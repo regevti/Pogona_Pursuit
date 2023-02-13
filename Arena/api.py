@@ -5,6 +5,7 @@ import warnings
 import base64
 import psutil
 import logging
+import pytest
 from pathlib import Path
 from PIL import Image
 from datetime import datetime
@@ -471,6 +472,8 @@ def play():
 
 
 if __name__ == "__main__":
+    assert pytest.main(['-x', 'tests']) == 0
+
     # app.logger.removeHandler(flask_logging.default_handler)
     # h = logging.StreamHandler(sys.stdout)
     # h.setLevel(logging.WARNING)
