@@ -7,6 +7,7 @@ from cache import RedisCache
 from utils import run_in_thread
 from analysis.predictors.tongue_out import TongueOutAnalyzer, TONGUE_CLASS, TONGUE_PREDICTED_DIR
 from analysis.predictors.pogona_head import YOLOv5Detector
+from analysis.pose import ArenaPose
 
 
 class PredictHandler(ImageHandler):
@@ -86,7 +87,7 @@ class PredictHandler(ImageHandler):
         return current_timestamp
 
 
-class TongueOutPredictHandler(PredictHandler):
+class TongueOutHandler(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.analyzer = TongueOutAnalyzer(action_callback=self.publish_tongue_out)
@@ -124,17 +125,7 @@ class TongueOutPredictHandler(PredictHandler):
         return img
 
 
-class PogonaHeadPredictHandler(PredictHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.detector = YOLOv5Detector(return_neareast_detection=False, logger=self.logger)
-        self.detector.load()
-
-    def init(self, img):
-        pass
-
-
-class PogonaHeadDetector(PredictHandler):
+class PogonaHeadHandler(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.detector = YOLOv5Detector(return_neareast_detection=False, logger=self.logger)
@@ -151,6 +142,10 @@ class PogonaHeadDetector(PredictHandler):
             f"weights: {self.detector.weights_path})."
         )
         super().loop()
+
+    def _init(self, img):
+        self.arena_pose.init(img)
+        self.is_initiated = True
 
     def predict_frame(self, img, timestamp):
         """Get detection of pogona head on frame; {det := [x1, y1, x2, y2, confidence]}"""
@@ -173,7 +168,7 @@ class PogonaHeadDetector(PredictHandler):
         xA, yA, xB, yB, confidence = det
         img = cv2.rectangle(img, (int(xA), int(yA)), (int(xB), int(yB)), (0, 255, 0), 2)
         if self.prediction_summary:
-            img = cv2.putText(img, self.prediction_summary, (20, h-30), font, 1, color, 2, cv2.LINE_AA)
+            img = cv2.putText(img, str(self.prediction_summary), (20, h-30), font, 1, color, 2, cv2.LINE_AA)
         self.last_det = det
         return img
 

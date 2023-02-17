@@ -185,6 +185,8 @@ class Experiment:
 
     def turn_screen(self, val):
         """val must be on or off"""
+        if config.DISABLE_ARENA_SCREEN:
+            return
         assert val in ['on', 'off'], 'val must be either "on" or "off"'
         try:
             if val.lower() == 'on':
@@ -327,7 +329,8 @@ class Block:
         for cam_name, cu in self.cam_units.items():
             # If there are no predictors configured and camera is on
             # or writing_fps is 0 - do nothing.
-            if (not cu.get_conf_predictors() and cu.is_on()) or \
+            configured_predictors = cu.get_conf_predictors()
+            if (not configured_predictors and cu.is_on()) or \
                     (cu.cam_config.get('writing_fps') == 0):
                 continue
 
@@ -338,12 +341,11 @@ class Block:
 
             if required_state == 'on':
                 if not cu.is_on():
-                    cu.start(predictors_type='experiment')
+                    cu.start(is_experiment=True, movement_type=self.movement_type)
                 else:
-                    cu.reload_predictors(predictors_type='experiment')
-
+                    cu.reload_predictors(is_experiment=True, movement_type=self.movement_type)
             else:
-                cu.reload_predictors(predictors_type='general')
+                cu.reload_predictors(is_experiment=False, movement_type=self.movement_type)
 
         t0 = time.time()
         # wait maximum 30 seconds for cameras to finish start / stop

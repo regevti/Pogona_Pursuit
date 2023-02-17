@@ -1,6 +1,8 @@
 # conventions:
 # - if no predictors, set empty dict
 # - if more than one predictor, you need to specify "stream_predictor", otherwise 1st predictor will be set to stream
+# - in predictors one can set "mode" with the following values: (1) "experiment" - run only during experiments.
+#   (2) "no_experiment" - run only when no experiments are on. (3) "always" - run always
 back:
     id: DEV_1AB22C017E6D
     module: allied_vision
@@ -11,11 +13,11 @@ back:
     fps: 30
     writing_fps: 30
     is_color: 1
-    experiment_predictors: {
-    }
-    general_predictors: {
-#        deeplabcut: [544, 728, 1]
-    }
+#    predictors:
+#        deeplabcut:
+#            image_size: [544, 728, 1]
+#            mode: no_experiment
+
 
 top:
     id: DEV_1AB22C017E72
@@ -26,10 +28,11 @@ top:
     always_on: 1
     fps: 15
     writing_fps: 0
-    experiment_predictors: {}
-    general_predictors: {
-        pogona_head: [480, 640, 3]
-    }
+    predictors:
+        pogona_head:
+            image_size: [480, 640, 3]
+            mode: no_experiment
+
 
 front:
     id: DEV_1AB22C017E6F
@@ -39,11 +42,13 @@ front:
     output_dir:
     fps: 60
     writing_fps: 60
-    experiment_predictors: {
-        tongue_out: [480, 640]
-    }
-    general_predictors: {
-    }
+    predictors:
+        tongue_out:
+            image_size: [480, 640]
+            mode: experiment
+            movement_type: [jump_up]
+
+
 
 test:
     id: DEV_1AB22C017E70
@@ -52,4 +57,3 @@ test:
     exposure: 6000
     image_size: [1088, 1456, 3]
     output_dir:
-    predictors: [pogona_head]

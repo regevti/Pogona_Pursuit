@@ -281,6 +281,8 @@ class ImageHandler(ArenaProcess):
         except RuntimeError as exc:
             self.logger.error(f'GPU out of memory. Close other GPU processes; {exc}')
             raise exc
+        finally:
+            self.logger.info('Process is down')
 
 
 class CameraUnit:
@@ -325,7 +327,7 @@ class CameraUnit:
             self.stop()
         self.shm_manager.shutdown()
 
-    def start(self, predictors_type='general'):
+    def start(self, is_experiment=False, **kwargs):
         if self.is_starting:
             return
         self.is_starting = True
@@ -349,7 +351,7 @@ class CameraUnit:
             self.listen_stop_events()
             [proc.start() for proc in self.processes.values()]
             cache.append_to_list(cc.ACTIVE_CAMERAS, self.cam_name)
-            self.start_predictors(predictors_type)
+            self.start_predictors(is_experiment, **kwargs)
         except Exception as exc:
             self.logger.error(exc)
         finally:
@@ -413,24 +415,44 @@ class CameraUnit:
         img = np.frombuffer(self.pred_shm[stream_pred].buf, dtype=config.shm_buffer_dtype).reshape(pred_image_size)
         return img
 
-    def start_predictors(self, predictors_type='general'):
-        assert predictors_type in ['general', 'experiment']
-        predictors = self.cam_config.get(f'{predictors_type}_predictors', {})
-        for predictor_name, pred_image_size in predictors.items():
-            self.logger.debug(f'start predictor {predictor_name}')
-            if pred_image_size is not None:
-                self.pred_shm[predictor_name] = self.shm_manager.SharedMemory(size=int(np.prod(pred_image_size)))
-            prd = ImageHandler(predictor_name, *self.proc_args, shm=self.shm, pred_shm=self.pred_shm.get(predictor_name),
-                               pred_image_size=pred_image_size)
-            prd.start()
-            self.processes[predictor_name] = prd
-            self.logger.info(f'Predictor {predictor_name} is up')
-        self.preds_start_time = time.time()
+    def start_predictors(self, is_experiment=False, **kwargs):
+        predictors = self.cam_config.get('predictors', {})
+        self.is_starting = True
+        for pred_name, pred_dict in predictors.items():
+            try:
+                self.logger.debug(f'start predictor {pred_name}')
+                mode = pred_dict.get('mode')
+                if (mode == 'always' and self.processes.get(pred_name)) or \
+                        (mode == 'experiment' and not is_experiment) or \
+                        (mode == 'no_experiment' and is_experiment):
+                    continue
 
-    def reload_predictors(self, predictors_type):
-        """start the configured experiment predictors. If any predictors are already running - stop them"""
-        assert predictors_type in ['general', 'experiment']
-        for pred in self.get_alive_predictors():
+                # continue if there's something in kwargs that also appears in the predictor dict, and they're different
+                if any(k in pred_dict and (v not in pred_dict[k] if isinstance(pred_dict[k], list) else v != pred_dict[k])
+                       for k, v in kwargs.items()):
+                    continue
+
+                self._start_predictor(pred_dict, pred_name)
+            except Exception:
+                self.logger.exception(f'Error in starting predictor: {pred_name}')
+        self.preds_start_time = time.time()
+        self.is_starting = False
+
+    def _start_predictor(self, pred_dict, pred_name):
+        pred_image_size = pred_dict.get('image_size')
+        if pred_image_size is not None:
+            self.pred_shm[pred_name] = self.shm_manager.SharedMemory(size=int(np.prod(pred_image_size)))
+        prd = ImageHandler(pred_name, *self.proc_args, shm=self.shm,
+                           pred_shm=self.pred_shm.get(pred_name),
+                           pred_image_size=pred_image_size)
+        prd.start()
+        self.processes[pred_name] = prd
+        self.logger.info(f'Predictor {pred_name} is up')
+
+    def stop_predictors(self, predictors=None):
+        assert predictors is None or isinstance(predictors, list), 'predictors input must be either None or list'
+        preds_to_close = predictors or self.get_alive_predictors()
+        for pred in preds_to_close:
             if self.processes.get(pred) is not None:
                 self.is_stopping = True
                 self.logger.debug(f'terminating predictor {pred}')
@@ -438,9 +460,10 @@ class CameraUnit:
                 del self.processes[pred]
                 self.is_stopping = False
 
-        self.is_starting = True
-        self.start_predictors(predictors_type)
-        self.is_starting = False
+    def reload_predictors(self, is_experiment, predictors=None, **kwargs):
+        """start the configured experiment predictors. If any predictors are already running - stop them"""
+        self.stop_predictors(predictors)
+        self.start_predictors(is_experiment, **kwargs)
 
     def is_on(self):
         return not self.stop_signal.is_set()
@@ -462,8 +485,9 @@ class CameraUnit:
 
     def get_conf_predictors(self) -> dict:
         """Get dictionary with all the configured predictors of the camera unit"""
-        conf_preds = self.cam_config.get('general_predictors', {})
-        conf_preds.update(self.cam_config.get('experiment_predictors', {}))
+        conf_preds = self.cam_config.get('predictors', {}).copy()
+        # conf_preds = self.cam_config.get('general_predictors', {}).copy()
+        # conf_preds.update(self.cam_config.get('experiment_predictors', {}))
         return conf_preds
 
     @property

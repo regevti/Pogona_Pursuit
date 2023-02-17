@@ -140,7 +140,8 @@ class ArenaPose:
 
     @run_in_thread
     def commit_to_db(self, timestamp, x, y, db_video_id):
-        self.orm.commit_pose_estimation(self.cam_name, timestamp, x, y, None, None,
+        start_time = datetime.datetime.fromtimestamp(timestamp)
+        self.orm.commit_pose_estimation(self.cam_name, start_time, x, y, None, None,
                                         db_video_id, model='deeplabcut_v1')
         self.last_commit = (timestamp, x, y)
 

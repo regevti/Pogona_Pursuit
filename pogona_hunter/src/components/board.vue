@@ -12,6 +12,7 @@
       </slide-menu>
       <canvas id="holesCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
               v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
+      <canvas id="tunnelCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
       <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
               v-on:mousedown="setCanvasClick($event)">
         <hole-bugs v-for="(value, index) in bugsProps"
@@ -184,7 +185,8 @@ export default {
         this.startLogBugTrajectory()
       }
       this.bugsSettings.trialStartTime = Date.now()
-      this.drawHoles()
+      // this.drawHoles()
+      this.drawTunnel()
       this.spawnBugs(this.bugsSettings.numOfBugs)
       this.$nextTick(function () {
         console.log('start animation...')
@@ -202,6 +204,11 @@ export default {
         ctx.drawImage(image, that.entranceHolePos[0], that.entranceHolePos[1], holeW, holeH)
       }
       image.src = require('@/assets/hole2.png')
+    },
+    drawTunnel() {
+      let canvas = document.getElementById('tunnelCanvas')
+      let ctx = canvas.getContext('2d')
+      ctx.fillRect(0, 200, this.canvas.width, 340)
     },
     clearBoard() {
       this.bugsSettings.numOfBugs = 0
@@ -391,7 +398,7 @@ export default {
 
 #bugCanvas {
   padding: 0;
-  z-index: 100;
+  z-index: 1;
   /*margin: 20px auto 0;*/
   display: block;
   position: absolute;
@@ -401,6 +408,7 @@ export default {
 
 #holesCanvas {
   padding: 0;
+  /*z-index: 1;*/
   /*margin: 20px auto 0;*/
   display: block;
   position: absolute;
@@ -408,4 +416,13 @@ export default {
   top: auto;
 }
 
+#tunnelCanvas {
+  padding: 0;
+  z-index: 2;
+  /*margin: 20px auto 0;*/
+  display: block;
+  position: absolute;
+  bottom: 0;
+  top: auto;
+}
 </style>

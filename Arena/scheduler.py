@@ -86,7 +86,7 @@ class Scheduler(threading.Thread):
                 if cu.is_on() and cu.get_alive_predictors() and cu.preds_start_time and \
                         time.time() - cu.preds_start_time > ALWAYS_ON_CAMERAS_RESTART_DURATION:
                     self.logger.info(f'restarting predictors of {cu.cam_name}')
-                    cu.reload_predictors('general')
+                    cu.reload_predictors(is_experiment=False)
 
     def stop_camera(self, cu):
         if cu.is_on():

@@ -20,6 +20,7 @@ FLASK_PORT = env.int('FLASK_PORT', 5084)
 POGONA_HUNTER_PORT = env.int('POGONA_HUNTER_PORT', 8080)
 SENTRY_DSN = env('SENTRY_DSN', '')
 management_url = env('MANAGEMENT_URL', f'http://localhost:{FLASK_PORT}')
+DISABLE_ARENA_SCREEN = env.bool('DISABLE_ARENA_SCREEN', 0)
 
 # Cache (Redis)
 redis_host = env('REDIS_HOST', 'cache')
@@ -78,8 +79,8 @@ arena_modules = {
         'allied_vision': ('cameras.allied_vision', 'AlliedVisionCamera'),
     },
     'image_handlers': {
-        'pogona_head': ('image_handlers.pogona_head', 'PogonaHeadDetector'),
-        'tongue_out': ('image_handlers.tongue_out_handler', 'TongueOutImageHandler')
+        'pogona_head': ('image_handlers.predictor_handlers', 'PogonaHeadHandler'),
+        'tongue_out': ('image_handlers.predictor_handlers', 'TongueOutHandler')
     },
     'predictors': {
         'deeplabcut': ('analysis.predictors.deeplabcut', 'DLCPose'),
