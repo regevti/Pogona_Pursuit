@@ -10,18 +10,23 @@
                   v-bind:configOptions="configOptions"
                   v-bind:canvasParams="canvasParams">
       </slide-menu>
-      <canvas id="holesCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
+      <canvas id="backgroundCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
               v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
       <canvas id="tunnelCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
       <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
               v-on:mousedown="setCanvasClick($event)">
-        <hole-bugs v-for="(value, index) in bugsProps"
+<!--        <hole-bugs v-for="(value, index) in bugsProps"-->
+<!--                   :key="index"-->
+<!--                   :bugsSettings="bugsSettings"-->
+<!--                   :exit-hole-pos="exitHolePos"-->
+<!--                   :entrance-hole-pos="entranceHolePos"-->
+<!--                   ref="bugChild"-->
+<!--                   v-on:bugRetreated="endTrial"></hole-bugs>-->
+        <tunnel v-for="(value, index) in bugsProps"
                    :key="index"
                    :bugsSettings="bugsSettings"
-                   :exit-hole-pos="exitHolePos"
-                   :entrance-hole-pos="entranceHolePos"
                    ref="bugChild"
-                   v-on:bugRetreated="endTrial"></hole-bugs>
+                   v-on:bugRetreated="endTrial"></tunnel>
       </canvas>
     </div>
     <media v-if="isMedia" :url="mediaUrl" ref="mediaElement"></media>
@@ -29,8 +34,8 @@
 </template>
 
 <script>
-import bug from './bug'
-import holeBugs from './holeBugs'
+// import holeBugs from './holeBugs'
+import tunnel from './bugs/tunnel'
 import {distance, randomRange} from '@/js/helpers'
 import {showPogona} from '../js/predictions'
 import SlideMenu from './slideMenu'
@@ -39,7 +44,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 export default {
   name: 'Board',
-  components: {SlideMenu, bug, media, holeBugs},
+  components: {SlideMenu, media, tunnel},
   data() {
     return {
       configOptions: require('@/config.json'),
@@ -195,7 +200,7 @@ export default {
     },
     drawHoles() {
       let image = new Image()
-      let canvas = document.getElementById('holesCanvas')
+      let canvas = document.getElementById('backgroundCanvas')
       let ctx = canvas.getContext('2d')
       let [holeW, holeH] = this.bugsSettings.holeSize
       let that = this
@@ -208,7 +213,7 @@ export default {
     drawTunnel() {
       let canvas = document.getElementById('tunnelCanvas')
       let ctx = canvas.getContext('2d')
-      ctx.fillRect(0, 200, this.canvas.width, 340)
+      ctx.fillRect(0, this.canvas.height / 4, this.canvas.width, this.canvas.height / 2)
     },
     clearBoard() {
       this.bugsSettings.numOfBugs = 0
@@ -326,7 +331,7 @@ export default {
       }, this.bugsSettings.bloodDuration)
     },
     endTrial() {
-      // end trial can be called only after: 1) bug caught [destruct method], 2) trial time reached
+      // endTrial can be called only after: 1) bug caught [destruct method], 2) trial time reached
       let endTime = Date.now()
       let trialID = this.bugsSettings.trialID
       let payload = {
@@ -406,7 +411,7 @@ export default {
   top: auto;
 }
 
-#holesCanvas {
+#backgroundCanvas {
   padding: 0;
   /*z-index: 1;*/
   /*margin: 20px auto 0;*/
@@ -425,4 +430,5 @@ export default {
   bottom: 0;
   top: auto;
 }
+
 </style>

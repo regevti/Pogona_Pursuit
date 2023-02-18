@@ -1,17 +1,13 @@
 <template>
     <div id="app">
-        <board/>
+      <router-view :key="$route.path"></router-view>
     </div>
 </template>
 
 <script>
-  import board from './components/board'
-
   export default {
     name: 'App',
-    components: {
-      board
-    }
+    components: {}
   }
 </script>
 
