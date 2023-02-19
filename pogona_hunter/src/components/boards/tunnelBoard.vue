@@ -36,10 +36,7 @@ export default {
     initDrawing() {
       let canvas = document.getElementById('tunnelCanvas')
       canvas.style.top = `${this.canvas.height / 4}px`
-      // canvas.height = `${this.canvas.height / 2}px`
-      // canvas.width = `${this.canvas.width}px`
       let ctx = canvas.getContext('2d')
-      // ctx.fillRect(0, this.canvas.height / 4, this.canvas.width, this.canvas.height / 2)
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     }
   }

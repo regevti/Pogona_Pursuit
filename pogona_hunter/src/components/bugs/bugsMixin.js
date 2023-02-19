@@ -75,7 +75,7 @@ export default {
       this.setNextAngle(this.directionAngle)
     },
     move() {
-      if (this.isDead) {
+      if (this.isDead || this.isRetreated) {
         // the drawBug function will draw the dead bug
         this.draw()
         return
@@ -155,6 +155,7 @@ export default {
     },
     hideBug() {
       // hide bug when exit hole reached
+      let fadeTimeoutValue = this.isOutsideEndPolicy ? 0 : 100
       let fadeTimeout = setTimeout(() => {
         this.isRetreated = true
         this.$emit('bugRetreated')
@@ -163,7 +164,7 @@ export default {
           clearTimeout(initTimeout)
         }, this.timeBetweenBugs)
         clearTimeout(fadeTimeout)
-      }, 100)
+      }, fadeTimeoutValue)
     },
     isHit(x, y) {
       return distance(x, y, this.x, this.y) <= this.currentBugSize / 1.5
