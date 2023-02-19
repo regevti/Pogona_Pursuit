@@ -18,13 +18,13 @@ const routes = [
     { path: '/holes', component: holesBoard}
 ]
 const router = new VueRouter({
-  mode: 'history',
+  mode: process.env.ROUTER_MODE,
   routes
 })
 
 Vue.config.productionTip = false
 Vue.use(webSocket, 'ws://127.0.0.1:6380', {
-  reconnectEnabled: false,
+  reconnectEnabled: true,
   reconnectInterval: 5000 // time to reconnect in milliseconds
 })
 // Vue.use(VueMqtt, 'ws://localhost:9001')

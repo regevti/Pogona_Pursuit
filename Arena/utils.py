@@ -26,7 +26,7 @@ def run_command(cmd):
 DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 
-def turn_display_on():
+def turn_display_on(board='holes'):
     touch_device_id = get_hdmi_xinput_id()
     cmds = [
         'pkill chrome || true',  # kill all existing chrome processes
@@ -34,7 +34,7 @@ def turn_display_on():
         f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
         f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
         'sleep 1',
-        'scripts/start_pogona_hunter.sh'  # start chrome with the bug application
+        f'scripts/start_pogona_hunter.sh {board}'  # start chrome with the bug application
     ]
     return os.system(' && '.join(cmds))
 

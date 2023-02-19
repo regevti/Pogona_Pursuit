@@ -4,5 +4,6 @@ const prodEnv = require('./prod.env')
 
 module.exports = merge(prodEnv, {
   NODE_ENV: '"development"',
-  NUM_BUGS: 1
+  NUM_BUGS: 1,
+  ROUTER_MODE: '"history"'
 })

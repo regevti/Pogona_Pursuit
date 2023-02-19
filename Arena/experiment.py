@@ -83,7 +83,7 @@ class Experiment:
             self.logger.info(f'Experiment started for {humanize.precisedelta(self.experiment_duration)}'
                              f' with cameras: {",".join(self.cameras.keys())}')
             self.orm.commit_experiment(self)
-            self.turn_screen('on')
+            self.turn_screen('on', board=self.get_board())
 
             try:
                 for i, block in enumerate(self.blocks):
@@ -183,14 +183,14 @@ class Experiment:
     def save(self, data):
         """Save experiment arguments"""
 
-    def turn_screen(self, val):
+    def turn_screen(self, val, board='holes'):
         """val must be on or off"""
         if config.DISABLE_ARENA_SCREEN:
             return
         assert val in ['on', 'off'], 'val must be either "on" or "off"'
         try:
             if val.lower() == 'on':
-                turn_display_on()
+                turn_display_on(board)
             else:
                 turn_display_off()
             self.logger.debug(f'screen turned {val}')
@@ -209,6 +209,19 @@ class Experiment:
     @property
     def experiment_duration(self):
         return sum(b.overall_block_duration for b in self.blocks) + self.time_between_blocks * (len(self.blocks) - 1)
+
+    def get_board(self):
+        with open('../pogona_hunter/src/config.json', 'r') as f:
+            app_config = json.load(f)
+
+        curr_mt = self.blocks[0].movement_type
+        curr_board = None
+        for board, boards_mts in app_config['boards'].items():
+            if curr_mt in boards_mts:
+                curr_board = board
+        if not curr_board:
+            raise EndExperimentException(f'unable to find board for movement type: {curr_mt}')
+        return curr_board
 
 
 @dataclass
