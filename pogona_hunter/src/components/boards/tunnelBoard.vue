@@ -32,6 +32,15 @@ export default {
       return this.canvasParams.height / 2
     }
   },
+  mounted() {
+    const canvas = document.getElementById('tunnelCanvas')
+    const context = canvas.getContext('2d')
+    const img = new Image()
+    img.onload = () => {
+      context.drawImage(img, 0, 0, this.canvas.width, this.canvas.height)
+    }
+    img.src = require('@/assets/wooden-logs-wall.jpg')
+  },
   methods: {
     initDrawing() {
       let canvas = document.getElementById('tunnelCanvas')
