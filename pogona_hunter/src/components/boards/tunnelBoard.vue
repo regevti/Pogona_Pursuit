@@ -29,7 +29,7 @@ export default {
   mixins: [boardsMixin],
   computed: {
     tunnelHeight() {
-      return this.canvasParams.height / 2
+      return this.canvasParams.height / 3
     }
   },
   mounted() {
@@ -44,7 +44,7 @@ export default {
   methods: {
     initDrawing() {
       let canvas = document.getElementById('tunnelCanvas')
-      canvas.style.top = `${this.canvas.height / 4}px`
+      canvas.style.top = `${this.canvas.height / 3}px`
       let ctx = canvas.getContext('2d')
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     }
