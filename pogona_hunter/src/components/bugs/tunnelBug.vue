@@ -20,6 +20,14 @@ export default {
     initiateStartPosition() {
       this.x = this.initialXs[randomRange(0, this.initialXs.length)]
       this.y = this.startPosition[1]
+    },
+    straightMove(noiseWeight = null) {
+      let xNoise = this.y > this.canvas.height / 2 ? 0 : 0.2 * this.getRandomNoise()
+      let speedWeight = this.y < this.canvas.height / 2 ? 0.4 : 1
+      this.dx = (this.vx * speedWeight) + xNoise
+      this.dy = (this.vy * speedWeight)
+      this.x += this.dx
+      this.y += this.dy
     }
   }
 }
