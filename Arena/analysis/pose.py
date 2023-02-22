@@ -16,7 +16,7 @@ import os
 if Path('.').resolve().name != 'Arena':
     os.chdir('..')
 import config
-from calibration import PoseEstimator
+from calibration import CharucoEstimator
 from loggers import get_logger
 from utils import run_in_thread, KalmanFilter
 from sqlalchemy import cast, Date
@@ -46,7 +46,7 @@ class ArenaPose:
         self.screen_coords = get_screen_coords('pogona_pursuit2')
 
     def init(self, img):
-        self.caliber = PoseEstimator(self.cam_name, is_debug=False)
+        self.caliber = CharucoEstimator(self.cam_name, is_debug=False)
         self.caliber.init(img)
         self.is_initialized = True
         if not self.caliber.is_on:
@@ -187,7 +187,7 @@ class ArenaPose:
         preds_dir = Path(video_path).parent / 'predictions'
         preds_dir.mkdir(exist_ok=True)
         vid_name = Path(video_path).with_suffix('.parquet').name
-        return preds_dir / f'short_{MODEL_NAME}_{vid_name}'
+        return preds_dir / f'{MODEL_NAME}_{vid_name}'
 
     def is_moved(self, x, y):
         return not self.last_commit or distance.euclidean(self.last_commit[1:], (x, y)) < MIN_DISTANCE

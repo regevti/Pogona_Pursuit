@@ -11,7 +11,7 @@ from compress_videos import get_videos_for_compression, compress
 TIME_TABLE = {
     'cameras_on': ('07:10', '18:45')
 }
-ALWAYS_ON_CAMERAS_RESTART_DURATION = 15 * 60  # seconds
+ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()
 
 
@@ -85,8 +85,12 @@ class Scheduler(threading.Thread):
                 # if there are any alive_predictors on, restart every x minutes.
                 if cu.is_on() and cu.get_alive_predictors() and cu.preds_start_time and \
                         time.time() - cu.preds_start_time > ALWAYS_ON_CAMERAS_RESTART_DURATION:
-                    self.logger.info(f'restarting predictors of {cu.cam_name}')
-                    cu.reload_predictors(is_experiment=False)
+                    self.logger.info(f'restarting camera unit of {cu.cam_name}')
+                    cu.stop()
+                    if cam_name == self.arena_mgr.get_streaming_camera():
+                        self.arena_mgr.stop_stream()
+                    time.sleep(1)
+                    cu.start()
 
     def stop_camera(self, cu):
         if cu.is_on():

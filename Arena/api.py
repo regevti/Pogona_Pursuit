@@ -19,7 +19,7 @@ from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
-from calibration import PoseEstimator
+from calibration import CharucoEstimator
 from periphery import Periphery
 from analysis.strikes import StrikeAnalyzer, Loader
 import matplotlib
@@ -217,7 +217,7 @@ def calibrate():
     conf_preds = arena_mgr.units[cam].get_conf_predictors()
     pred_image_size = list(conf_preds.values())[0][:2] if conf_preds else img.shape[:2]
     try:
-        pe = PoseEstimator(cam, pred_image_size)
+        pe = CharucoEstimator(cam, pred_image_size)
         img, ret = pe.find_aruco_markers(img)
     except Exception as exc:
         arena_mgr.logger.error(f'Error in calibrate; {exc}')

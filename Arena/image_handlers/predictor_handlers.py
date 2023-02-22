@@ -59,6 +59,7 @@ class PredictHandler(ImageHandler):
         finally:
             self.mp_metadata[self.calc_fps_name].value = 0.0
             self.mp_metadata['pred_delay'].value = 0.0
+            self.logger.info('loop is terminated')
 
     def before_predict(self, img):
         return img

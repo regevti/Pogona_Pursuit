@@ -10,13 +10,14 @@ import config
 from loggers import get_logger
 
 CHESSBOARD_DIM = (9, 6)
-ARUCO_MARKER_SIZE = 3.5  # centimeters
-ARUCO_DICT = cv2.aruco.DICT_4X4_50
-ARUCO_IDS = [0, 1, 2, 3, 4, 5]
+ARUCO_MARKER_SIZE = 2.65  # centimeters
+ARUCO_DICT = cv2.aruco.DICT_4X4_1000
+ARUCO_IDS = np.arange(240).tolist()
 CENTER_ID = 0  # the marker that stands for (0, 0) in the new coordinate system
-TEST_IDS = [5, 3]  # this marker should have both positive coordinates, if not happen will induce fix
+IDS2PLOT = [0, 7, 160, 175, 232, 239]
+TEST_IDS = []  # this marker should have both positive coordinates, if not happen will induce fix
 SHIFTED_CAMS = ['top']  # frames that their x,y need to be swapped
-
+CHARUCO_COLS = 8
 
 class CalibrationError(Exception):
     """"""
@@ -133,7 +134,7 @@ class Calibrator:
         return Path(config.calibration_dir) / f'calib_detections_{self.cam_name}.png'
 
 
-class PoseEstimator:
+class CharucoEstimator:
     def __init__(self, cam_name, resize_dim=None, logger=None, is_debug=True):
         self.cam_name = cam_name
         self.resize_dim = resize_dim
@@ -156,6 +157,7 @@ class PoseEstimator:
             elif json.dumps(img_shape) != json.dumps(self.resize_dim):
                 raise Exception(f'Image size does not fit. expected: {tuple(self.resize_dim)}, received: {tuple(img_shape)}')
 
+            self.load_markers()
             for marker_id in ARUCO_IDS:
                 self.load_marker(marker_id)
             self.align_axes()
@@ -177,17 +179,17 @@ class PoseEstimator:
         if check_init and not self.is_initiated:
             return
 
-        dists = {marker_id: distance.euclidean((frame_x, frame_y), d['center'])
+        dists = {marker_id: distance.euclidean((frame_x, frame_y), d['top_left'])
                  for marker_id, d in self.markers.items()}
         if not dists:
             return
         closest_marker_id = min(dists, key=dists.get)
         d = self.markers[closest_marker_id]
         pixel2cm = ARUCO_MARKER_SIZE / distance.euclidean(d['top_right'], d['bottom_right'])
-        xr = d['x'] + pixel2cm * (frame_x - d['center'][0]) - self.markers[CENTER_ID]['x']
-        yr = d['y'] + pixel2cm * (frame_y - d['center'][1]) - self.markers[CENTER_ID]['y']
-        if self.is_swap_xy:
-            xr, yr = yr, xr
+        xr = d['x'] + pixel2cm * (frame_x - d['top_left'][0])
+        yr = d['y'] + pixel2cm * (frame_y - d['top_left'][1])
+        # if self.is_swap_xy:
+        #     xr, yr = yr, xr
 
         return xr * self.sign_mask[0], yr * self.sign_mask[1]
 
@@ -207,35 +209,34 @@ class PoseEstimator:
         mtx, dist = self.calibrator.calib_params['mtx'], self.calibrator.calib_params['dist']
         rVec, tVec, _ = cv2.aruco.estimatePoseSingleMarkers(marker_corners, ARUCO_MARKER_SIZE, mtx, dist)
 
+        missing_ids = []
         for marker_id in ARUCO_IDS:
-            # if marker_id not in ids:
-            #     warn_text = f'aruco marker ID:{marker_id} was not found;'
-            #     if self.cached_markers_path.exists():
-            #         logger.warning(f'{warn_text} Using cached value')
-            #         self.load_marker(marker_id)
-            #     else:
-            #         logger.error(f'{warn_text} Cannot use cached value since not exist')
-            #     continue
-
             if marker_id not in ids:
-                raise Exception(f'unable to find Aruco marker {marker_id}')
+                missing_ids.append(marker_id)
+                continue
 
             i = ids.astype(int).ravel().tolist().index(marker_id)
             corners = marker_corners[i]
             top_right, top_left, bottom_right, _ = self.flatten_corners(corners)
+            row, col = marker_id // CHARUCO_COLS, marker_id % CHARUCO_COLS
             self.markers[marker_id] = {
-                'x': round(tVec[i][0][0], 1),
-                'y': round(tVec[i][0][1], 1),
+                'x': round((2*col + 1 if row % 2 else 2*col) * ARUCO_MARKER_SIZE),
+                'y': round(row * ARUCO_MARKER_SIZE),
+                # 'x': round(tVec[i][0][0], 1),
+                # 'y': round(tVec[i][0][1], 1),
                 'cam_distance': np.sqrt(tVec[i][0][2] ** 2 + tVec[i][0][0] ** 2 + tVec[i][0][1] ** 2),
                 'corners': corners,
                 'top_right': top_right,
                 'bottom_right': bottom_right,
+                'top_left': top_left,
                 'center': ((top_right[0] + top_left[0]) // 2, (top_right[1] + bottom_right[1]) // 2),
                 'rVec': rVec[i],
                 'tVec': tVec[i]
             }
-        self.align_axes()
-        self.align_coords_to_center_marker()
+            print(f'{marker_id} - ({self.markers[marker_id]["x"]}, {self.markers[marker_id]["y"]})')
+        self.logger.error(f'The following markers were not detected: {missing_ids}')
+        # self.align_axes()
+        # self.align_coords_to_center_marker()
         self.save_markers()
         if is_plot:
             frame = self.plot_aruco_detections(frame)
@@ -271,12 +272,18 @@ class PoseEstimator:
             # Draw the pose of the marker
             mtx, dist = self.calibrator.calib_params['mtx'], self.calibrator.calib_params['dist']
             cv2.drawFrameAxes(frame, mtx, dist, d['rVec'], d['tVec'], 4, 4)
-            cv2.putText(frame, f"ID: {marker_id} Dist: {round(d['cam_distance'], 2)}", d['top_right'],
-                        font, font_size, (0, 255, 255), 2, line_type)
-            real_x, real_y = self.get_location(*d['center'], check_init=False)
-            label_x, label_y = d['top_right'][0], d['top_right'][1] + 40
-            cv2.putText(frame, f"{(round(real_x), round(real_y))}", (label_x, label_y),
-                        font, font_size, (0, 255, 255), 2, line_type)
+            if marker_id in IDS2PLOT:
+                # cv2.putText(frame, f"ID: {marker_id} Dist: {round(d['cam_distance'], 2)}", d['top_right'],
+                #             font, font_size, (255, 0, 255), 2, line_type)
+                col = marker_id % CHARUCO_COLS
+                if col < 2:
+                    label_x, label_y = d['top_right'][0], d['top_right'][1] + 40
+                else:
+                    label_x, label_y = d['top_right'][0], d['top_right'][1] - 80
+                real_x, real_y = self.get_location(*d['top_left'], check_init=False)
+
+                cv2.putText(frame, f"{(round(real_x), round(real_y))}", (label_x, label_y),
+                            font, font_size, (255, 0, 255), 2, line_type)
 
         frame = self.plot_calibrated_line(frame)
         return frame
@@ -287,22 +294,27 @@ class PoseEstimator:
         h, w = frame.shape[:2]
         for frame_pos in [(w // 2, h // 2), (w // 2, h // 3), (w // 2, round(h / 1.3))]:
             xc, yc = self.get_location(*frame_pos, check_init=False)
-            cv2.putText(frame, f"({round(xc)}, {round(yc)})", frame_pos, font, font_size, (0, 0, 255), 2, line_type)
+            cv2.putText(frame, f"({round(xc)}, {round(yc)})", frame_pos, font, font_size, (255, 255, 255), 2, line_type)
         return frame
 
-    def load_marker(self, marker_id):
+    def load_markers(self):
         if not self.cached_markers_path.exists():
             raise Exception(f'Aruco cache file {self.cached_markers_path} does not exist')
+
         with self.cached_markers_path.open('rb') as f:
             markers = pickle.load(f)
-            if marker_id in markers:
-                self.markers[marker_id] = markers[marker_id]
-            else:
-                self.logger.error(f'Aruco marker ID: {marker_id} was not found in cached markers')
+            missing_markers = []
+            for marker_id in ARUCO_IDS:
+                marker_dict = markers.get(marker_id, {})
+                self.markers[marker_id] = marker_dict
+                if not marker_dict:
+                    missing_markers.append(marker_dict)
+            self.logger.warning(f'The following markers are missing: {missing_markers}')
 
     def save_markers(self):
         with self.cached_markers_path.open('wb') as f:
             pickle.dump(self.markers, f)
+            self.logger.info(f'Markers saved to {self.cached_markers_path}')
 
     @staticmethod
     def flatten_corners(corners):
@@ -324,3 +336,13 @@ class PoseEstimator:
     @property
     def cached_markers_path(self):
         return Path(config.calibration_dir) / f'markers_{self.cam_name}_{json.dumps(self.resize_dim)}.pkl'
+
+
+def main(img, cam='top', pred_image_size=(1088, 1456, 3)):
+    pe = CharucoEstimator(cam)
+    img, ret = pe.find_aruco_markers(img)
+
+
+if __name__ == "__main__":
+    image_ = cv2.imread('/data/Pogona_Pursuit/output/captures/20230221T131003_top.png')
+    main(image_, cam='top', pred_image_size=image_.shape)

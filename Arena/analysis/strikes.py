@@ -20,7 +20,7 @@ from analysis.pose_utils import closest_index, pixels2cm, distance, remove_outli
 from analysis.pose import ArenaPose
 from analysis.predictors.deeplabcut import PredPlotter, DLCPose, MODEL_NAME as POSE_MODEL_NAME
 from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, Trial
-from calibration import PoseEstimator
+from calibration import CharucoEstimator
 from analysis.predictors.tongue_out import TONGUE_CLASS, TONGUE_PREDICTED_DIR, TongueOutAnalyzer
 
 NUM_FRAMES_TO_PLOT = 5
