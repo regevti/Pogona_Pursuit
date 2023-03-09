@@ -18,6 +18,7 @@ import requests
 import pandas as pd
 
 import config
+import utils
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id
@@ -110,14 +111,17 @@ class Experiment:
         return str(self)
 
     def is_ready_for_experiment(self):
-        if all([
-            self.is_websocket_server_on(),
-            self.is_pogona_hunter_up(),
-            self.is_touchscreen_mapped_to_hdmi(),
-            is_reward_left(self.cache)
-        ]):
+        checks = {
+            'websocket_server_on': self.is_websocket_server_on(),
+            'pogona_hunter_app_up': self.is_pogona_hunter_up(),
+            'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi(),
+            'reward_left': is_reward_left(self.cache)
+        }
+        if all(checks.values()):
             return True
         else:
+            utils.send_telegram_message(f'Aborting experiment due to violation of '
+                                        f'{", ".join([k for k, v in checks.items() if not v])}.')
             self.logger.error('aborting experiment')
 
     def is_websocket_server_on(self):
@@ -306,6 +310,7 @@ class Block:
 
         for trial_id in range(1, self.num_trials + 1):
             if not is_reward_left(self.cache):
+                utils.send_telegram_message('No reward left in feeder; stopping experiment')
                 raise EndExperimentException('No reward left; stopping experiment')
             self.start_trial(trial_id)
             self.wait(self.trial_duration, check_visual_app_on=True, label=f'Trial {trial_id}')

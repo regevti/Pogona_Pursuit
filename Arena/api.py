@@ -21,7 +21,6 @@ from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
 from calibration import CharucoEstimator
 from periphery import Periphery
-from analysis.strikes import StrikeAnalyzer, Loader
 import matplotlib
 matplotlib.use('Agg')
 
@@ -362,6 +361,7 @@ def video_feed():
 
 @app.route('/strike_analysis/<strike_id>')
 def get_strike_analysis(strike_id):
+    from analysis.strikes import StrikeAnalyzer, Loader
     ld = Loader(strike_id, 'front', is_debug=False)
     sa = StrikeAnalyzer(ld)
     with warnings.catch_warnings():
@@ -485,7 +485,7 @@ if __name__ == "__main__":
     # h = logging.StreamHandler()
     # h.setFormatter(CustomFormatter())
     # logger.addHandler(h)
-    if not config.IS_ANALYSIS_ONLY:
+    if not config.IS_ANALYSIS_ONLY and config.SENTRY_DSN:
         sentry_sdk.init(
             dsn=config.SENTRY_DSN,
             # Set traces_sample_rate to 1.0 to capture 100%

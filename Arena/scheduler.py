@@ -80,26 +80,29 @@ class Scheduler(threading.Thread):
                 self.stop_camera(cu)
             else:
                 # in active hours
-                self.start_camera(cu)
-
-                # if there are any alive_predictors on, restart every x minutes.
-                if cu.is_on() and cu.get_alive_predictors() and cu.preds_start_time and \
-                        time.time() - cu.preds_start_time > ALWAYS_ON_CAMERAS_RESTART_DURATION:
-                    self.logger.info(f'restarting camera unit of {cu.cam_name}')
-                    cu.stop()
-                    if cam_name == self.arena_mgr.get_streaming_camera():
-                        self.arena_mgr.stop_stream()
-                    time.sleep(1)
-                    cu.start()
+                if cu.cam_config.get('is_manual'):
+                    # camera will be stopped only if min_duration was reached
+                    self.stop_camera(cu)
+                else:
+                    self.start_camera(cu)
+                    # if there are any alive_predictors on, restart every x minutes.
+                    if cu.is_on() and cu.get_alive_predictors() and cu.preds_start_time and \
+                            time.time() - cu.preds_start_time > ALWAYS_ON_CAMERAS_RESTART_DURATION:
+                        self.logger.info(f'restarting camera unit of {cu.cam_name}')
+                        cu.stop()
+                        if cam_name == self.arena_mgr.get_streaming_camera():
+                            self.arena_mgr.stop_stream()
+                        time.sleep(1)
+                        cu.start()
 
     def stop_camera(self, cu):
-        if cu.is_on():
+        if cu.is_on() and cu.time_on > config.camera_on_min_duration:
             self.logger.info(f'stopping CU {cu.cam_name}')
             cu.stop()
 
     def start_camera(self, cu):
         if not cu.is_on():
-            self.logger.info(f'starting CU {cu.cam_name}')
+            self.logger.debug(f'starting CU {cu.cam_name}')
             cu.start()
             time.sleep(5)
 

@@ -6,7 +6,6 @@ from arena import ImageHandler, QueueException
 from cache import RedisCache
 from utils import run_in_thread
 from analysis.predictors.tongue_out import TongueOutAnalyzer, TONGUE_CLASS, TONGUE_PREDICTED_DIR
-from analysis.predictors.pogona_head import YOLOv5Detector
 from analysis.pose import ArenaPose
 
 
@@ -129,8 +128,6 @@ class TongueOutHandler(PredictHandler):
 class PogonaHeadHandler(PredictHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.detector = YOLOv5Detector(return_neareast_detection=False, logger=self.logger)
-        self.detector.load()
         self.arena_pose = ArenaPose(self.cam_name, 'pogona_head')
         self.last_det = None
 
@@ -138,9 +135,10 @@ class PogonaHeadHandler(PredictHandler):
         return f'pogona-head-{self.cam_name}'
 
     def loop(self):
+        detector = self.arena_pose.predictor.detector
         self.logger.info(
-            f"YOLOv5 detector loaded successfully ({self.detector.model_width}x{self.detector.model_height} "
-            f"weights: {self.detector.weights_path})."
+            f"YOLOv5 detector loaded successfully ({detector.model_width}x{detector.model_height} "
+            f"weights: {detector.weights_path})."
         )
         super().loop()
 
@@ -150,29 +148,20 @@ class PogonaHeadHandler(PredictHandler):
 
     def predict_frame(self, img, timestamp):
         """Get detection of pogona head on frame; {det := [x1, y1, x2, y2, confidence]}"""
-        det, img = self.detector.detect_image(img)
+        det, img = self.arena_pose.predictor.predict(img, return_centroid=False)
         return det, img
 
-    def analyze_prediction(self, timestamp, pred, db_video_id):
-        if pred is None:
+    def analyze_prediction(self, timestamp, det, db_video_id):
+        if det[0] is None:
             return
 
-        xA, yA, xB, yB, confidence = pred
-        cam_x, cam_y = self.to_centroid(xA, yA, xB, yB)
+        cam_x, cam_y = self.arena_pose.predictor.to_centroid(det)
         self.prediction_summary = self.arena_pose.analyze_frame(timestamp, cam_x, cam_y, db_video_id)
 
     def draw_pred_on_image(self, det, img, font=cv2.FONT_HERSHEY_SIMPLEX, color=(255, 0, 0)):
+        img = self.arena_pose.predictor.draw_predictions(det, img)
         h, w = img.shape[:2]
-        if det is None:
-            return img
-
-        xA, yA, xB, yB, confidence = det
-        img = cv2.rectangle(img, (int(xA), int(yA)), (int(xB), int(yB)), (0, 255, 0), 2)
         if self.prediction_summary:
             img = cv2.putText(img, str(self.prediction_summary), (20, h-30), font, 1, color, 2, cv2.LINE_AA)
         self.last_det = det
         return img
-
-    @staticmethod
-    def to_centroid(xA, yA, xB, yB):
-        return (xA + xB) / 2, (yA + yB) / 2

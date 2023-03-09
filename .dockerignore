@@ -1,7 +1,9 @@
-Arena/experiments/*
-Arena/events/*
-output/*
-docker/*
+Arena/experiments/**
+Arena/events/**
+Arena/.archive/**
+Arena/analysis/predictors/yolov5/runs/detect/**
+output/**
+docker/**
 **/*.jpg
 **/*.png
 **/*.csv

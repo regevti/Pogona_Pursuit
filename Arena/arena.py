@@ -137,9 +137,11 @@ class ImageSink(ArenaProcess):
             try:
                 self.cam_config = cache.get_cam_dict(self.cam_name)
                 timestamp, frame = self.frames_queue.get(timeout=2)
+                if self.cam_config.get('crop'):
+                    x, y, w, h = [int(c) for c in self.cam_config['crop']]
+                    frame = frame[y:y+h, x:x+w]
                 if self.cam_config.get('is_color'):
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
                 self.write_to_shm(frame, timestamp)
                 self.write_to_video_file(frame, timestamp)
                 self.calc_fps(time.time())
@@ -494,6 +496,13 @@ class CameraUnit:
     def proc_args(self):
         return self.cam_name, self.frames_queue, self.cam_config, self.log_queue, self.stop_signal, self.mp_metadata
 
+    @property
+    def time_on(self):
+        return time.time() - self.start_time
+
+    @property
+    def is_manual(self):
+        """"""
 
 class ArenaManager(SyncManager):
     def __init__(self, **kwargs):

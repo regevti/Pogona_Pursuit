@@ -7,23 +7,23 @@ import yaml
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
-    from dlclive import DLCLive, Processor
 
 
 DLC_FOLDER = '/data/Pogona_Pursuit/output/models/deeplabcut'
 MODEL_NAME = 'front_head_only_resnet_50'
 EXPORTED_MODEL = f'{DLC_FOLDER}/{MODEL_NAME}/'
 THRESHOLD = 0.5
-RELEVANT_BODYPARTS = ['nose', 'right_ear', 'left_ear']
+RELEVANT_BODYPARTS = ['nose', 'right_ear', 'left_ear', 'mid_ears']
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 
 class DLCPose:
     def __init__(self, cam_name):
+        from dlclive import DLCLive, Processor
         self.cam_name = cam_name
         self.dlc_config = {}
         self.load_dlc_config()
-        self.bodyparts = self.dlc_config['bodyparts']
+        self.bodyparts = self.dlc_config['bodyparts'] + ['mid_ears']
         self.kp_colors = {k: COLORS[i] for i, k in enumerate(self.bodyparts)}
         self.processor = Processor()
         self.detector = DLCLive(EXPORTED_MODEL, processor=self.processor)
@@ -35,12 +35,14 @@ class DLCPose:
         self.detector.init_inference(img)
         self.is_initialized = True
 
-    def predict(self, img, frame_id=0):
+    def predict(self, img, frame_id=0) -> pd.DataFrame:
         pdf = self._predict(img, frame_id)
-        nose = pdf.loc[frame_id, 'nose']
-        if nose['prob'] < THRESHOLD:
-            return None, None
-        return nose['cam_x'], nose['cam_y']
+        for bodypart in self.bodyparts:
+            df_ = pdf.loc[frame_id, bodypart]
+            if df_['prob'] < THRESHOLD:
+                pdf.iloc[0][(bodypart, 'cam_x')] = None
+                pdf.iloc[0][(bodypart, 'cam_y')] = None
+        return pdf
 
     def _predict(self, img, frame_id=0):
         self.init(img)
@@ -54,7 +56,8 @@ class DLCPose:
 
     def create_pred_df(self, pred, frame_id) -> pd.DataFrame:
         cols = ['cam_x', 'cam_y', 'prob']
-        zf = pd.DataFrame(pred, index=self.bodyparts, columns=cols)
+        zf = pd.DataFrame(pred, index=self.bodyparts[:-1], columns=cols)
+        zf.loc['mid_ears', :] = zf.loc[['left_ear', 'right_ear'], :].mean()
         zf = zf.loc[RELEVANT_BODYPARTS, :]
         if zf.empty:
             return zf
@@ -123,9 +126,9 @@ class PredPlotter:
         """scatter the body parts prediction dots"""
         x_legend, y_legend = 30, 30
         for i, part in enumerate(df.columns.get_level_values(0).unique()):
-            if parts2plot and part not in parts2plot:
+            if not part or parts2plot and part not in parts2plot:
                 continue
-            elif part in ['time', 'tongue'] or df[part].isnull().values.any() or df[part]['prob'].loc[frame_id] < THRESHOLD:
+            elif part in ['time', 'tongue', 'angle'] or df[part].isnull().values.any() or df[part]['prob'].loc[frame_id] < THRESHOLD:
                 continue
 
             cX = round(df[part]['cam_x'][frame_id])

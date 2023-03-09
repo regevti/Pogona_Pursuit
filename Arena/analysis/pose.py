@@ -2,6 +2,7 @@ import datetime
 import yaml
 import cv2
 import time
+import traceback
 import importlib
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,13 +13,14 @@ from tqdm.auto import tqdm
 from pathlib import Path
 from scipy.spatial import distance
 from scipy.signal import savgol_filter
+from multiprocessing.pool import ThreadPool
 import os
 if Path('.').resolve().name != 'Arena':
     os.chdir('..')
 import config
 from calibration import CharucoEstimator
 from loggers import get_logger
-from utils import run_in_thread, KalmanFilter
+from utils import run_in_thread, Kalman
 from sqlalchemy import cast, Date
 from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, PoseEstimation
 
@@ -27,6 +29,10 @@ MIN_DISTANCE = 5  # cm
 COMMIT_INTERVAL = 2  # seconds
 VELOCITY_SAMPLING_DURATION = 2  # seconds
 MODEL_NAME = 'front_head_only_resnet_50'
+
+
+class MissingFile(Exception):
+    """"""
 
 
 class ArenaPose:
@@ -38,14 +44,19 @@ class ArenaPose:
         self.last_commit = None
         self.caliber = None
         self.orm = orm if orm is not None else ORM()
-        self.kalman = KalmanFilter()
+        self.commit_bodypart = 'head'
+        self.kinematic_cols = ['x', 'y', 'vx', 'vy', 'ax', 'ay']
+        self.time_col = ('time', '')
+        self.kalman = None
         self.predictions = []
         self.current_position = (None, None)
         self.current_velocity = None
         self.is_initialized = False
         self.screen_coords = get_screen_coords('pogona_pursuit2')
 
-    def init(self, img):
+    def init(self, img, caliber_only=False):
+        if not caliber_only:
+            self.predictor.init(img)
         self.caliber = CharucoEstimator(self.cam_name, is_debug=False)
         self.caliber.init(img)
         self.is_initialized = True
@@ -53,7 +64,7 @@ class ArenaPose:
             raise Exception('Could not initiate caliber; closing ArenaPose')
 
     def start_new_session(self):
-        self.kalman = KalmanFilter()
+        self.kalman = Kalman()
         self.predictions = []
 
     def load_predictor(self):
@@ -63,80 +74,81 @@ class ArenaPose:
             self.predictor = getattr(prd_module, prd_class)(self.cam_name)
 
     def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True):
-        if not db_video_id and video_path:
-            db_video_id = self.get_video_db_id(video_path)
-        elif not video_path and db_video_id:
-            video_path = self.get_video_path(db_video_id)
+        db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
         self.start_new_session()
         frames_times = self.load_frames_times(db_video_id)
-        is_cache = self.get_predicted_cache_path(video_path).exists()
+
+        pose_df = []
         cap = cv2.VideoCapture(video_path)
         n_frames = min(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), len(frames_times))
-        pose_df = pd.DataFrame(index=frames_times[:n_frames].index, columns=['x', 'y'])
-        for frame_id in tqdm(range(n_frames), desc=f'{Path(video_path).stem} (is_cache={is_cache})'):
+        for frame_id in tqdm(range(n_frames), desc=f'{Path(video_path).stem}'):
             ret, frame = cap.read()
             if not self.is_initialized:
                 self.init(frame)
 
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
-            cam_x, cam_y = self.predictor.predict(frame, frame_id)
-            self.analyze_frame(timestamp, cam_x, cam_y, db_video_id)
-            pose_df.loc[frame_id] = self.current_position
+            pred_row = self.predictor.predict(frame, frame_id)
+            pred_row = self.analyze_frame(timestamp, pred_row, db_video_id)
+            pose_df.append(pred_row)
         cap.release()
 
+        pose_df = pd.concat(pose_df)
         if is_save_cache:
             self.save_predicted_video(pose_df, video_path)
         return pose_df
 
-    def predict_pred_cache(self, video_path, frames_range=None, frames_times=None, is_debug=True):
-        self.start_new_session()
-        db_video_id = self.get_video_db_id(Path(video_path))
-        if frames_times is None:
-            frames_times = self.load_frames_times(db_video_id)
-        pose_df = self.load_predicted_video(video_path)['nose'].drop_duplicates()
-        if frames_range:
-            pose_df = pose_df.loc[list(range(*frames_range))]
-        n_frames = min(len(pose_df), len(frames_times)) if not frames_range else len(pose_df)
-        frames_ids = range(n_frames) if not frames_range else range(*frames_range)
-        is_cache = self.get_predicted_cache_path(video_path).exists()
-        iterator = tqdm(frames_ids, desc=f'{Path(video_path).stem} (is_cache={is_cache})') if is_debug else frames_ids
-        for frame_id in iterator:
-            if not self.is_initialized:
-                cap = cv2.VideoCapture(video_path)
-                ret, frame = cap.read()
-                self.init(frame)
-                cap.release()
+    def predict_frame(self, frame, frame_id) -> pd.DataFrame:
+        raise NotImplemented('method predict_frame is not implemented')
 
-            dt = frames_times.loc[frame_id, 'time']
-            cam_x, cam_y = pose_df.loc[frame_id, ['cam_x', 'cam_y']].tolist()
-            # pos = self.analyze_frame(dt, cam_x, cam_y, db_video_id)
-            pose_df.loc[frame_id, ['x', 'y']] = (cam_x, cam_y)
-            pose_df.loc[frame_id, 'time'] = dt
-            pose_df.loc[frame_id, 'is_in_screen'] = cv2.pointPolygonTest(self.screen_coords, (cam_x, cam_y), False)
+    def analyze_frame(self, timestamp: float, pred_row: pd.DataFrame, db_video_id=None):
+        """
+        Convert pose in pixels to real-world coordinates using the calibrator, and smooth using Kalman.
+        In addition, if is_commit is enabled this method would commit to DB the predictions for body parts in
+        self.commit_bodypart
+        """
+        pred_row[self.time_col] = timestamp
+        for col in self.kinematic_cols:
+            pred_row[(col, '')] = np.nan
 
-        return pose_df
+        for bodypart in self.predictor.bodyparts:
+            if self.is_ready_to_commit(timestamp) and bodypart == self.commit_bodypart:
+                # if predictions stack has reached the COMMIT_INTERVAL, and it's the commit_bodypart,
+                # then calculate aggregated metrics (e.g, velocity).
+                self.aggregate_to_commit(self.predictions.copy(), db_video_id, timestamp)
 
-    def analyze_frame(self, dt: datetime.datetime, cam_x: float, cam_y: float, db_video_id=None):
-        timestamp = dt.timestamp() if isinstance(dt, datetime.datetime) else dt
-        if self.is_ready_to_commit(timestamp):
-            self.aggregate_to_commit(self.predictions.copy(), db_video_id, dt)
-            self.predictions = []
-        x, y = self.caliber.get_location(cam_x, cam_y)
-        x, y = self.kalman.get_filtered((x, y))
-        self.predictions.append((timestamp, x, y))
-        return self.current_position if self.is_commit_db else (x, y)
+            cam_x, cam_y = pred_row[(bodypart, 'cam_x')].iloc[0], pred_row[(bodypart, 'cam_y')].iloc[0]
+            x, y = np.nan, np.nan
+            if not np.isnan(cam_x) or not np.isnan(cam_y):
+                x, y = self.caliber.get_location(cam_x, cam_y)
 
-    def aggregate_to_commit(self, predictions, db_video_id, dt):
+            if bodypart == self.commit_bodypart:
+                if not self.kalman.is_initiated:
+                    self.kalman.init(x, y)
+                x, y, vx, vy, ax, ay = self.kalman.get_filtered(x, y)
+                for col in self.kinematic_cols:
+                    pred_row.loc[pred_row.index[0], (col, '')] = locals()[col]
+                self.predictions.append((timestamp, x, y))
+            else:
+                pred_row.loc[pred_row.index[0], (bodypart, 'x')] = x
+                pred_row.loc[pred_row.index[0], (bodypart, 'y')] = y
+
+        pred_row = self.post_analysis_actions(pred_row)
+        return pred_row
+
+    def check_video_inputs(self, db_video_id, video_path):
+        if not db_video_id and video_path:
+            db_video_id = self.get_video_db_id(video_path)
+        elif not video_path and db_video_id:
+            video_path = self.get_video_path(db_video_id)
+        video_path = Path(video_path).as_posix()
+        return db_video_id, video_path
+
+    def aggregate_to_commit(self, predictions, db_video_id, timestamp):
         predictions = np.array(predictions)
         x, y = [round(z) for z in predictions[:, 1:3].mean(axis=0)]
-        d = predictions[:, :3]
-        if len(d) > 1:
-            d = np.diff(d, axis=0)
-        if self.is_moved(x, y):
-            self.current_position = (x, y)
-            self.current_velocity = (np.sqrt(d[:, 1] ** 2 + d[:, 2] ** 2) / d[:, 0]).mean()
-            if self.is_commit_db:
-                self.commit_to_db(dt, x, y, db_video_id)
+        if self.is_commit_db and self.is_moved(x, y):
+            self.commit_to_db(timestamp, x, y, db_video_id)
+        self.predictions = []
 
     @run_in_thread
     def commit_to_db(self, timestamp, x, y, db_video_id):
@@ -144,6 +156,9 @@ class ArenaPose:
         self.orm.commit_pose_estimation(self.cam_name, start_time, x, y, None, None,
                                         db_video_id, model='deeplabcut_v1')
         self.last_commit = (timestamp, x, y)
+
+    def post_analysis_actions(self, pred_row):
+        return pred_row
 
     def load_frames_times(self, db_video_id: int) -> pd.DataFrame:
         frames_df = pd.DataFrame()
@@ -157,7 +172,7 @@ class ArenaPose:
             frames_ts.index = frames_ts.index.astype(int)
             return frames_ts
 
-    def get_video_path(self, db_video_id: int):
+    def get_video_path(self, db_video_id: int) -> str:
         with self.orm.session() as s:
             vid = s.query(Video).filter_by(id=db_video_id).first()
             if vid is None:
@@ -174,7 +189,7 @@ class ArenaPose:
     def load_predicted_video(self, video_path):
         cache_path = self.get_predicted_cache_path(video_path)
         if not cache_path.exists():
-            raise Exception(f'No prediction cache found under: {cache_path}')
+            raise MissingFile(f'No prediction cache found under: {cache_path}')
         pose_df = pd.read_parquet(cache_path)
         return pose_df
 
@@ -194,6 +209,101 @@ class ArenaPose:
 
     def is_ready_to_commit(self, timestamp):
         return self.predictions and (timestamp - self.predictions[0][0]) > COMMIT_INTERVAL
+
+
+class DLCArenaPose(ArenaPose):
+    def __init__(self, cam_name, is_commit_db=True, orm=None):
+        super().__init__(cam_name, 'deeplabcut', is_commit_db, orm)
+        self.kalman = {}
+        self.commit_bodypart = 'mid_ears'
+        self.pose_df = pd.DataFrame()
+        self.angle_col = ('angle', '')
+
+    def load_predicted(self, video_path: Path, frames_times=None, is_debug=True, prefix=''):
+        if not self.is_initialized:
+            self.initiate_from_video(video_path)
+        cache_path = self.get_converted_cache_path(video_path)
+        if cache_path.exists():
+            self.pose_df = pd.read_parquet(cache_path)
+        else:
+            self.convert_pred_file(video_path, frames_times, is_debug, prefix)
+        return self.pose_df
+
+    def convert_pred_file(self, video_path: Path, frames_times=None, n_threads=100, prefix=''):
+        self.start_new_session()
+        db_video_id = self.get_video_db_id(video_path)
+
+        if frames_times is None:
+            frames_times = self.load_frames_times(db_video_id)
+
+        self.pose_df = self.load_predicted_video(video_path).drop_duplicates()
+        n_frames = min(len(self.pose_df), len(frames_times))
+        is_cache = self.get_predicted_cache_path(video_path).exists()
+        iterator = np.array_split(np.arange(n_frames), n_threads)
+        with tqdm(total=n_frames, desc=f'{prefix}{video_path.stem} (is_cache={is_cache})') as pbar:
+            self._convert(iterator, frames_times, db_video_id, pbar)
+        self.pose_df[self.time_col] = self.pose_df[self.time_col].astype('datetime64[us]')
+        self.pose_df.to_parquet(self.get_converted_cache_path(video_path))
+        return self.pose_df
+
+    def _convert(self, iterator, frames_times, db_video_id, pbar):
+        """Convert pose_df in multiple threads"""
+        def iter1(*frames_ids):
+            for frame_id in frames_ids:
+                dt = frames_times.loc[frame_id, 'time']
+                self.pose_df.loc[frame_id, self.time_col] = dt
+                for body_part in self.body_parts:
+                    cam_x, cam_y = self.pose_df.loc[frame_id, (body_part, ['cam_x', 'cam_y'])].tolist()
+                    x, y = self.analyze_frame(dt, cam_x, cam_y, body_part, db_video_id)
+                    self.pose_df.loc[frame_id, (body_part, 'x')] = x
+                    self.pose_df.loc[frame_id, (body_part, 'y')] = y
+                    if self.cam_name == 'front' and body_part == 'nose':
+                        self.pose_df.loc[frame_id, ('', 'is_in_screen')] = \
+                            cv2.pointPolygonTest(self.screen_coords, (cam_x, cam_y), False)
+                self.pose_df.loc[frame_id, self.angle_col] = self.calc_head_angle(self.pose_df.loc[frame_id])
+                pbar.update(1)
+
+        with ThreadPool() as pool:
+            pool.starmap(iter1, iterator)
+
+    def initiate_from_video(self, video_path: Path):
+        cap = cv2.VideoCapture(video_path.as_posix())
+        ret, frame = cap.read()
+        self.init(frame, caliber_only=True)
+        cap.release()
+
+    def get_converted_cache_path(self, video_path):
+        orig_path = self.get_predicted_cache_path(video_path)
+        return orig_path.parent / f'{orig_path.stem}_{self.caliber}{orig_path.suffix}'
+
+    def post_analysis_actions(self, pred_row):
+        angle = self.calc_head_angle(pred_row.iloc[0])
+        pred_row.loc[pred_row.index[0], self.angle_col] = angle
+        return pred_row
+
+    @staticmethod
+    def calc_head_angle(row):
+        x_nose, y_nose = row.nose.x, row.nose.y
+        x_ears = (row.right_ear.x + row.left_ear.x) / 2
+        y_ears = (row.right_ear.y + row.left_ear.y) / 2
+        dy = y_ears - y_nose
+        dx = x_ears - x_nose
+        if dx != 0.0:
+            theta = np.arctan(abs(dy) / abs(dx))
+        else:
+            theta = np.pi / 2
+        if dx > 0:  # looking south
+            theta = np.pi - theta
+        if dy < 0:  # looking opposite the screen
+            theta = -1 * theta
+        if theta < 0:
+            theta = 2 * np.pi + theta
+        return theta
+
+    @property
+    def body_parts(self):
+        return [b for b in self.pose_df.columns.get_level_values(0).unique()
+                if b and isinstance(self.pose_df[b], pd.DataFrame)]
 
 
 class SpatialAnalyzer:
@@ -350,11 +460,36 @@ def compare_sides(animal_id='PV80'):
     plt.show()
 
 
+def foo():
+    video_path = Path('/data/Pogona_Pursuit/output/experiments/PV80/20221211/block1/videos/front_20221211T113717.mp4')
+    ap = DLCArenaPose('front', is_commit_db=False)
+    pose_df = ap.predict_video(video_path=video_path)
+    pose_df
+
+
+def convert_all_videos(animal_id='PV80'):
+    all_videos = list(Path(f'../output/experiments/{animal_id}').rglob('*front*.mp4'))
+    ap = DLCArenaPose('front', is_commit_db=False)
+    ap.initiate_from_video(all_videos[0])
+    videos = [v for v in all_videos if not ap.get_converted_cache_path(v).exists()]
+    print(f'found {len(videos)}/{len(all_videos)} to convert')
+    for i, video_path in enumerate(videos):
+        try:
+            ap = DLCArenaPose('front', is_commit_db=False)
+            ap.load_predicted(video_path, prefix=f'({i+1}/{len(videos)}) ')
+        except MissingFile as exc:
+            print(exc)
+        # except Exception:
+        #     print(f'\n\n{traceback.format_exc()}\n')
+
+
 if __name__ == '__main__':
+    foo()
+    # convert_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
     # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')
     # ps = SpatialAnalyzer('PV80', day='2022-12-15').get_pose()
-    compare_sides(animal_id='PV80')
+    # compare_sides(animal_id='PV80')
 

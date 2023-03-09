@@ -28,10 +28,10 @@ top:
     always_on: 1
     fps: 15
     writing_fps: 0
-    predictors:
-        pogona_head:
-            image_size: [480, 640, 3]
-            mode: no_experiment
+    predictors: {}
+#        pogona_head:
+#            image_size: [544, 728, 3]
+#            mode: no_experiment
 
 
 front:
@@ -50,10 +50,15 @@ front:
 
 
 
-test:
+feeder:
     id: DEV_1AB22C017E70
     module: allied_vision
-    fps: 98
-    exposure: 6000
-    image_size: [1088, 1456, 3]
+    fps: 5
+    exposure: 30000
+#    image_size: [1088, 1456, 1]
+    image_size: [400, 456, 1]
+    writing_fps: 0
+    is_manual: 1
+    crop: [1000, 200, 456, 400]
     output_dir:
+

@@ -16,6 +16,43 @@ MIN_DISTANCE = 5  # cm
 MAX_DISTANCE = 15  # pixels
 
 
+class PogonaHead:
+    def __init__(self, cam_name):
+        self.cam_name = cam_name
+        self.bodyparts = ['head']
+        self.detector = YOLOv5Detector()
+        self.is_initialized = False
+
+    def init(self, img):
+        self.detector.load()
+        self.is_initialized = True
+
+    def predict(self, img, return_centroid=True, is_draw_pred=False):
+        det, img = self.detector.detect_image(img)
+        if det is None:
+            return None, None
+
+        if return_centroid:
+            return self.to_centroid(det)
+        else:
+            if is_draw_pred:
+                img = self.draw_predictions(det, img)
+            return det, img
+
+    @staticmethod
+    def draw_predictions(det, img):
+        if det is None:
+            return img
+        xA, yA, xB, yB, confidence = det
+        img = cv2.rectangle(img, (int(xA), int(yA)), (int(xB), int(yB)), (0, 255, 0), 2)
+        return img
+
+    @staticmethod
+    def to_centroid(det):
+        xA, yA, xB, yB, confidence = det
+        return (xA + xB) / 2, (yA + yB) / 2
+
+
 @dataclass
 class YOLOv5Detector:
     weights_path: str = "analysis/predictors/yolov5/runs/train/exp/weights/best.pt"

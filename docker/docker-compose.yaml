@@ -1,33 +1,33 @@
 version: '2.3'
 
 services:
-#  arena:
-#    build:
-#      context: ..
-#      dockerfile: ./docker/Dockerfile-arena
-#    image: pogona_arena:${arena_tag-latest}
-#    container_name: arena
-#    privileged: true
-#    depends_on:
-#      - cache
-#      - mqtt
-#      - logger
-#    volumes:
-#    - ../Arena:/arena
-#    - ../pogona_hunter:/pogona_hunter
-#    - /tmp/.X11-unix:/tmp/.X11-unix:ro
-#    - ${MEDIA_DIR-/tmp}:/arena/media
-#    restart: "no"
-#    runtime: nvidia
-#    command: "flask run --host=0.0.0.0"
-#    ports:
-#      - 3350:8888
-#      - 3351:5000
-#    environment:
-#      - FLASK_APP=api.py
-#      - LC_ALL=C.UTF-8
-#      - LANG=C.UTF-8
-#      - PYTHONUNBUFFERED=1
+  arena:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-arena
+    image: pogona_arena:${arena_tag-latest}
+    container_name: arena
+    privileged: true
+    depends_on:
+      - cache
+      - db
+      - mqtt
+    volumes:
+    - ../pogona_hunter:/pogona_hunter
+    - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    - ${MEDIA_DIR-/tmp}:/arena/media
+    restart: "no"
+    runtime: nvidia
+    command: "flask run --host=0.0.0.0"
+    ports:
+      - 3350:8888
+      - 3351:5000
+    environment:
+      - FLASK_APP=api.py
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+      - PYTHONUNBUFFERED=1
+      - GENICAM_GENTL64_PATH=/arena/Vimba_6_0/VimbaUSBTL/CTI/x86_64bit
 
   app:
     build:

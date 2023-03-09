@@ -23,7 +23,7 @@ management_url = env('MANAGEMENT_URL', f'http://localhost:{FLASK_PORT}')
 DISABLE_ARENA_SCREEN = env.bool('DISABLE_ARENA_SCREEN', 0)
 
 # Cache (Redis)
-redis_host = env('REDIS_HOST', 'cache')
+redis_host = env('REDIS_HOST', 'localhost')
 websocket_url = env('WEBSOCKET_URL', 'ws://localhost:6380')
 ui_console_channel = "cmd/visual_app/console"
 # listeners that should listen only during an experiment
@@ -85,11 +85,12 @@ arena_modules = {
     'predictors': {
         'deeplabcut': ('analysis.predictors.deeplabcut', 'DLCPose'),
         'tongue_out': ('analysis.predictors.tongue_out', 'TongueOutAnalyzer'),
-        'pogona_head': ('analysis.predictors.tongue_out', 'TongueOutAnalyzer')
+        'pogona_head': ('analysis.predictors.pogona_head', 'PogonaHead')
     }
 }
 default_exposure = 5000
 cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
+camera_on_min_duration = env('camera_on_min_duration', 10*60)
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 output_dir = env('OUTPUT_DIR', '../output/recordings')
 output_dir_key = 'output_dir'
@@ -142,3 +143,7 @@ db_engine = env('DB_ENGINE', 'postgresql+psycopg2')
 db_user = env('DB_USER', 'postgres')
 db_password = env('DB_PASSWORD', 'password')
 sqlalchemy_url = f'{db_engine}://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
+
+# Telegram
+TELEGRAM_CHAT_ID = env('TELEGRAM_CHAT_ID', '725002866')
+TELEGRAM_TOKEN = env('TELEGRAM_TOKEN')

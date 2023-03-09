@@ -1,165 +1,73 @@
-FROM ubuntu:18.04
+FROM nvidia/cuda:11.2.0-devel-ubuntu18.04
 # Built using PyImageSearch guide:
 # http://www.pyimagesearch.com/2015/06/22/install-opencv-3-0-and-python-2-7-on-ubuntu/
 
 ARG DEBIAN_FRONTEND
 ENV DEBIAN_FRONTEND=noninteractive
+ARG ENV_FILE
+ENV ENV_FILE=${ENV_FILE:-./Arena/.env.prod}
+ARG ROOT_DIR
+ENV ROOT_DIR=${ROOT_DIR:-/data/Pogona_Pursuit}
 # Install dependencies
 RUN apt-get -qq update && apt-get -qq upgrade -y && apt-get -qq install -y \
-  wget \
-  unzip \
-  libtbb2 \
-  libtbb-dev && \
-apt-get -qq install -y \
-  build-essential \
-  cmake \
-  git \
-  x11-xserver-utils \
-  pkg-config \
-  libjpeg8-dev \
-  libtiff5-dev \
-  libpng-dev \
-  libgtk2.0-dev \
-  libavcodec-dev \
-  libavformat-dev \
-  libswscale-dev \
-  libv4l-dev \
-  libatlas-base-dev \
-  gfortran \
-  libhdf5-dev \
-  python3.7-dev \
-  python3-tk
+      wget \
+      unzip \
+      libtbb2 \
+      libtbb-dev && \
+    apt-get -qq install -y \
+      build-essential \
+      cmake \
+      git \
+      x11-xserver-utils \
+      pkg-config \
+      libjpeg8-dev \
+      libtiff5-dev \
+      libpng-dev \
+      libgtk2.0-dev \
+      libavcodec-dev \
+      libavformat-dev \
+      libswscale-dev \
+      libv4l-dev \
+      libatlas-base-dev \
+      gfortran \
+      libhdf5-dev \
+      python3.8-dev \
+      python3-tk
 
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 1
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
 RUN apt-get -qq install -y python3-pip && \
-pip3 install --upgrade pip && \
-pip3 install numpy && \
-apt-get autoclean && apt-get clean && \
-rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-gnupg2 curl ca-certificates && \
-    curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub | apt-key add - && \
-    echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64 /" > /etc/apt/sources.list.d/cuda.list && \
-    echo "deb https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64 /" > /etc/apt/sources.list.d/nvidia-ml.list
-
-ENV CUDA_VERSION 10.0.130
-ENV CUDA_PKG_VERSION 10-0=$CUDA_VERSION-1
-# For libraries in the cuda-compat-* package: https://docs.nvidia.com/cuda/eula/index.html#attachment-a
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        cuda-cudart-$CUDA_PKG_VERSION \
-cuda-compat-10-0 && \
-ln -s cuda-10.0 /usr/local/cuda
+    pip3 install --upgrade pip && \
+    pip3 install numpy && \
+    apt-get autoclean && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Required for nvidia-docker v1
 RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf && \
     echo "/usr/local/nvidia/lib64" >> /etc/ld.so.conf.d/nvidia.conf
 
-ENV PATH /usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
-ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64
-
-# nvidia-container-runtime
-ENV NVIDIA_VISIBLE_DEVICES all
-ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
-ENV NVIDIA_REQUIRE_CUDA "cuda>=10.0 brand=tesla,driver>=384,driver<385 brand=tesla,driver>=410,driver<411"
-
-ENV NCCL_VERSION 2.4.8
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cuda-libraries-$CUDA_PKG_VERSION \
-cuda-nvtx-$CUDA_PKG_VERSION \
-libnccl2=$NCCL_VERSION-1+cuda10.0 && \
-    apt-mark hold libnccl2
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        cuda-nvml-dev-$CUDA_PKG_VERSION \
-        cuda-command-line-tools-$CUDA_PKG_VERSION \
-cuda-libraries-dev-$CUDA_PKG_VERSION \
-        cuda-minimal-build-$CUDA_PKG_VERSION \
-        libnccl-dev=$NCCL_VERSION-1+cuda10.0
-
-ENV LIBRARY_PATH /usr/local/cuda/lib64/stubs
-ENV CUDNN_VERSION 7.6.5.32
-LABEL com.nvidia.cudnn.version="${CUDNN_VERSION}"
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcudnn7=$CUDNN_VERSION-1+cuda10.0 \
-libcudnn7-dev=$CUDNN_VERSION-1+cuda10.0 \
-&& \
-    apt-mark hold libcudnn7
-
-
-# Download OpenCV 4.2.0 and install
-# step 10
-RUN cd ~ && \
-  wget https://github.com/Itseez/opencv/archive/4.2.0.zip && \
-  unzip 4.2.0.zip && \
-  mv ~/opencv-4.2.0/ ~/opencv/ && \
-  rm -rf ~/4.2.0.zip && \
-  cd ~ && \
-  wget https://github.com/opencv/opencv_contrib/archive/4.2.0.zip -O 4.2.0-contrib.zip && \
-  unzip 4.2.0-contrib.zip && \
-  mv opencv_contrib-4.2.0 opencv_contrib && \
-  rm -rf ~/4.2.0-contrib.zip && \
-  cd /root/opencv && \
-  mkdir build && \
-  cd build && \
-  cmake -D CMAKE_BUILD_TYPE=RELEASE \
-        -D CMAKE_INSTALL_PREFIX=/usr/local \
-        -D INSTALL_C_EXAMPLES=OFF \
-        -D INSTALL_PYTHON_EXAMPLES=ON \
-        -D WITH_TBB=ON \
-        -D WITH_CUDA=ON \
-        -D BUILD_opencv_cudacodec=OFF \
-        -D ENABLE_FAST_MATH=1 \
-        -D CUDA_FAST_MATH=1 \
-        -D WITH_CUBLAS=1 \
-        -D WITH_V4L=ON \
-        -D WITH_QT=OFF \
-        -D WITH_OPENGL=ON \
-        -D WITH_GSTREAMER=ON \
-        -D OPENCV_GENERATE_PKGCONFIG=ON \
-        -D OPENCV_PC_FILE_NAME=opencv.pc \
-        -D OPENCV_ENABLE_NONFREE=ON \
-        -D WITH_CUDNN=ON \
-        -D OPENCV_DNN_CUDA=ON \
-        -D CUDA_ARCH_BIN=7.5 \
-        -D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib/modules \
-        -D BUILD_EXAMPLES=ON .. && \
-  cd ~/opencv/build && \
-  make -j $(nproc) && \
-  make install && \
-  echo "/usr/local/lib" >> /etc/ld.so.conf.d/opencv.conf && \
-  ldconfig && \
-  # clean opencv repos
-  rm -rf ~/opencv/build && \
-  rm -rf ~/opencv/3rdparty && \
-  rm -rf ~/opencv/doc && \
-  rm -rf ~/opencv/include && \
-  rm -rf ~/opencv/platforms && \
-  rm -rf ~/opencv/modules && \
-  rm -rf ~/opencv_contrib/build && \
-  rm -rf ~/opencv_contrib/doc
-
-
-RUN mkdir /arena
-WORKDIR /arena
-
-COPY ./requirements .
-COPY ./Arena .
-
+RUN mkdir -p $ROOT_DIR
+WORKDIR $ROOT_DIR
+COPY ./requirements ./requirements
+COPY ./Arena ./Arena
+COPY $ENV_FILE ./Arena/.env
 RUN apt-get -qq update && apt-get -qq install -y lsb-release \
-  libusb-1.0.0
+  libusb-1.0.0 libpq-dev udev
 
 ENV DEBIAN_FRONTEND=dialog
-RUN pip3 install -r arena.txt
+RUN pip3 install -r requirements/arena.txt
+RUN pip3 install -r requirements/pose.txt
 # Installation of deeplabcut-live
-RUN pip3 install --no-deps deeplabcut-live colorcet
+# RUN pip3 install --no-deps deeplabcut-live colorcet
 # Spinnaker
-RUN pip3 install spinnaker/spinnaker_python-2.0.0.147-cp37-cp37m-linux_x86_64.whl
-RUN cd spinnaker && (echo "yes" && cat) | ./install_spinnaker.sh
+#RUN pip3 install spinnaker/spinnaker_python-2.0.0.147-cp37-cp37m-linux_x86_64.whl
+#RUN cd spinnaker && (echo "yes" && cat) | ./install_spinnaker.sh
 
 ENV TZ=Asia/Jerusalem
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN echo 'alias python="python3.7"' >> ~/.bashrc
+RUN echo 'alias python="python3.8"' >> ~/.bashrc
+
+RUN cd Arena && tar xvf Vimba64_v6.0_Linux.tgz && cd Vimba_6_0/VimbaUSBTL && ./Install.sh
+RUN cd Arena/Vimba_6_0/VimbaPython && ./Install.sh
+
+RUN apt-get update && apt-get install ffmpeg libsm6 libxext6  -y

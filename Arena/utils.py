@@ -1,7 +1,7 @@
-import logging
 import os
 import re
-
+import requests
+import json
 import serial
 import time
 import threading
@@ -11,6 +11,7 @@ import asyncio
 from io import StringIO
 from datetime import datetime
 from subprocess import Popen, PIPE
+from filterpy.kalman import KalmanFilter
 import config
 
 
@@ -183,7 +184,44 @@ def get_sys_metrics():
     return {'gpu_usage': gpu_usage, 'cpu_usage': cpu_usage, 'memory_usage': memory_usage, 'storage': storage}
 
 
-class KalmanFilter:
+class Kalman:
+    def __init__(self, dt=1/60):
+        self.is_initiated = False
+        # Define the state transition matrix
+        F = np.array([[1, 0, dt, 0, 0.5 * dt ** 2, 0], [0, 1, 0, dt, 0, 0.5 * dt ** 2],
+                          [0, 0, 1, 0, dt, 0], [0, 0, 0, 1, 0, dt],
+                          [0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]])
+        # Define the input matrix
+        B = np.array([[0.5 * dt ** 2, 0], [dt, 0], [1, 0], [0, 0.5 * dt ** 2], [0, dt], [0, 1]])
+        # Define the observation matrix
+        H = np.array([[1, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]])
+        self.kf = KalmanFilter(dim_x=6, dim_z=2)
+        self.kf.F = F
+        self.kf.B = B
+        self.kf.H = H
+        P0 = np.eye(6)  # initial covariance matrix
+        self.kf.P = P0
+        # Define the process noise and observation noise
+        q = 0.01  # process noise variance
+        r = 0.1  # observation noise variance
+        self.kf.Q = np.diag([q, q, q, q, q, q])
+        self.kf.R = np.diag([r, r])
+
+    def init(self, x0, y0):
+        if not np.isnan(x0) and not np.isnan(y0):
+            x0, y0 = 0, 0
+        self.kf.x = np.array([x0, y0, 0, 0, 0, 0])
+        self.is_initiated = True
+
+    def get_filtered(self, x, y):
+        self.kf.predict()
+        if not np.isnan(x) and not np.isnan(y):
+            z = np.array([x, y])
+            self.kf.update(z)
+        return self.kf.x
+
+
+class KalmanFilterScratch:
     def __init__(self):
         """
         Parameters:
@@ -217,7 +255,7 @@ class KalmanFilter:
                 self.update(pos)
             self.predict()
 
-        return np.array(self.x).ravel()[:2]
+        return np.array(self.x).ravel()
 
     def update(self, measurement):
         '''
@@ -251,3 +289,19 @@ class KalmanFilter:
         # PREDICT x, P based on motion
         self.x = self.F * self.x + self.motion
         self.P = self.F * self.P * self.F.T + self.Q
+
+
+def send_telegram_message(message: str):
+    if not config.TELEGRAM_TOKEN:
+        print(f'please specify TELEGRAM_TOKEN in .env file; cancel message send')
+        return
+    headers = {'Content-Type': 'application/json'}
+    data_dict = {'chat_id': config.TELEGRAM_CHAT_ID,
+                 'text': message,
+                 'parse_mode': 'HTML',
+                 'disable_notification': True}
+    data = json.dumps(data_dict)
+    response = requests.post(f'https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendMessage',
+                             data=data,
+                             headers=headers)
+    return response
