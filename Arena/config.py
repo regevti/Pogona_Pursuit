@@ -92,12 +92,14 @@ default_exposure = 5000
 cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
 camera_on_min_duration = env('camera_on_min_duration', 10*60)
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
-output_dir = env('OUTPUT_DIR', '../output/recordings')
-output_dir_key = 'output_dir'
-capture_images_dir = env('capture_images_dir', '../output/captures')
+output_dir_key = 'output_dir'  # used for cam_config
 pixels2cm = 0.01833304668870419
 temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
 max_video_time_sec = env.int('max_video_time_sec', 60*10)
+OUTPUT_DIR = env('OUTPUT_DIR', '/data/Pogona_Pursuit/output')
+recordings_output_dir = env('recordings_output_dir', f'{OUTPUT_DIR}/recordings')
+capture_images_dir = env('capture_images_dir', f'{OUTPUT_DIR}/captures')
+
 mqtt = {
     'host': 'localhost',
     'port': 1883,
@@ -110,15 +112,15 @@ SERIAL_PORT_TEMP = env('SERIAL_PORT_TEMP', '/dev/ttyACM0')
 SERIAL_BAUD = env.int('SERIAL_BAUD', 9600)
 
 # Calibration
-calibration_dir = env('calibration_dir', '../output/calibrations')
+calibration_dir = env('calibration_dir', f'{OUTPUT_DIR}/calibrations')
 min_calib_images = env.int('min_calib_images', 7)
 
 # Schedules
 schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
 
 # Experiments
-experiments_dir = env('EXPERIMENTS_DIR', "../output/experiments")
-explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', experiments_dir)
+EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments")
+explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', EXPERIMENTS_DIR)
 extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
 time_between_blocks = env.int('time_between_blocks', 300)
 experiments_timeout = env.int('EXPERIMENTS_TIMEOUT', 60 * 60)
@@ -147,3 +149,6 @@ sqlalchemy_url = f'{db_engine}://{db_user}:{db_password}@{db_host}:{db_port}/{db
 # Telegram
 TELEGRAM_CHAT_ID = env('TELEGRAM_CHAT_ID', '725002866')
 TELEGRAM_TOKEN = env('TELEGRAM_TOKEN')
+
+# Predictors
+DLC_FOLDER = env('DLC_FOLDER', f'{OUTPUT_DIR}/models/deeplabcut')

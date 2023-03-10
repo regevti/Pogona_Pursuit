@@ -1,4 +1,6 @@
 import datetime
+import math
+
 import yaml
 import cv2
 import time
@@ -17,12 +19,14 @@ from multiprocessing.pool import ThreadPool
 import os
 if Path('.').resolve().name != 'Arena':
     os.chdir('..')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import config
 from calibration import CharucoEstimator
 from loggers import get_logger
 from utils import run_in_thread, Kalman
 from sqlalchemy import cast, Date
 from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, PoseEstimation
+from image_handlers.video_writers import OpenCVWriter
 
 
 MIN_DISTANCE = 5  # cm
@@ -52,7 +56,8 @@ class ArenaPose:
         self.current_position = (None, None)
         self.current_velocity = None
         self.is_initialized = False
-        self.screen_coords = get_screen_coords('pogona_pursuit2')
+        self.example_writer = None
+        # self.screen_coords = get_screen_coords('pogona_pursuit2')
 
     def init(self, img, caliber_only=False):
         if not caliber_only:
@@ -63,8 +68,8 @@ class ArenaPose:
         if not self.caliber.is_on:
             raise Exception('Could not initiate caliber; closing ArenaPose')
 
-    def start_new_session(self):
-        self.kalman = Kalman()
+    def start_new_session(self, fps):
+        self.kalman = Kalman(dt=1/fps)
         self.predictions = []
 
     def load_predictor(self):
@@ -73,14 +78,23 @@ class ArenaPose:
             prd_module = importlib.import_module(prd_module)
             self.predictor = getattr(prd_module, prd_class)(self.cam_name)
 
-    def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True):
+    def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True, is_create_example_video=False):
+        """
+        predict pose for a given video
+        @param db_video_id: The DB index of the video in the videos table
+        @param video_path: The path of the video
+        @param is_save_cache: save predicted dataframe as parquet file
+        @param is_create_example_video: create annotated video with predictions
+        @return:
+        """
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
-        self.start_new_session()
         frames_times = self.load_frames_times(db_video_id)
 
         pose_df = []
         cap = cv2.VideoCapture(video_path)
         n_frames = min(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), len(frames_times))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        self.start_new_session(fps)
         for frame_id in tqdm(range(n_frames), desc=f'{Path(video_path).stem}'):
             ret, frame = cap.read()
             if not self.is_initialized:
@@ -89,12 +103,15 @@ class ArenaPose:
             timestamp = frames_times.loc[frame_id, 'time'].timestamp()
             pred_row = self.predictor.predict(frame, frame_id)
             pred_row = self.analyze_frame(timestamp, pred_row, db_video_id)
+            if is_create_example_video:
+                self.write_to_example_video(frame, frame_id, pred_row, fps, video_path)
             pose_df.append(pred_row)
         cap.release()
 
         pose_df = pd.concat(pose_df)
         if is_save_cache:
             self.save_predicted_video(pose_df, video_path)
+        self.close_example_writer()
         return pose_df
 
     def predict_frame(self, frame, frame_id) -> pd.DataFrame:
@@ -127,7 +144,8 @@ class ArenaPose:
                 x, y, vx, vy, ax, ay = self.kalman.get_filtered(x, y)
                 for col in self.kinematic_cols:
                     pred_row.loc[pred_row.index[0], (col, '')] = locals()[col]
-                self.predictions.append((timestamp, x, y))
+                if not np.isnan(x) or not np.isnan(y):
+                    self.predictions.append((timestamp, x, y))
             else:
                 pred_row.loc[pred_row.index[0], (bodypart, 'x')] = x
                 pred_row.loc[pred_row.index[0], (bodypart, 'y')] = y
@@ -197,12 +215,31 @@ class ArenaPose:
         cache_path = self.get_predicted_cache_path(video_path)
         pose_df.to_parquet(cache_path)
 
+    def write_to_example_video(self, frame, frame_id, pred_row, fps, video_path):
+        if self.example_writer is None:
+            example_path = self.get_predicted_cache_path(video_path).with_suffix('.avi').as_posix()
+            self.example_writer = OpenCVWriter(frame, fps, is_color=True, full_path=example_path)
+
+        frame = self.predictor.plot_predictions(frame, frame_id, pred_row)
+        x, y = 40, 200
+        for col in self.kinematic_cols:
+            frame = self.predictor.put_text(f'{col}={pred_row[col].iloc[0]:.1f}', frame, x, y)
+            y += 30
+        if 'angle' in pred_row.columns:
+            frame = self.predictor.put_text(f'angle={math.degrees(pred_row["angle"].iloc[0]):.1f}', frame, x, y)
+        self.example_writer.write(frame)
+
+    def close_example_writer(self):
+        if self.example_writer is not None:
+            self.example_writer.close()
+            self.example_writer = None
+
     @staticmethod
     def get_predicted_cache_path(video_path) -> Path:
         preds_dir = Path(video_path).parent / 'predictions'
         preds_dir.mkdir(exist_ok=True)
         vid_name = Path(video_path).with_suffix('.parquet').name
-        return preds_dir / f'{MODEL_NAME}_{vid_name}'
+        return preds_dir / f'{MODEL_NAME}__{vid_name}'
 
     def is_moved(self, x, y):
         return not self.last_commit or distance.euclidean(self.last_commit[1:], (x, y)) < MIN_DISTANCE
@@ -212,8 +249,8 @@ class ArenaPose:
 
 
 class DLCArenaPose(ArenaPose):
-    def __init__(self, cam_name, is_commit_db=True, orm=None):
-        super().__init__(cam_name, 'deeplabcut', is_commit_db, orm)
+    def __init__(self, cam_name, is_commit_db=True, orm=None, **kwargs):
+        super().__init__(cam_name, 'deeplabcut', is_commit_db, orm, **kwargs)
         self.kalman = {}
         self.commit_bodypart = 'mid_ears'
         self.pose_df = pd.DataFrame()
@@ -461,31 +498,35 @@ def compare_sides(animal_id='PV80'):
 
 
 def foo():
-    video_path = Path('/data/Pogona_Pursuit/output/experiments/PV80/20221211/block1/videos/front_20221211T113717.mp4')
+    video_path = Path(f'{config.OUTPUT_DIR}/experiments/PV80/20221211/block1/videos/front_20221211T113717.mp4')
     ap = DLCArenaPose('front', is_commit_db=False)
-    pose_df = ap.predict_video(video_path=video_path)
-    pose_df
+    pose_df = ap.predict_video(video_path=video_path, is_create_example_video=True)
+    return
 
 
-def convert_all_videos(animal_id='PV80'):
-    all_videos = list(Path(f'../output/experiments/{animal_id}').rglob('*front*.mp4'))
+def convert_all_videos(animal_id=None):
+    p = Path(config.EXPERIMENTS_DIR)
+    if animal_id:
+        p = p / animal_id
+    all_videos = list(p.rglob('*front*.mp4'))
     ap = DLCArenaPose('front', is_commit_db=False)
     ap.initiate_from_video(all_videos[0])
-    videos = [v for v in all_videos if not ap.get_converted_cache_path(v).exists()]
-    print(f'found {len(videos)}/{len(all_videos)} to convert')
+    videos = [v for v in all_videos if not ap.get_predicted_cache_path(v).exists()]
+    print(f'found {len(videos)}/{len(all_videos)} to predict')
     for i, video_path in enumerate(videos):
         try:
             ap = DLCArenaPose('front', is_commit_db=False)
-            ap.load_predicted(video_path, prefix=f'({i+1}/{len(videos)}) ')
+            # ap.load_predicted(video_path, prefix=f'({i+1}/{len(videos)}) ')
+            ap.predict_video(video_path=video_path, is_create_example_video=False)
         except MissingFile as exc:
             print(exc)
-        # except Exception:
-        #     print(f'\n\n{traceback.format_exc()}\n')
+        except Exception:
+            print(f'\n\n{traceback.format_exc()}\n')
 
 
 if __name__ == '__main__':
-    foo()
-    # convert_all_videos()
+    # foo()
+    convert_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()

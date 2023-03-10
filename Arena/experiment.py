@@ -208,7 +208,7 @@ class Experiment:
 
     @property
     def experiment_path(self):
-        return f'{config.experiments_dir}/{self.animal_id}/{self.day}'
+        return f'{config.EXPERIMENTS_DIR}/{self.animal_id}/{self.day}'
 
     @property
     def experiment_duration(self):
