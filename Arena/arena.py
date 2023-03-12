@@ -684,7 +684,7 @@ class ArenaManager(SyncManager):
         folder_name = datetime_string()
         if folder_prefix != '':
             folder_name = f'{folder_prefix}_{folder_name}'
-        output = f"{output_dir or config.output_dir}/{folder_name}"
+        output = f"{output_dir or config.recordings_output_dir}/{folder_name}"
         return mkdir(output)
 
 

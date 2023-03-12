@@ -424,7 +424,7 @@ def record(exposure=config.exposure_time, cameras=None, output=None, folder_pref
         folder_name = datetime_string()
         if folder_prefix:
             folder_name = f'{folder_prefix}_{folder_name}'
-        output = f"{config.output_dir}/{folder_name}"
+        output = f"{config.recordings_output_dir}/{folder_name}"
     output = mkdir(output)
 
     filtered = [(cam, acquire_stop, output, exposure, cache, log_stream, is_use_predictions) for cam in cam_list]

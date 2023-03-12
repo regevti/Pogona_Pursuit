@@ -12,3 +12,4 @@ environs==8.0.0
 python-dateutil==2.8.1
 
 pandas==1.4.3
+pyarrow==10.0.1

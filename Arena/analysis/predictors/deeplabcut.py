@@ -7,11 +7,10 @@ import yaml
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
+import config
 
-
-DLC_FOLDER = '/data/Pogona_Pursuit/output/models/deeplabcut'
 MODEL_NAME = 'front_head_only_resnet_50'
-EXPORTED_MODEL = f'{DLC_FOLDER}/{MODEL_NAME}/'
+EXPORTED_MODEL = f'{config.DLC_FOLDER}/{MODEL_NAME}/'
 THRESHOLD = 0.5
 RELEVANT_BODYPARTS = ['nose', 'right_ear', 'left_ear', 'mid_ears']
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
@@ -67,8 +66,42 @@ class DLCPose:
         s.sort_index(axis=1, level=0, inplace=True)
         return s
 
+    def plot_predictions(self, frame, frame_id, df, parts2plot=None):
+        """scatter the body parts prediction dots"""
+        x_legend, y_legend = 30, 30
+        parts2plot = parts2plot or self.bodyparts
+        for i, part in enumerate(df.columns.get_level_values(0).unique()):
+            if not part or (parts2plot and part not in parts2plot):
+                continue
+            elif df[part].isnull().values.any() or df[part]['prob'].loc[frame_id] < THRESHOLD:
+                continue
+
+            cX = round(df[part]['cam_x'][frame_id])
+            cY = round(df[part]['cam_y'][frame_id])
+            color = tuple(int(COLORS[i][j:j + 2], 16) for j in (1, 3, 5))
+            cv2.circle(frame, (cX, cY), 5, color, -1)
+
+            cv2.circle(frame, (x_legend, y_legend), 5, color, -1)
+            self.put_text(part, frame, x_legend + 20, y_legend)
+            y_legend += 30
+        return frame
+
+    def put_text(self, text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, font=cv2.FONT_HERSHEY_SIMPLEX):
+        """
+        :param text: The text to put on frame
+        :param frame: The frame numpy array
+        :param x: x
+        :param y: y
+        :param font_scale:
+        :param color: default: yellow (255,255,0)
+        :param thickness: in px, default 2px
+        :param font: font
+        :return: frame with text
+        """
+        return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
+
     def load_dlc_config(self):
-        config_path = Path(DLC_FOLDER) / 'config.yaml'
+        config_path = Path(config.DLC_FOLDER) / 'config.yaml'
         self.dlc_config = yaml.load(config_path.open(), Loader=yaml.FullLoader)
 
 
@@ -121,25 +154,6 @@ class DLCPose:
 
 
 class PredPlotter:
-    @classmethod
-    def plot_predictions(cls, frame, frame_id, df, parts2plot=None, is_flatted=False):
-        """scatter the body parts prediction dots"""
-        x_legend, y_legend = 30, 30
-        for i, part in enumerate(df.columns.get_level_values(0).unique()):
-            if not part or parts2plot and part not in parts2plot:
-                continue
-            elif part in ['time', 'tongue', 'angle'] or df[part].isnull().values.any() or df[part]['prob'].loc[frame_id] < THRESHOLD:
-                continue
-
-            cX = round(df[part]['cam_x'][frame_id])
-            cY = round(df[part]['cam_y'][frame_id])
-            color = tuple(int(COLORS[i][j:j + 2], 16) for j in (1, 3, 5))
-            cv2.circle(frame, (cX, cY), 5, color, -1)
-
-            cv2.circle(frame, (x_legend, y_legend), 5, color, -1)
-            cls.put_text(part, frame, x_legend + 20, y_legend)
-            y_legend += 30
-        return frame
 
     @staticmethod
     def plot_single_part(df, frame_id, frame):
@@ -151,17 +165,3 @@ class PredPlotter:
         cv2.circle(frame, (cX, cY), 7, color, -1)
         return frame
 
-    @staticmethod
-    def put_text(text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, font=cv2.FONT_HERSHEY_SIMPLEX):
-        """
-        :param text: The text to put on frame
-        :param frame: The frame numpy array
-        :param x: x
-        :param y: y
-        :param font_scale:
-        :param color: default: yellow (255,255,0)
-        :param thickness: in px, default 2px
-        :param font: font
-        :return: frame with text
-        """
-        return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
