@@ -11,10 +11,6 @@ cache = RedisCache()
 
 
 class AlliedVisionCamera(Camera):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.camera_time_delta = 0.0
-        self.last_queue_warning_time = None
 
     def configure(self, cam):
         try:
@@ -94,12 +90,6 @@ class AlliedVisionCamera(Camera):
         finally:
             cam.queue_frame(frame)
 
-    def update_time_delta(self, cam):
-        cam.TimestampLatch.run()
-        cam_time = cam.TimestampLatchValue.get()  # in nanosecs
-        server_time = time.time_ns()
-        self.camera_time_delta = (server_time - cam_time) / 1e9
-
 
 def init():
     info_df = scan_cameras()
@@ -111,7 +101,8 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
     cam_names = []
     with system as v:
         cams = v.get_all_cameras()
-        print('Cameras found: {}'.format(len(cams)))
+        if is_print:
+            print('Cameras found: {}'.format(len(cams)))
         info = []
         for cam in cams:
             info.append(get_cam_info(cam))

@@ -1,15 +1,105 @@
+import cv2
 import time
 import re
-import cv2
+import os
 import json
 import pandas as pd
 import numpy as np
-from multiprocessing.dummy import Pool
 import PySpin
-import config
+from multiprocessing.dummy import Pool
 from cache import CacheColumns
-from mqtt import MQTTPublisher
-from utils import get_logger, calculate_fps, mkdir, get_log_stream, datetime_string
+from utils import calculate_fps, mkdir, datetime_string
+from arena import Camera
+import config
+from arrayqueues.shared_arrays import Full
+from cache import RedisCache, CacheColumns as cc
+
+
+cache = RedisCache()
+
+
+class FLIRCamera(Camera):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _run(self):
+        system = PySpin.System.GetInstance()
+        cam_list = system.GetCameras()
+        cam = self.get_cam(cam_list)
+        cam.Init()
+        self.configure_camera(cam)
+        cam.BeginAcquisition()
+
+        while not self.stop_signal.is_set():
+            image_result = cam.GetNextImage(2000)
+            if image_result.IsIncomplete():  # Ensure image completion
+                sts = image_result.GetImageStatus()
+                self.logger.warning(f'Image incomplete with image status {sts}')
+                if sts == 9:
+                    self.logger.warning(f'Breaking after status 9')
+                    image_result.Release()
+                    break
+            else:
+                self.image_handler(image_result)
+
+        if cam.IsStreaming():
+            cam.EndAcquisition()
+        cam.DeInit()
+        cam_list.Clear()
+
+    def image_handler(self, image_result: PySpin.ImagePtr):
+        t0 = time.time()
+        waiting_time = 0.1
+        if self.stop_signal.is_set():
+            return
+        img = image_result.GetNDArray()
+        timestamp = image_result.GetTimeStamp() / 1e9 + self.camera_time_delta
+        while True:
+            try:
+                self.frames_queue.put(img, timestamp)
+                self.calc_fps(timestamp)
+                break
+            except Full:
+                if (time.time() - t0) > waiting_time:
+                    if not self.last_queue_warning_time or (time.time() - self.last_queue_warning_time > 60):
+                        self.logger.warning(f'Queue is still full after waiting {waiting_time}')
+                        self.last_queue_warning_time = time.time()
+                    break
+
+    def configure_camera(self, cam):
+        """Configure camera for trigger mode before acquisition"""
+        try:
+            cam.AcquisitionFrameRateEnable.SetValue(True)
+            cam.AcquisitionFrameRate.SetValue(int(self.cam_config['fps']))
+            cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
+            # cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
+            # cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
+            cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
+            # cam.LineSelector.SetValue(PySpin.LineSelector_Line1)
+            # cam.LineMode.SetValue(PySpin.LineMode_Input)
+            # cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
+            cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput(cam))
+            cam.ExposureTime.SetValue(int(self.cam_config['exposure']))
+            self.logger.debug(f'Finished Configuration')
+
+        except PySpin.SpinnakerException as exc:
+            self.logger.error(f'(configure_images); {exc}')
+
+    def get_cam(self, cam_list):
+        cam_id = str(self.cam_config['id'])
+        for cam in cam_list:
+            if get_device_id(cam) == cam_id:
+                return cam
+
+    def get_max_throughput(self, cam):
+        try:
+            max_throughput = int(cam.DeviceMaxThroughput.GetValue())
+        except Exception as exc:
+            self.logger.warning(exc)
+            max_throughput = 4e8
+
+        return max_throughput
+
 
 info_fields = [
     'AcquisitionFrameRate',
@@ -27,42 +117,73 @@ info_fields = [
     'DeviceLinkSpeed',
 ]
 
-################################################ Predictor ################################################
 
-IS_PREDICTOR_READY = False
-if not config.is_disable_predictor:
-    try:
-        from Prediction import predictor
-        IS_PREDICTOR_READY = True
-    except Exception as exc:
-        print(f'Error loading detector: {exc}')
+def scan_cameras(is_print=True) -> pd.DataFrame:
+    df, cam_names = [], []
+    system = PySpin.System.GetInstance()
+    cam_list = system.GetCameras()
+    for cam in cam_list:
+        sc = SpinCamera(cam)
+        if not sc.is_firefly():
+            continue
+        d = {'DeviceID': sc.device_id}
+        d.update({k: v for k, v in zip(info_fields, sc.info())})
+        df.append(d)
+        # find camera name from cam_config.yaml
+        cam_name = 'unknown'
+        for n, cam_config in config.cameras.items():
+            if str(cam_config['id']) == sc.device_id:
+                cam_name = n
+                break
+        cam_names.append(cam_name)
+
+    df = pd.DataFrame(df, index=cam_names)
+    del cam, sc
+    if is_print:
+        output = f'\nCameras Info:\n\n{df.to_string()}\n'
+        print(output)
+    cam_list.Clear()
+    system.ReleaseInstance()
+    return df
+
+
+def get_device_id(cam) -> str:
+    """Get the camera device ID of the cam instance"""
+    nodemap_tldevice = cam.GetTLDeviceNodeMap()
+    device_id = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
+    m = re.search(r'\d{8}', device_id)
+    if not m:
+        return device_id
+    return m[0]
+
+
 
 ################################################ End Predictor ################################################
 
 
 class SpinCamera:
-    def __init__(self, cam: PySpin.ArenaProcess, acquire_stop=None, dir_path=None, cache=None, log_stream=None,
+    def __init__(self, cam, acquire_stop=None, dir_path=None, cache=None, log_stream=None,
                  is_use_predictions=False):
         self.cam = cam
-        self.acquire_stop = acquire_stop or {'num_frames': config.default_num_frames}
+        self.acquire_stop = acquire_stop or {'num_frames': 0}
         self.dir_path = dir_path
         self.cache = cache
         self.is_use_predictions = is_use_predictions
         self.thread_event = None
-        self.validate_acquire_stop()
+        # self.validate_acquire_stop()
 
         self.is_ready = False  # ready for acquisition
         self.video_out = None
         self.start_acquire_time = None
-        self.mqtt_client = MQTTPublisher()
+        # self.mqtt_client = MQTTPublisher()
 
         self.cam.Init()
-        self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
+        # self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
         self.name = self.get_camera_name()
         if self.is_realtime_mode:
             self.logger.info('Working in realtime mode')
             self.predictor_experiment_ids = []
-            self.predictor = predictor.gen_hit_predictor(self.logger, dir_path)
+            # self.predictor = predictor.gen_hit_predictor(self.logger, dir_path)
 
     def begin_acquisition(self, exposure):
         """Main function for running camera acquisition in trigger mode"""
@@ -158,7 +279,7 @@ class SpinCamera:
         if self.is_realtime_mode:
             self.handle_prediction(img, i)
 
-        if not self.is_realtime_mode or config.is_predictor_experiment:
+        if not self.is_realtime_mode:# or config.is_predictor_experiment:
             if self.dir_path and self.video_out is None:
                 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
                 h, w = img.shape[:2]
@@ -168,16 +289,16 @@ class SpinCamera:
 
         # img.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
 
-    def validate_acquire_stop(self):
-        for key, value in self.acquire_stop.items():
-            assert key in config.acquire_stop_options, f'unknown acquire_stop: {key}'
-            if config.acquire_stop_options[key] == 'cache':
-                assert self.cache is not None
-            elif config.acquire_stop_options[key] == 'event':
-                assert value is not None
-                self.thread_event = value
-            else:
-                assert isinstance(value, int), f'acquire stop {key}: expected type int, received {type(value)}'
+    # def validate_acquire_stop(self):
+    #     for key, value in self.acquire_stop.items():
+    #         assert key in config.acquire_stop_options, f'unknown acquire_stop: {key}'
+    #         if config.acquire_stop_options[key] == 'cache':
+    #             assert self.cache is not None
+    #         elif config.acquire_stop_options[key] == 'event':
+    #             assert value is not None
+    #             self.thread_event = value
+    #         else:
+    #             assert isinstance(value, int), f'acquire stop {key}: expected type int, received {type(value)}'
 
     def is_acquire_allowed(self, iteration):
         """Check all given acquire_stop conditions"""
@@ -289,9 +410,10 @@ class SpinCamera:
             return True
 
     def get_camera_name(self):
-        for name, device_id in config.camera_names.items():
-            if self.device_id == device_id:
-                return name
+        return
+        # for name, device_id in config.camera_names.items():
+        #     if self.device_id == device_id:
+        #         return name
 
     def management_log(self, msg):
         self.mqtt_client.publish_event(config.ui_console_channel, f'>> Camera {self.name}: {msg}')
@@ -311,17 +433,10 @@ class SpinCamera:
 
     @property
     def is_realtime_mode(self):
-        return IS_PREDICTOR_READY and self.is_use_predictions and self.name == config.realtime_camera
+        return self.is_use_predictions and self.name == config.realtime_camera
 
 
-def get_device_id(cam) -> str:
-    """Get the camera device ID of the cam instance"""
-    nodemap_tldevice = cam.GetTLDeviceNodeMap()
-    device_id = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
-    m = re.search(r'\d{8}', device_id)
-    if not m:
-        return device_id
-    return m[0]
+
 
 
 def filter_cameras(cam_list: PySpin.CameraList, cameras_string: str) -> None:
@@ -379,7 +494,7 @@ def start_streaming(sc: SpinCamera):
     del sc
 
 
-def capture_image(camera: str, exposure=config.exposure_time) -> (np.ndarray, None):
+def capture_image(camera: str, exposure=0) -> (np.ndarray, None):
     """
     Capture single image from a camera
     :param camera: The camera name (don't use more than one camera)
@@ -399,7 +514,7 @@ def capture_image(camera: str, exposure=config.exposure_time) -> (np.ndarray, No
     return img
 
 
-def record(exposure=config.exposure_time, cameras=None, output=None, folder_prefix=None,
+def record(exposure=0, cameras=None, output=None, folder_prefix=None,
            cache=None, is_use_predictions=False, **acquire_stop) -> str:
     """
     Record videos from Arena's cameras
@@ -415,7 +530,7 @@ def record(exposure=config.exposure_time, cameras=None, output=None, folder_pref
     assert all(k in config.acquire_stop_options for k in acquire_stop.keys())
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
-    log_stream = get_log_stream()
+    log_stream = None #get_log_stream()
 
     if cameras:
         filter_cameras(cam_list, cameras)

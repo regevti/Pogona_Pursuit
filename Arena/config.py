@@ -77,6 +77,7 @@ shm_buffer_dtype = 'uint8'
 arena_modules = {
     'cameras': {
         'allied_vision': ('cameras.allied_vision', 'AlliedVisionCamera'),
+        'flir': ('cameras.flir', 'FLIRCamera')
     },
     'image_handlers': {
         'pogona_head': ('image_handlers.predictor_handlers', 'PogonaHeadHandler'),
@@ -100,6 +101,8 @@ OUTPUT_DIR = env('OUTPUT_DIR', '/data/Pogona_Pursuit/output')
 recordings_output_dir = env('recordings_output_dir', f'{OUTPUT_DIR}/recordings')
 capture_images_dir = env('capture_images_dir', f'{OUTPUT_DIR}/captures')
 
+# Periphery
+DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False)
 mqtt = {
     'host': 'localhost',
     'port': 1883,
@@ -116,6 +119,7 @@ calibration_dir = env('calibration_dir', f'{OUTPUT_DIR}/calibrations')
 min_calib_images = env.int('min_calib_images', 7)
 
 # Schedules
+DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
 schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
 
 # Experiments
@@ -138,6 +142,7 @@ reward_types = [
 ]
 
 # Database
+DISABLE_DB = env.bool('DISABLE_DB', False)
 db_name = env('DB_NAME', 'arena')
 db_host = env('DB_HOST', 'localhost')
 db_port = env.int('DB_PORT', 5432)

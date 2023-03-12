@@ -1,6 +1,8 @@
 -r base.txt
 
 # Data Science
+pandas==1.4.3
+pyarrow==10.0.1
 jupyterlab==3.4.4
 tqdm==4.64.0
 matplotlib==3.5.2
@@ -8,11 +10,13 @@ seaborn==0.11.0
 scikit-learn==1.1.2
 bbox==0.9.2
 filterpy==1.4.5
+imageio==2.26.0
 
 # API
 Flask==2.2.2
 Flask-Caching==1.9.0
 sentry-sdk==1.10.1
+humanize==4.3.0
 
 # ORM
 sqlalchemy==1.4.39

@@ -106,8 +106,19 @@ class ArenaProcess(mp.Process):
 class Camera(ArenaProcess):
     calc_fps_name = 'cam_fps'
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.camera_time_delta = 0.0
+        self.last_queue_warning_time = None
+
     def __str__(self):
         return f'Cam-{self.cam_name}'
+
+    def update_time_delta(self, cam):
+        cam.TimestampLatch.run()
+        cam_time = cam.TimestampLatchValue.get()  # in nanosecs
+        server_time = time.time_ns()
+        self.camera_time_delta = (server_time - cam_time) / 1e9
 
 
 class ImageSink(ArenaProcess):
@@ -504,6 +515,7 @@ class CameraUnit:
     def is_manual(self):
         """"""
 
+
 class ArenaManager(SyncManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs) #address=(config.arena_manager_address, config.arena_manager_port),
@@ -605,8 +617,9 @@ class ArenaManager(SyncManager):
         management_subs = start_management_subscribers(self.arena_shutdown_event, self.log_queue, subs_dict)
         self.threads.update(management_subs)
         # scheduler
-        self.threads['scheduler'] = Scheduler(self)
-        self.threads['scheduler'].start()
+        if not config.DISABLE_SCHEDULER:
+            self.threads['scheduler'] = Scheduler(self)
+            self.threads['scheduler'].start()
 
     def start_experiment_listeners(self, exp_stop_flag):
         # start experiment listeners
@@ -614,6 +627,8 @@ class ArenaManager(SyncManager):
         self.threads.update(exp_subs)
 
     def update_upcoming_schedules(self):
+        if config.DISABLE_DB:
+            return
         self.schedules = {}
         for s in self.orm.get_upcoming_schedules().all():
             self.schedules[s.id] = f'{s.date.strftime(config.schedule_date_format)} - {s.experiment_name}'
@@ -646,7 +661,7 @@ class ArenaManager(SyncManager):
     def display_info(self, return_string=False):
         if not self.camera_modules or 1:
             return
-        info_df = self.camera_modules[0].scan_cameras()
+        info_df = self.camera_modules[0].scan_cameras(is_print=False)
         with pd.option_context('display.max_colwidth', None,
                                'display.max_columns', None,
                                'display.max_rows', None):

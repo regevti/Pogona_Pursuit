@@ -78,13 +78,15 @@ class ArenaPose:
             prd_module = importlib.import_module(prd_module)
             self.predictor = getattr(prd_module, prd_class)(self.cam_name)
 
-    def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True, is_create_example_video=False):
+    def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True, is_create_example_video=False,
+                      prefix=''):
         """
         predict pose for a given video
         @param db_video_id: The DB index of the video in the videos table
         @param video_path: The path of the video
         @param is_save_cache: save predicted dataframe as parquet file
         @param is_create_example_video: create annotated video with predictions
+        @param prefix: to be displayed before the tqdm desc
         @return:
         """
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
@@ -95,7 +97,7 @@ class ArenaPose:
         n_frames = min(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), len(frames_times))
         fps = cap.get(cv2.CAP_PROP_FPS)
         self.start_new_session(fps)
-        for frame_id in tqdm(range(n_frames), desc=f'{Path(video_path).stem}'):
+        for frame_id in tqdm(range(n_frames), desc=f'{prefix}{Path(video_path).stem}'):
             ret, frame = cap.read()
             if not self.is_initialized:
                 self.init(frame)
@@ -516,8 +518,10 @@ def convert_all_videos(animal_id=None):
     for i, video_path in enumerate(videos):
         try:
             ap = DLCArenaPose('front', is_commit_db=False)
+            if ap.get_predicted_cache_path(video_path).exists():
+                continue
             # ap.load_predicted(video_path, prefix=f'({i+1}/{len(videos)}) ')
-            ap.predict_video(video_path=video_path, is_create_example_video=False)
+            ap.predict_video(video_path=video_path, is_create_example_video=False, prefix=f'({i+1}/{len(videos)}) ')
         except MissingFile as exc:
             print(exc)
         except Exception:
