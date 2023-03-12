@@ -176,6 +176,9 @@ export default {
       }
     },
     getAngleRadians() {
+      if (this.isHalfCircleMovement || (this.isMoveInCircles && this.isCircleTrackReached && !this.isHoleRetreatStarted)) {
+        return Math.atan2(this.y - this.r0[1], this.x - this.r0[0]) + (this.isCounterClockWise ? 0 : Math.PI)
+      }
       return Math.atan2(this.dy, this.dx) + Math.PI / 2
     },
     getNotBlockedAngles() {
