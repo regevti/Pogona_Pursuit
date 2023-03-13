@@ -6,7 +6,7 @@
     </audio>
     <canvas id="backgroundCanvas" v-bind:style="{background: bugsSettings.backgroundColor}"
             v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"></canvas>
-    <canvas id="tunnelCanvas" v-bind:height="tunnelHeight" v-bind:width="canvasParams.width"></canvas>
+    <canvas id="tunnelCanvas" v-bind:height="tunnelHeight" v-bind:width="tunnelWidth"></canvas>
     <canvas id="bugCanvas" v-bind:height="canvasParams.height" v-bind:width="canvasParams.width"
             v-on:mousedown="setCanvasClick($event)">
       <tunnel-bug v-for="(value, index) in bugsProps"
@@ -29,7 +29,10 @@ export default {
   mixins: [boardsMixin],
   computed: {
     tunnelHeight() {
-      return this.canvasParams.height / 3
+      return window.innerHeight
+    },
+    tunnelWidth() {
+      return this.canvasParams.width / 10
     }
   },
   mounted() {
@@ -37,14 +40,14 @@ export default {
     const context = canvas.getContext('2d')
     const img = new Image()
     img.onload = () => {
-      context.drawImage(img, 0, 0, this.canvas.width, this.canvas.height)
+      context.drawImage(img, 0, 0, canvas.width, canvas.height)
     }
     img.src = require('@/assets/wooden-logs-wall.jpg')
   },
   methods: {
     initDrawing() {
       let canvas = document.getElementById('tunnelCanvas')
-      canvas.style.top = `${this.canvas.height / 3}px`
+      canvas.style.left = `${this.canvas.width / 2 - this.tunnelWidth}px`
       let ctx = canvas.getContext('2d')
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     }

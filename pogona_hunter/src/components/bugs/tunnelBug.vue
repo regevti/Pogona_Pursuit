@@ -11,15 +11,20 @@ import {randomRange} from '../../js/helpers'
 export default {
   name: 'tunnelBug',
   mixins: [bugsMixin],
+  data() {
+    return {
+      directionAngle: 0
+    }
+  },
   computed: {
-    initialXs: function () {
-      return [this.canvas.width / 4, 2 * this.canvas.width / 4, 3 * this.canvas.width / 4]
+    initialYs: function () {
+      return [this.canvas.height / 4, 2 * this.canvas.height / 4, 3 * this.canvas.height / 4]
     }
   },
   methods: {
     initiateStartPosition() {
-      this.x = this.initialXs[randomRange(0, this.initialXs.length)]
-      this.y = this.startPosition[1]
+      this.x = 0
+      this.y = this.initialYs[randomRange(0, this.initialYs.length)]
     },
     straightMove(noiseWeight = null) {
       let xNoise = this.y > this.canvas.height / 2 ? 0 : 0.2 * this.getRandomNoise()
