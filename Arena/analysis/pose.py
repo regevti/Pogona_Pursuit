@@ -68,6 +68,19 @@ class ArenaPose:
         if not self.caliber.is_on:
             raise Exception('Could not initiate caliber; closing ArenaPose')
 
+    def load(self, video_path: Path, only_load=False, prefix=''):
+        if not self.is_initialized:
+            self.initiate_from_video(video_path)
+        cache_path = self.get_predicted_cache_path(video_path)
+        if cache_path.exists():
+            pose_df = pd.read_parquet(cache_path)
+        else:
+            if not only_load:
+                pose_df = self.predict_video(video_path=video_path, prefix=prefix)
+            else:
+                raise MissingFile(f'Cache file does not exist and only_load=True')
+        return pose_df
+
     def start_new_session(self, fps):
         self.kalman = Kalman(dt=1/fps)
         self.predictions = []
@@ -152,7 +165,7 @@ class ArenaPose:
                 pred_row.loc[pred_row.index[0], (bodypart, 'x')] = x
                 pred_row.loc[pred_row.index[0], (bodypart, 'y')] = y
 
-        pred_row = self.post_analysis_actions(pred_row)
+        pred_row = self.after_analysis_actions(pred_row)
         return pred_row
 
     def check_video_inputs(self, db_video_id, video_path):
@@ -177,7 +190,7 @@ class ArenaPose:
                                         db_video_id, model='deeplabcut_v1')
         self.last_commit = (timestamp, x, y)
 
-    def post_analysis_actions(self, pred_row):
+    def after_analysis_actions(self, pred_row):
         return pred_row
 
     def load_frames_times(self, db_video_id: int) -> pd.DataFrame:
@@ -205,6 +218,13 @@ class ArenaPose:
             if vid is None:
                 raise Exception(f'unable to find video path: {video_path}')
             return vid.id
+
+    def initiate_from_video(self, video_path: Path):
+        """read frame from video and use it to initiate the caliber"""
+        cap = cv2.VideoCapture(video_path.as_posix())
+        ret, frame = cap.read()
+        self.init(frame, caliber_only=True)
+        cap.release()
 
     def load_predicted_video(self, video_path):
         cache_path = self.get_predicted_cache_path(video_path)
@@ -258,64 +278,7 @@ class DLCArenaPose(ArenaPose):
         self.pose_df = pd.DataFrame()
         self.angle_col = ('angle', '')
 
-    def load_predicted(self, video_path: Path, frames_times=None, is_debug=True, prefix=''):
-        if not self.is_initialized:
-            self.initiate_from_video(video_path)
-        cache_path = self.get_converted_cache_path(video_path)
-        if cache_path.exists():
-            self.pose_df = pd.read_parquet(cache_path)
-        else:
-            self.convert_pred_file(video_path, frames_times, is_debug, prefix)
-        return self.pose_df
-
-    def convert_pred_file(self, video_path: Path, frames_times=None, n_threads=100, prefix=''):
-        self.start_new_session()
-        db_video_id = self.get_video_db_id(video_path)
-
-        if frames_times is None:
-            frames_times = self.load_frames_times(db_video_id)
-
-        self.pose_df = self.load_predicted_video(video_path).drop_duplicates()
-        n_frames = min(len(self.pose_df), len(frames_times))
-        is_cache = self.get_predicted_cache_path(video_path).exists()
-        iterator = np.array_split(np.arange(n_frames), n_threads)
-        with tqdm(total=n_frames, desc=f'{prefix}{video_path.stem} (is_cache={is_cache})') as pbar:
-            self._convert(iterator, frames_times, db_video_id, pbar)
-        self.pose_df[self.time_col] = self.pose_df[self.time_col].astype('datetime64[us]')
-        self.pose_df.to_parquet(self.get_converted_cache_path(video_path))
-        return self.pose_df
-
-    def _convert(self, iterator, frames_times, db_video_id, pbar):
-        """Convert pose_df in multiple threads"""
-        def iter1(*frames_ids):
-            for frame_id in frames_ids:
-                dt = frames_times.loc[frame_id, 'time']
-                self.pose_df.loc[frame_id, self.time_col] = dt
-                for body_part in self.body_parts:
-                    cam_x, cam_y = self.pose_df.loc[frame_id, (body_part, ['cam_x', 'cam_y'])].tolist()
-                    x, y = self.analyze_frame(dt, cam_x, cam_y, body_part, db_video_id)
-                    self.pose_df.loc[frame_id, (body_part, 'x')] = x
-                    self.pose_df.loc[frame_id, (body_part, 'y')] = y
-                    if self.cam_name == 'front' and body_part == 'nose':
-                        self.pose_df.loc[frame_id, ('', 'is_in_screen')] = \
-                            cv2.pointPolygonTest(self.screen_coords, (cam_x, cam_y), False)
-                self.pose_df.loc[frame_id, self.angle_col] = self.calc_head_angle(self.pose_df.loc[frame_id])
-                pbar.update(1)
-
-        with ThreadPool() as pool:
-            pool.starmap(iter1, iterator)
-
-    def initiate_from_video(self, video_path: Path):
-        cap = cv2.VideoCapture(video_path.as_posix())
-        ret, frame = cap.read()
-        self.init(frame, caliber_only=True)
-        cap.release()
-
-    def get_converted_cache_path(self, video_path):
-        orig_path = self.get_predicted_cache_path(video_path)
-        return orig_path.parent / f'{orig_path.stem}_{self.caliber}{orig_path.suffix}'
-
-    def post_analysis_actions(self, pred_row):
+    def after_analysis_actions(self, pred_row):
         angle = self.calc_head_angle(pred_row.iloc[0])
         pred_row.loc[pred_row.index[0], self.angle_col] = angle
         return pred_row
@@ -506,7 +469,7 @@ def foo():
     return
 
 
-def convert_all_videos(animal_id=None):
+def convert_all_videos(animal_id=None, max_videos=None):
     p = Path(config.EXPERIMENTS_DIR)
     if animal_id:
         p = p / animal_id
@@ -515,13 +478,16 @@ def convert_all_videos(animal_id=None):
     ap.initiate_from_video(all_videos[0])
     videos = [v for v in all_videos if not ap.get_predicted_cache_path(v).exists()]
     print(f'found {len(videos)}/{len(all_videos)} to predict')
+    success_count = 0
     for i, video_path in enumerate(videos):
         try:
             ap = DLCArenaPose('front', is_commit_db=False)
             if ap.get_predicted_cache_path(video_path).exists():
                 continue
-            # ap.load_predicted(video_path, prefix=f'({i+1}/{len(videos)}) ')
             ap.predict_video(video_path=video_path, is_create_example_video=False, prefix=f'({i+1}/{len(videos)}) ')
+            success_count += 1
+            if max_videos and success_count >= max_videos:
+                return
         except MissingFile as exc:
             print(exc)
         except Exception:

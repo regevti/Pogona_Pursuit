@@ -69,12 +69,12 @@
         })
         const maxBlocks = Number("{{max_blocks}}")
         const cameras = "{{ cameras|join(',') }}".split(',')
-        const schedulesIds = "{{ schedules.keys()|join(',') }}".split(',')
         const $numBlocks = $("#numBlocks")
         const apiCheckTimeout = 1000
         let currentStreamingCamera = null
         let settingStreamCamera = false
         let checkedCameras = []
+        let schedulesList = []
 
         let isToggleCheckPause = false
         let api_check = function () {
@@ -154,6 +154,32 @@
                         stopStreaming()
                     }
 
+                    for (let [val, label] of Object.entries(data['schedules'])) {
+                        if (schedulesList.indexOf(val) !== -1) {
+                            // schedule already appears in upcoming schedules
+                            continue
+                        }
+                        $("#upcoming-schedules").append(
+                            `<li class="list-group-item d-flex justify-content-between align-items-center"
+                                value="${val}" id="scheduleItem${val}" style="padding: 0.6em"> ${label}
+                                <button id="clearSchedule${val}" class="btn btn-secondary">
+                                    <i class="fa fa-trash"></i>
+                                </button>
+                            </li>`
+                        )
+                        schedulesList.push(val)
+                        $(`#clearSchedule${val}`).click(() => {
+                            $.post('/delete_schedule', {schedule_id: val})
+                            $(`#scheduleItem${val}`).remove()
+                        })
+                    }
+                    for (let val of schedulesList) {
+                        if (Object.keys(data['schedules']).indexOf(val) === -1) {
+                            // schedule does not exist anymore
+                            $(`#scheduleItem${val}`).remove()
+                        }
+                    }
+
                     setTimeout(api_check, apiCheckTimeout)
                 }
             })
@@ -226,12 +252,12 @@
         }, 1000)
 
         // schedules delete buttons
-        schedulesIds.forEach((sid) => {
-            $(`#clearSchedule${sid}`).click(() => {
-                $.post('/delete_schedule', {schedule_id: sid})
-                $(`#scheduleItem${sid}`).remove()
-            })
-        })
+        // schedulesIds.forEach((sid) => {
+        //     $(`#clearSchedule${sid}`).click(() => {
+        //         $.post('/delete_schedule', {schedule_id: sid})
+        //         $(`#scheduleItem${sid}`).remove()
+        //     })
+        // })
 
         $("#isIdenticalBlocks").change(() => {
             $numBlocks.trigger('change')

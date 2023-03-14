@@ -7,6 +7,7 @@ from loggers import get_logger
 import config
 from cache import RedisCache, CacheColumns as cc
 from compress_videos import get_videos_for_compression, compress
+from analysis.pose import convert_all_videos
 
 TIME_TABLE = {
     'cameras_on': ('07:10', '18:45')
@@ -31,21 +32,23 @@ class Scheduler(threading.Thread):
         self.logger = get_logger('Scheduler')
         self.arena_mgr = arena_mgr
         self.next_experiment_time = None
+        self.is_pose_running = False
 
     def run(self):
         time.sleep(10)  # let all other arena processes and threads to start
         t0 = None  # every minute
         t1 = None  # every 10 minutes
         while not self.arena_mgr.arena_shutdown_event.is_set():
-            if not t0 or time.time() - t0 >= 60:
+            if not t0 or time.time() - t0 >= 60:  # every minute
                 t0 = time.time()
                 self.check_camera_status()
                 self.check_scheduled_experiments()
                 self.arena_mgr.update_upcoming_schedules()
 
-            if not t1 or time.time() - t1 >= 60 * 10:
+            if not t1 or time.time() - t1 >= 60 * 10:  # every 10 minutes
                 t1 = time.time()
                 self.compress_videos()
+                self.run_pose()
 
     @schedule_method
     def check_scheduled_experiments(self):
@@ -117,3 +120,19 @@ class Scheduler(threading.Thread):
 
         t = threading.Thread(target=compress, args=(videos[0],))
         t.start()
+
+    @schedule_method
+    def run_pose(self):
+        if self.is_in_range('cameras_on') or self.is_pose_running:
+            return
+
+        t = threading.Thread(target=self._run_pose_callback)
+        t.start()
+
+    def _run_pose_callback(self):
+        self.is_pose_running = True
+        try:
+            convert_all_videos(max_videos=20)
+        finally:
+            self.is_pose_running = False
+

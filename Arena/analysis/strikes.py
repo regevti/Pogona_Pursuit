@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from analysis.pose_utils import closest_index, pixels2cm, distance, remove_outliers, fit_circle
 from analysis.pose import ArenaPose
-from analysis.predictors.deeplabcut import PredPlotter, DLCPose, MODEL_NAME as POSE_MODEL_NAME
+# from analysis.predictors.deeplabcut import PredPlotter, DLCPose, MODEL_NAME as POSE_MODEL_NAME
 from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, Trial
 from calibration import CharucoEstimator
 from analysis.predictors.tongue_out import TONGUE_CLASS, TONGUE_PREDICTED_DIR, TongueOutAnalyzer
@@ -160,7 +160,7 @@ class Loader:
 
     def load_pose(self, video_path, frames_times):
         frames_range = (self.strike_frame_id - self.n_frames_back, self.strike_frame_id + self.n_frames_forward)
-        pose_df = self.dlc_pose.predict_pred_cache(video_path.as_posix(), frames_range=frames_range, is_debug=False)
+        pose_df = self.dlc_pose.load(video_path.as_posix(), frames_range=frames_range, is_debug=False)
         self.frames_df = pd.merge(frames_times, pose_df, how='left')
 
     def load_tongues_out(self):

@@ -24,6 +24,24 @@ class Animal(Base):
     bug_types = Column(String)
     reward_bugs = Column(String)
     background_color = Column(String)
+    reward_any_touch_prob = Column(Float, default=0)
+    exit_hole = Column(String, nullable=True)
+    audit = relationship('AnimalSettingsHistory')
+
+
+class AnimalSettingsHistory(Base):
+    __tablename__ = 'animal_settings'
+
+    id = Column(Integer, primary_key=True)
+    time = Column(DateTime)
+    animal_id = Column(String)
+    sex = Column(String)
+    bug_types = Column(String)
+    reward_bugs = Column(String)
+    background_color = Column(String)
+    reward_any_touch_prob = Column(Float, default=0)
+    exit_hole = Column(String, nullable=True)
+    animal_id_key = Column(Integer, ForeignKey('animals.id'))
 
 
 class Schedule(Base):
@@ -338,34 +356,44 @@ class ORM:
             s.add(pe)
             s.commit()
 
-    def commit_animal_id(self, animal_id, sex, bug_types, reward_bugs, background_color):
-        with self.session() as s:
+    def extract_animal_settings(self, **data):
+        kwargs = {}
+        for k, v in data.items():
+            if k in ['bug_types', 'reward_bugs']:
+                v = ','.join(v or [])
+            kwargs[k] = v
+        return kwargs
 
-            animal = Animal(animal_id=animal_id, sex=sex, bug_types=','.join(bug_types),
-                            start_time=datetime.now(), reward_bugs=','.join(reward_bugs or []),
-                            background_color=background_color)
+    def commit_animal_id(self, **data):
+        with self.session() as s:
+            kwargs = self.extract_animal_settings(**data)
+            animal = Animal(start_time=datetime.now(), **kwargs)
             s.add(animal)
+            animal_settings = AnimalSettingsHistory(time=datetime.now(),
+                                                    animal_id_key=animal.id, **kwargs)
+            s.add(animal_settings)
             s.commit()
-            self.cache.set(cc.CURRENT_ANIMAL_ID, animal_id)
-            self.cache.set(cc.CURRENT_ANIMAL_SEX, sex)
-            self.cache.set(cc.CURRENT_BUG_TYPES, bug_types)
+            self.cache.set(cc.CURRENT_ANIMAL_ID, data['animal_id'])
+            self.cache.set(cc.CURRENT_ANIMAL_SEX, data['sex'])
+            self.cache.set(cc.CURRENT_BUG_TYPES, data['bug_types'])
             self.cache.set(cc.CURRENT_ANIMAL_ID_DB_INDEX, animal.id)
 
     def update_animal_id(self, **kwargs):
         with self.session() as s:
+            data = self.extract_animal_settings(**kwargs)
             db_index = self.cache.get(cc.CURRENT_ANIMAL_ID_DB_INDEX)
             if db_index is None:
                 return
             animal_model = s.query(Animal).filter_by(id=db_index).first()
             if animal_model is None:
                 return
-            for k, v in kwargs.items():
+            if 'end_time' not in kwargs:
+                animal_settings = AnimalSettingsHistory(time=datetime.now(),
+                                                        animal_id_key=animal_model.id, **data)
+                s.add(animal_settings)
+            for k, v in data.items():
                 if k == 'bug_types':
-                    self.cache.set(cc.CURRENT_BUG_TYPES, v)
-                    v = ','.join(v)
-                elif k == 'reward_bugs':
-                    if isinstance(v, list):
-                        v = ','.join(v)
+                    self.cache.set(cc.CURRENT_BUG_TYPES, v.split(','))
                 elif k == 'sex':
                     self.cache.set(cc.CURRENT_ANIMAL_SEX, v)
                 setattr(animal_model, k, v)

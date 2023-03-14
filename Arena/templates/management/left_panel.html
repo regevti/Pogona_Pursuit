@@ -20,16 +20,7 @@
 
     <div class="p-1">
         <h5 class="p-2">Upcoming Schedules</h5>
-            <ul class="list-group" style="height: 200px;overflow-y: scroll;">
-                {% for val, label in schedules.items() %}
-                  <li class="list-group-item d-flex justify-content-between align-items-center"
-                      value="{{val}}" id="scheduleItem{{val}}" style="padding: 0.6em">
-                    {{label}}
-                    <button id="clearSchedule{{val}}" class="btn btn-secondary">
-                        <i class="fa fa-trash"></i>
-                    </button>
-                  </li>
-                {% endfor %}
+            <ul class="list-group" style="height: 200px;overflow-y: scroll;" id="upcoming-schedules">
             </ul>
     </div>
 </div>
