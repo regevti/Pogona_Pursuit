@@ -29,10 +29,10 @@ export default {
   mixins: [boardsMixin],
   computed: {
     tunnelHeight() {
-      return window.innerHeight
+      return 500
     },
     tunnelWidth() {
-      return this.canvasParams.width / 10
+      return 200
     }
   },
   mounted() {
@@ -42,13 +42,16 @@ export default {
     img.onload = () => {
       context.drawImage(img, 0, 0, canvas.width, canvas.height)
     }
-    img.src = require('@/assets/wooden-logs-wall.jpg')
+    // img.src = require('@/assets/wooden-logs-wall.jpg')
+    img.src = require('@/assets/tree_trunk.png')
   },
   methods: {
     initDrawing() {
       let canvas = document.getElementById('tunnelCanvas')
-      canvas.style.left = `${this.canvas.width / 2 - this.tunnelWidth}px`
+      canvas.style.left = `${(this.canvas.width / 2) - this.tunnelWidth}px`
+      canvas.style.top = `${this.canvas.height / 2 - this.tunnelHeight / 2}px`
       let ctx = canvas.getContext('2d')
+      ctx.fillStyle = this.bugsSettings.backgroundColor
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     }
   }

@@ -18,7 +18,7 @@ export default {
   },
   computed: {
     initialYs: function () {
-      return [this.canvas.height / 4, 2 * this.canvas.height / 4, 3 * this.canvas.height / 4]
+      return [this.canvas.height / 2]
     }
   },
   methods: {
