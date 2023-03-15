@@ -43,7 +43,7 @@ def index():
     return render_template('index.html', cameras=cameras, exposure=config.default_exposure,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
-                           max_blocks=config.api_max_blocks_to_show, cached_experiments=cached_experiments,
+                           max_blocks=config.api_max_blocks_to_show,
                            extra_time_recording=config.extra_time_recording,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
@@ -59,6 +59,7 @@ def check():
     res['reward_left'] = cache.get(cc.REWARD_LEFT)
     res['streaming_camera'] = arena_mgr.get_streaming_camera()
     res['schedules'] = arena_mgr.schedules
+    res['cached_experiments'] = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
     for cam_name, cu in arena_mgr.units.items():
         res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
         res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}

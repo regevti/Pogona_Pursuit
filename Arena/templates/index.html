@@ -180,6 +180,23 @@
                         }
                     }
 
+                    for (let selectName of ['#cachedExperimentsSelect', '#cachedExperimentsSelectSchedule']) {
+                        let currentOptions = $.map($(`${selectName} option`) ,function(option) {
+                            return option.value;
+                        });
+                        if (JSON.stringify(currentOptions) === JSON.stringify(data['cached_experiments'])) {
+                            continue
+                        }
+                        let select$ = $(selectName)
+                        select$.children().remove().end()
+                        $.each(data['cached_experiments'], function (i, item) {
+                            select$.append($('<option>', {
+                                value: item,
+                                text : item
+                            }));
+                        });
+                    }
+
                     setTimeout(api_check, apiCheckTimeout)
                 }
             })
