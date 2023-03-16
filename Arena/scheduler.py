@@ -3,6 +3,7 @@ import time
 from functools import wraps
 from datetime import datetime, timedelta
 import threading
+import multiprocessing
 from loggers import get_logger
 import config
 from cache import RedisCache, CacheColumns as cc
@@ -32,7 +33,7 @@ class Scheduler(threading.Thread):
         self.logger = get_logger('Scheduler')
         self.arena_mgr = arena_mgr
         self.next_experiment_time = None
-        self.is_pose_running = False
+        self.dlc_on = multiprocessing.Event()
 
     def run(self):
         time.sleep(10)  # let all other arena processes and threads to start
@@ -123,16 +124,16 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def run_pose(self):
-        if self.is_in_range('cameras_on') or self.is_pose_running:
+        if self.is_in_range('cameras_on') or self.dlc_on.is_set():
             return
 
-        t = threading.Thread(target=self._run_pose_callback)
-        t.start()
+        multiprocessing.Process(target=_run_pose_callback, args=(self.dlc_on,)).start()
+        self.dlc_on.set()
 
-    def _run_pose_callback(self):
-        self.is_pose_running = True
-        try:
-            convert_all_videos(max_videos=20)
-        finally:
-            self.is_pose_running = False
+
+def _run_pose_callback(dlc_on):
+    try:
+        convert_all_videos(max_videos=20)
+    finally:
+        dlc_on.clear()
 

@@ -163,11 +163,9 @@ def update_animal_id():
 
 @app.route('/get_current_animal', methods=['GET'])
 def get_current_animal():
-    return jsonify({
-        'animal_id': cache.get(cc.CURRENT_ANIMAL_ID),
-        'sex': cache.get(cc.CURRENT_ANIMAL_SEX),
-        'bug_types': cache.get(cc.CURRENT_BUG_TYPES)
-    })
+    animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
+    animal_dict = arena_mgr.orm.get_animal_settings(animal_id)
+    return jsonify(animal_dict)
 
 
 @app.route('/start_camera_unit', methods=['POST'])

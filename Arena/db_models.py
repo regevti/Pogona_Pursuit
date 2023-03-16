@@ -374,8 +374,6 @@ class ORM:
             s.add(animal_settings)
             s.commit()
             self.cache.set(cc.CURRENT_ANIMAL_ID, data['animal_id'])
-            self.cache.set(cc.CURRENT_ANIMAL_SEX, data['sex'])
-            self.cache.set(cc.CURRENT_BUG_TYPES, data['bug_types'])
             self.cache.set(cc.CURRENT_ANIMAL_ID_DB_INDEX, animal.id)
 
     def update_animal_id(self, **kwargs):
@@ -392,17 +390,20 @@ class ORM:
                                                         animal_id_key=animal_model.id, **data)
                 s.add(animal_settings)
             for k, v in data.items():
-                if k == 'bug_types':
-                    self.cache.set(cc.CURRENT_BUG_TYPES, v.split(','))
-                elif k == 'sex':
-                    self.cache.set(cc.CURRENT_ANIMAL_SEX, v)
                 setattr(animal_model, k, v)
             s.commit()
 
         if 'end_time' in kwargs:
             self.cache.delete(cc.CURRENT_ANIMAL_ID)
-            self.cache.delete(cc.CURRENT_ANIMAL_SEX)
             self.cache.delete(cc.CURRENT_ANIMAL_ID_DB_INDEX)
+
+    def get_animal_settings(self, animal_id):
+        with self.session() as s:
+            animal = s.query(Animal).filter_by(animal_id=animal_id).first()
+            animal_dict = {k: v for k, v in animal.__dict__.items() if not k.startswith('_')}
+        return animal_dict
+
+
 
     def get_upcoming_schedules(self):
         with self.session() as s:

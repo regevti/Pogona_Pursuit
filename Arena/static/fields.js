@@ -221,6 +221,8 @@ const mainFields = {
   is_identical_blocks: new FieldObject('isIdenticalBlocks', CheckField),
   reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
   background_color: new FieldObject('backgroundColor', Field),
+  exit_hole: new FieldObject('exitHolePositionSelect', Field),
+  reward_any_touch_prob: new FieldObject('rewardAnyTouchProb', NumericalField)
 }
 
 const blockFields = {

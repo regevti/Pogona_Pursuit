@@ -33,6 +33,10 @@ MIN_DISTANCE = 5  # cm
 COMMIT_INTERVAL = 2  # seconds
 VELOCITY_SAMPLING_DURATION = 2  # seconds
 MODEL_NAME = 'front_head_only_resnet_50'
+BAD_VIDEOS = [
+    'front_20221130T095549', 'front_20221127T140019', 'front_20221202T163955', 'front_20221122T114015',
+    'front_20230314T161544'
+]
 
 
 class MissingFile(Exception):
@@ -123,6 +127,8 @@ class ArenaPose:
             pose_df.append(pred_row)
         cap.release()
 
+        if not pose_df:
+            return
         pose_df = pd.concat(pose_df)
         if is_save_cache:
             self.save_predicted_video(pose_df, video_path)
@@ -476,7 +482,9 @@ def convert_all_videos(animal_id=None, max_videos=None):
     all_videos = list(p.rglob('*front*.mp4'))
     ap = DLCArenaPose('front', is_commit_db=False)
     ap.initiate_from_video(all_videos[0])
-    videos = [v for v in all_videos if not ap.get_predicted_cache_path(v).exists()]
+    videos = [v for v in all_videos if not ap.get_predicted_cache_path(v).exists() and v.stem not in BAD_VIDEOS]
+    if not videos:
+        return
     print(f'found {len(videos)}/{len(all_videos)} to predict')
     success_count = 0
     for i, video_path in enumerate(videos):

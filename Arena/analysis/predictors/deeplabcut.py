@@ -5,8 +5,6 @@ from pathlib import Path
 import numpy as np
 import yaml
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
 import config
 
 MODEL_NAME = 'front_head_only_resnet_50'
@@ -18,7 +16,9 @@ COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 class DLCPose:
     def __init__(self, cam_name):
-        from dlclive import DLCLive, Processor
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            from dlclive import DLCLive, Processor
         self.cam_name = cam_name
         self.dlc_config = {}
         self.load_dlc_config()

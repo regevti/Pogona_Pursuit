@@ -28,8 +28,6 @@ class CacheColumns:
     CURRENT_BLOCK_DB_INDEX = Column('CURRENT_BLOCK_DB_INDEX', int, config.experiments_timeout)
     OPEN_APP_HOST = Column('OPEN_APP_HOST', str, 60)
     CURRENT_ANIMAL_ID = Column('CURRENT_ANIMAL_ID', str, 'static')
-    CURRENT_ANIMAL_SEX = Column('CURRENT_ANIMAL_SEX', str, 'static')
-    CURRENT_BUG_TYPES = Column('CURRENT_BUG_TYPES', list, 'static')
     CURRENT_ANIMAL_ID_DB_INDEX = Column('CURRENT_ANIMAL_ID_DB_INDEX', int, 'static')
     REWARD_LEFT = Column('REWARD_LEFT', int, 'static')
     IS_EXPERIMENT_CONTROL_CAMERAS = Column('IS_EXPERIMENT_CONTROL_CAMERAS', bool, config.experiments_timeout)

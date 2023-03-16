@@ -328,6 +328,8 @@ class Block:
         self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
         # start cameras for experiment with their predictors and set the output dir for videos
         self.turn_cameras('on')
+        # screencast
+        threading.Thread(target=self.record_screen).start()
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             self.cache.set_cam_output_dir(cam_name, output_dir)
@@ -420,6 +422,14 @@ class Block:
                 self.logger.debug('Trial ended')
                 return
             time.sleep(0.1)
+
+    def record_screen(self):
+        filename = f'{self.block_path}/screen_record.mp4'
+        next(run_command(
+            f'ffmpeg -video_size 1920x1080 -framerate 30 -f x11grab '
+            f'-i :0.0+1920+0 -f pulse -i default -ac 2 -t {int(self.block_duration)} '
+            f'''-vf "drawtext=fontfile=/Windows/Fonts/Arial.ttf: text='%{{localtime}}':x=30:y=30:fontcolor=red:fontsize=30" {filename}'''
+        ))
 
     @property
     def media_options(self) -> dict:
