@@ -100,6 +100,16 @@ class DLCPose:
         """
         return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
 
+    @staticmethod
+    def plot_single_part(df, frame_id, frame):
+        if np.isnan(df['x'][frame_id]):
+            return frame
+        cX = round(df['x'][frame_id])
+        cY = round(df['y'][frame_id])
+        color = tuple(int(COLORS[1][j:j + 2], 16) for j in (1, 3, 5))
+        cv2.circle(frame, (cX, cY), 7, color, -1)
+        return frame
+
     def load_dlc_config(self):
         config_path = Path(config.DLC_FOLDER) / 'config.yaml'
         self.dlc_config = yaml.load(config_path.open(), Loader=yaml.FullLoader)
@@ -151,17 +161,3 @@ class DLCPose:
 #     def save_cache(self, video_path, pdf: pd.DataFrame):
 #         cache_path = self.get_cache_path(video_path)
 #         pdf.to_parquet(cache_path)
-
-
-class PredPlotter:
-
-    @staticmethod
-    def plot_single_part(df, frame_id, frame):
-        if np.isnan(df['x'][frame_id]):
-            return frame
-        cX = round(df['x'][frame_id])
-        cY = round(df['y'][frame_id])
-        color = tuple(int(COLORS[1][j:j + 2], 16) for j in (1, 3, 5))
-        cv2.circle(frame, (cX, cY), 7, color, -1)
-        return frame
-

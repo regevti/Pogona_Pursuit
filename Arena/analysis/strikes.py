@@ -114,7 +114,7 @@ class Loader:
                 # otherwise, load all pose data around strike frame
                 else:
                     try:
-                        self.load_pose(video_path, frames_times)
+                        self.load_pose(video_path)
                     except Exception as exc:
                         raise MissingStrikeData(str(exc))
                 # break since the relevant video was found
@@ -158,10 +158,11 @@ class Loader:
         frame_ids = [i for i in range(start_frame, start_frame + step * (n_frames_back + n_frames_forward), step)]
         return self.gen_frames(frame_ids)
 
-    def load_pose(self, video_path, frames_times):
-        frames_range = (self.strike_frame_id - self.n_frames_back, self.strike_frame_id + self.n_frames_forward)
-        pose_df = self.dlc_pose.load(video_path.as_posix(), frames_range=frames_range, is_debug=False)
-        self.frames_df = pd.merge(frames_times, pose_df, how='left')
+    def load_pose(self, video_path):
+        pose_df = self.dlc_pose.load(video_path.as_posix(), only_load=True)
+        first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
+        last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
+        self.frames_df = pose_df.loc[first_frame:last_frame]
 
     def load_tongues_out(self):
         if not self.is_load_tongue:
@@ -191,11 +192,11 @@ class Loader:
     def play_strike(self, n_frames_back=100, n_frames_forward=20, annotations=None):
         for i, frame in self.gen_frames_around_strike(n_frames_back, n_frames_forward):
             if i == self.strike_frame_id:
-                PredPlotter.put_text('Strike Frame', frame, 30, 20)
+                self.dlc_pose.predictor.put_text('Strike Frame', frame, 30, 20)
             if annotations and i in annotations:
-                PredPlotter.put_text(annotations[i], frame, 30, frame.shape[0]-30)
+                self.dlc_pose.predictor.put_text(annotations[i], frame, 30, frame.shape[0]-30)
             if self.is_load_pose:
-                PredPlotter.plot_predictions(frame, i, self.frames_df)
+                self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             cv2.imshow(str(self), frame)
@@ -343,7 +344,7 @@ class StrikeAnalyzer:
         frames_iter = self.loader.gen_frames(frames_ids)
         for i, (frame_id, frame) in enumerate(frames_iter):
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-            frame = PredPlotter.plot_single_part(self.loader.frames_df, frame_id, frame)
+            frame = self.loader.dlc_pose.predictor.plot_single_part(self.loader.frames_df, frame_id, frame)
             h, w = frame.shape[:2]
             frame = frame[h//2:, 350:w-350]
             labels = []
@@ -719,56 +720,6 @@ def play_strikes(animal_id, start_time=None, cam_name='front', is_load_pose=True
             print(f'ERROR strike_id={sid}: {exc}')
 
 
-def get_pose_cache_file(video_path):
-    preds_dir = Path(video_path).parent / 'predictions'
-    preds_dir.mkdir(exist_ok=True)
-    vid_name = Path(video_path).with_suffix('.parquet').name
-    return preds_dir / f'short_{POSE_MODEL_NAME}_{vid_name}'
-
-
-def short_predict(animal_id, cam_name='front', n_frames_back=50, start_time=None, strike_id=None, movement_type=None):
-    if strike_id:
-        strikes_ids = [strike_id]
-    else:
-        strikes_ids = load_strikes(animal_id, start_time=start_time, movement_type=movement_type)
-        strikes_ids = sorted(strikes_ids)
-    dlc = DLCPose('front')
-    vids = {}
-
-    orm0 = ORM()
-    for sid in strikes_ids:
-        try:
-            ld = Loader(sid, cam_name, is_debug=False, is_load_pose=False, is_load_tongue=False, orm=orm0)
-            video_path = ld.video_path.as_posix()
-            cache_path = get_pose_cache_file(video_path)
-
-            if cache_path.exists():
-                continue
-
-            frames_range = (ld.strike_frame_id - ld.n_frames_back, ld.strike_frame_id + ld.n_frames_forward)
-            vids.setdefault(video_path, []).append(frames_range)
-        except Exception as exc:
-            print(f'Error in loading Strike-{sid}; {exc}')
-
-    with open('/data/Pogona_Pursuit/output/strike_analysis/strikes_vids.pickle', 'wb') as f:
-        pickle.dump(vids, f)
-
-    for video_path, frames_ranges in vids.items():
-        try:
-            pfs = []
-            for start_frame, end_frame in frames_ranges:
-                cap = cv2.VideoCapture(video_path)
-                cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-                for i in tqdm(range(start_frame, end_frame + 1), desc=f'Vid={video_path.split("/")[-1]}'):
-                    ret, frame = cap.read()
-                    pf = dlc._predict(frame, frame_id=i)
-                    pfs.append(pf)
-            pfs = pd.concat(pfs)
-            pfs.to_parquet(get_pose_cache_file(video_path))
-        except Exception as exc:
-            print(f'Error analyzing video: {video_path}; {exc}')
-
-
 def analyze_strikes(animal_id, cam_name='front', n_frames_back=50, start_time=None, strike_id=None, movement_type=None):
     if strike_id:
         strikes_ids = [strike_id]
@@ -815,7 +766,7 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    analyze_strikes('PV80', start_time='2023-01-29')#, movement_type='random')
+    analyze_strikes('PV80')#, movement_type='random')
     # short_predict('PV80')
     # foo()
     # calibrate()
