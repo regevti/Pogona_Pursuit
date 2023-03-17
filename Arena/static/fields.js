@@ -219,6 +219,7 @@ const mainFields = {
   cameras: new FieldObject('cameras', Cameras),
   num_blocks: new FieldObject('numBlocks', NumericalField),
   is_identical_blocks: new FieldObject('isIdenticalBlocks', CheckField),
+  is_test: new FieldObject('isTest', CheckField),
   reward_bugs: new FieldObject('rewardBugSelect', MultiSelectField, {}),
   background_color: new FieldObject('backgroundColor', Field),
   exit_hole: new FieldObject('exitHolePositionSelect', Field),

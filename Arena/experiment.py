@@ -31,8 +31,10 @@ class Experiment:
     cam_units: dict
     animal_id: str
     cameras: dict
+    exit_hole: str
     bug_types: list = field(default_factory=list)
     reward_bugs: list = field(default_factory=list)
+    reward_any_touch_prob: float = 0.0
     background_color: str = ''
     num_blocks: int = 1
     name: str = ''
@@ -40,17 +42,20 @@ class Experiment:
     time_between_blocks: int = config.time_between_blocks
     extra_time_recording: int = config.extra_time_recording
     is_identical_blocks: bool = False
+    is_test: bool = False
     cache = RedisCache()
 
     def __post_init__(self):
         self.start_time = datetime.now()
+        if self.is_test:
+            self.animal_id = 'test'
         self.day = self.start_time.strftime('%Y%m%d')
         self.name = str(self)
         self.orm = ORM()
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
         self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.cam_units, self.orm, self.cache,
-                             bug_types=self.bug_types, reward_bugs=self.reward_bugs,
-                             background_color=self.background_color,
+                             bug_types=self.bug_types, reward_bugs=self.reward_bugs, exit_hole=self.exit_hole,
+                             background_color=self.background_color, reward_any_touch_prob=self.reward_any_touch_prob,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
         self.logger = get_logger('Experiment')
@@ -194,9 +199,9 @@ class Experiment:
         assert val in ['on', 'off'], 'val must be either "on" or "off"'
         try:
             if val.lower() == 'on':
-                turn_display_on(board)
+                turn_display_on(board, app_only=self.is_test)
             else:
-                turn_display_off()
+                turn_display_off(app_only=self.is_test)
             self.logger.debug(f'screen turned {val}')
         except Exception as exc:
             self.logger.exception(f'Error turning off screen: {exc}')
@@ -428,8 +433,9 @@ class Block:
         next(run_command(
             f'ffmpeg -video_size 1920x1080 -framerate 30 -f x11grab '
             f'-i :0.0+1920+0 -f pulse -i default -ac 2 -t {int(self.block_duration)} '
-            f'''-vf "drawtext=fontfile=/Windows/Fonts/Arial.ttf: text='%{{localtime}}':x=30:y=30:fontcolor=red:fontsize=30" {filename}'''
-        ))
+            f'''-vf "drawtext=fontfile=/Windows/Fonts/Arial.ttf: 
+            text='%{{localtime}}':x=30:y=30:fontcolor=red:fontsize=30" {filename}''', is_debug=False)
+        )
 
     @property
     def media_options(self) -> dict:

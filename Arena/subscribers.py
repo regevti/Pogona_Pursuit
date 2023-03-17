@@ -8,6 +8,8 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
+import redis.exceptions
+
 from cache import CacheColumns as cc, RedisCache
 import config
 from loggers import get_logger, get_process_logger
@@ -257,7 +259,10 @@ class AppHealthCheck(Subscriber):
                 time.sleep(0.01)
                 open_apps_hosts = set()
                 for _ in range(3):
-                    message_dict = p.get_message(ignore_subscribe_messages=True, timeout=1)
+                    try:
+                        message_dict = p.get_message(ignore_subscribe_messages=True, timeout=1)
+                    except redis.exceptions.ConnectionError:
+                        message_dict = None
                     if message_dict and message_dict.get('data'):
                         try:
                             message_dict = json.loads(message_dict.get('data').decode('utf-8'))

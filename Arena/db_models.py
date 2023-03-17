@@ -1,5 +1,6 @@
 import json
-
+from types import FunctionType
+from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date
 from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date
@@ -222,6 +223,15 @@ class Reward(Base):
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
 
 
+def commit_func(method):
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        if config.DISABLE_DB:
+            return
+        return method(*args, **kwargs)
+    return wrapped
+
+
 class ORM:
     def __init__(self):
         self.engine = get_engine()
@@ -230,6 +240,7 @@ class ORM:
         self.cache = RedisCache()
         self.logger = get_logger('orm')
 
+    @commit_func
     def commit_experiment(self, exp):
         with self.session() as s:
             kwargs = {c.name: getattr(exp, c.name)
@@ -240,6 +251,7 @@ class ORM:
             s.commit()
             self.current_experiment_id = exp_model.id
 
+    @commit_func
     def commit_block(self, blk, is_cache_set=True):
         with self.session() as s:
             kwargs = {c.name: getattr(blk, c.name)
@@ -257,6 +269,7 @@ class ORM:
                 self.cache.set(cc.CURRENT_BLOCK_DB_INDEX, block_id)
         return block_id
 
+    @commit_func
     def commit_trial(self, trial_dict):
         kwargs = {c.name: trial_dict.get(c.name)
                   for c in Trial.__table__.columns if c.name not in ['id'] and not c.foreign_keys}
@@ -268,6 +281,7 @@ class ORM:
             trial_id = trial.id
         return trial_id
 
+    @commit_func
     def update_trial_data(self, trial_dict):
         trial_id = trial_dict.get('trial_db_id')
         with self.session() as s:
@@ -281,6 +295,7 @@ class ORM:
                     setattr(trial_model, k, v)
             s.commit()
 
+    @commit_func
     def update_block_end_time(self, block_id=None, end_time=None):
         block_id = block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         with self.session() as s:
@@ -289,6 +304,7 @@ class ORM:
             s.commit()
             self.cache.delete(cc.CURRENT_BLOCK_DB_INDEX)
 
+    @commit_func
     def update_experiment_end_time(self, end_time=None):
         end_time = end_time or datetime.now()
         with self.session() as s:
@@ -296,6 +312,7 @@ class ORM:
             exp_model.end_time = end_time
             s.commit()
 
+    @commit_func
     def commit_temperature(self, temp):
         t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX))
         with self.session() as s:
@@ -310,6 +327,7 @@ class ORM:
             if temp is not None:
                 return temp.value
 
+    @commit_func
     def commit_strike(self, strike_dict):
         kwargs = {c.name: strike_dict.get(c.name)
                   for c in Strike.__table__.columns if c.name not in ['id'] and not c.foreign_keys}
@@ -321,6 +339,7 @@ class ORM:
             s.add(strike)
             s.commit()
 
+    @commit_func
     def commit_video(self, path, fps, cam_name, start_time, animal_id=None, block_id=None):
         animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         vid = Video(path=path, fps=fps, cam_name=cam_name, start_time=start_time,
@@ -331,6 +350,7 @@ class ORM:
             vid_id = vid.id
         return vid_id
 
+    @commit_func
     def commit_video_frames(self, timestamps: list, video_id: int):
         with self.session() as s:
             video_model = s.query(Video).filter_by(id=video_id).first()
@@ -339,6 +359,7 @@ class ORM:
             video_model.calc_fps = 1 / np.diff(timestamps).mean()
             s.commit()
 
+    @commit_func
     def commit_video_predictions(self, predictor_name: str, data: list, video_id: int, start_time: datetime):
         vid_pred = VideoPrediction(predictor_name=predictor_name, data={i: x for i, x in enumerate(data)},
                                    video_id=video_id, start_time=start_time)
@@ -346,6 +367,7 @@ class ORM:
             s.add(vid_pred)
             s.commit()
 
+    @commit_func
     def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model, animal_id=None):
         animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle, animal_id=animal_id,
@@ -364,6 +386,7 @@ class ORM:
             kwargs[k] = v
         return kwargs
 
+    @commit_func
     def commit_animal_id(self, **data):
         with self.session() as s:
             kwargs = self.extract_animal_settings(**data)
@@ -376,6 +399,7 @@ class ORM:
             self.cache.set(cc.CURRENT_ANIMAL_ID, data['animal_id'])
             self.cache.set(cc.CURRENT_ANIMAL_ID_DB_INDEX, animal.id)
 
+    @commit_func
     def update_animal_id(self, **kwargs):
         with self.session() as s:
             data = self.extract_animal_settings(**kwargs)

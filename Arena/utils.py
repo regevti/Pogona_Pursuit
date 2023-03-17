@@ -15,11 +15,11 @@ from filterpy.kalman import KalmanFilter
 import config
 
 
-def run_command(cmd):
+def run_command(cmd, is_debug=True):
     """Execute shell command"""
     process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, executable='/bin/bash')
     stdout, stderr = process.communicate()
-    if stderr:
+    if stderr and is_debug:
         print(f'Error running cmd: "{cmd}"; {stderr}')
     yield stdout
 
@@ -27,26 +27,28 @@ def run_command(cmd):
 DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 
-def turn_display_on(board='holes'):
+def turn_display_on(board='holes', app_only=False):
     touch_device_id = get_hdmi_xinput_id()
-    cmds = [
-        'pkill chrome || true',  # kill all existing chrome processes
-        f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4',  # turn touch screen on
-        f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
-        f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
-        'sleep 1',
-        f'scripts/start_pogona_hunter.sh {board}'  # start chrome with the bug application
-    ]
+    cmds = [f'scripts/start_pogona_hunter.sh {board}']  # start chrome with the bug application
+    if not app_only:
+        cmds = [
+            'pkill chrome || true',  # kill all existing chrome processes
+            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4',  # turn touch screen on
+            f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
+            f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
+            'sleep 1'
+        ] + [cmds[0] + ' --kiosk']
     return os.system(' && '.join(cmds))
 
 
-def turn_display_off():
+def turn_display_off(app_only=False):
     touch_device_id = get_hdmi_xinput_id()
-    cmds = [
-        'pkill chrome || true',
-        f'{DISPLAY} xrandr --output HDMI-0 --off',  # turn touchscreen off
-        f'{DISPLAY} xinput disable {touch_device_id}',  # disable touch
-    ]
+    cmds = ['pkill chrome || true']
+    if not app_only:
+        cmds = cmds + [
+            f'{DISPLAY} xrandr --output HDMI-0 --off',  # turn touchscreen off
+            f'{DISPLAY} xinput disable {touch_device_id}',  # disable touch
+        ]
     return os.system(' && '.join(cmds))
 
 

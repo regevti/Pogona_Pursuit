@@ -35,16 +35,6 @@ export default {
       return 200
     }
   },
-  mounted() {
-    const canvas = document.getElementById('tunnelCanvas')
-    const context = canvas.getContext('2d')
-    const img = new Image()
-    img.onload = () => {
-      context.drawImage(img, 0, 0, canvas.width, canvas.height)
-    }
-    // img.src = require('@/assets/wooden-logs-wall.jpg')
-    img.src = require('@/assets/tree_trunk.png')
-  },
   methods: {
     initDrawing() {
       let canvas = document.getElementById('tunnelCanvas')
@@ -53,6 +43,13 @@ export default {
       let ctx = canvas.getContext('2d')
       ctx.fillStyle = this.bugsSettings.backgroundColor
       ctx.fillRect(0, 0, canvas.width, canvas.height)
+      const img = new Image()
+      img.onload = () => {
+        console.log('drawing tunnel image')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      }
+      // img.src = require('@/assets/wooden-logs-wall.jpg')
+      img.src = require('@/assets/tree_trunk.png')
     }
   }
 }
