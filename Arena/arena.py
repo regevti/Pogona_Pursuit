@@ -41,7 +41,11 @@ def signal_handler(signum, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 
-class QueueException(Exception):
+class ArenaException(Exception):
+    """"""
+
+
+class QueueException(ArenaException):
     """"""
 
 
@@ -69,7 +73,7 @@ class ArenaProcess(mp.Process):
             self._run()
             if self.calc_fps_name:
                 self.clear_fps()
-        except QueueException as exc:
+        except ArenaException as exc:
             self.logger.error(str(exc))
         except Exception as exc:
             sentry_sdk.capture_exception(exc)
@@ -424,7 +428,7 @@ class CameraUnit:
                                     f'using {stream_pred} for streaming')
 
         conf_preds = self.get_conf_predictors()
-        pred_image_size = conf_preds[stream_pred]
+        pred_image_size = conf_preds[stream_pred]['image_size']
         img = np.frombuffer(self.pred_shm[stream_pred].buf, dtype=config.shm_buffer_dtype).reshape(pred_image_size)
         return img
 

@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 from scipy import optimize
 from scipy.stats import zscore
@@ -152,3 +153,18 @@ def remove_outliers(x, thresh=3, is_replace_nan=False):
         idx = np.abs(zscore(x)) < thresh
         x = x[idx]
     return x
+
+
+def put_text(text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, font=cv2.FONT_HERSHEY_SIMPLEX):
+    """
+    :param text: The text to put on frame
+    :param frame: The frame numpy array
+    :param x: x
+    :param y: y
+    :param font_scale:
+    :param color: default: yellow (255,255,0)
+    :param thickness: in px, default 2px
+    :param font: font
+    :return: frame with text
+    """
+    return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)

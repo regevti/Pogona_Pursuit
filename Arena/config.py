@@ -3,7 +3,7 @@ from environs import Env
 from pathlib import Path
 
 env = Env()
-env.read_env()
+env.read_env('configurations/.env')
 
 # General
 version = '2.2'
@@ -89,8 +89,8 @@ arena_modules = {
         'pogona_head': ('analysis.predictors.pogona_head', 'PogonaHead')
     }
 }
-default_exposure = 5000
-cameras = yaml.load(Path('cam_config.yaml').open(), Loader=yaml.FullLoader)
+cameras = yaml.load(Path('configurations/cam_config.yaml').open(), Loader=yaml.FullLoader)
+DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000)
 camera_on_min_duration = env('camera_on_min_duration', 10*60)
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 output_dir_key = 'output_dir'  # used for cam_config
@@ -125,6 +125,7 @@ schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
 # Experiments
 EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments")
 explore_experiment_dir = env('EXPLORE_EXPERIMENT_DIR', EXPERIMENTS_DIR)
+IS_RECORD_SCREEN_IN_EXPERIMENT = env.bool('IS_RECORD_SCREEN_IN_EXPERIMENT', True)
 extra_time_recording = env.int('EXTRA_TIME_RECORDING', 30)
 time_between_blocks = env.int('time_between_blocks', 300)
 experiments_timeout = env.int('EXPERIMENTS_TIMEOUT', 60 * 60)

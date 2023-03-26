@@ -27,6 +27,7 @@ from utils import run_in_thread, Kalman
 from sqlalchemy import cast, Date
 from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, PoseEstimation
 from image_handlers.video_writers import OpenCVWriter
+from analysis.pose_utils import put_text
 
 
 MIN_DISTANCE = 5  # cm
@@ -156,7 +157,7 @@ class ArenaPose:
 
             cam_x, cam_y = pred_row[(bodypart, 'cam_x')].iloc[0], pred_row[(bodypart, 'cam_y')].iloc[0]
             x, y = np.nan, np.nan
-            if not np.isnan(cam_x) or not np.isnan(cam_y):
+            if not np.isnan(cam_x) and not np.isnan(cam_y):
                 x, y = self.caliber.get_location(cam_x, cam_y)
 
             if bodypart == self.commit_bodypart:
@@ -251,10 +252,10 @@ class ArenaPose:
         frame = self.predictor.plot_predictions(frame, frame_id, pred_row)
         x, y = 40, 200
         for col in self.kinematic_cols:
-            frame = self.predictor.put_text(f'{col}={pred_row[col].iloc[0]:.1f}', frame, x, y)
+            frame = put_text(f'{col}={pred_row[col].iloc[0]:.1f}', frame, x, y)
             y += 30
         if 'angle' in pred_row.columns:
-            frame = self.predictor.put_text(f'angle={math.degrees(pred_row["angle"].iloc[0]):.1f}', frame, x, y)
+            frame = put_text(f'angle={math.degrees(pred_row["angle"].iloc[0]):.1f}', frame, x, y)
         self.example_writer.write(frame)
 
     def close_example_writer(self):

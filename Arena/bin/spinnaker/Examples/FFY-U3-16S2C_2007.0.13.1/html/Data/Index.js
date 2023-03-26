@@ -1,0 +1,1 @@
+define({numchunks:1,prefix:'Index_Chunk',terms:[{t:'cable length',c:0,$:1},{t:'data flash',c:0,$:1},{t:'flash memory',c:0,$:1},{t:'memory',c:0,$:0}]});

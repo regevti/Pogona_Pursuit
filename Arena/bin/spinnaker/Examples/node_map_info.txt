@@ -1,0 +1,900 @@
+Library version: 2.0.0.147
+Number of cameras detected: 3
+Running example for camera 0...
+
+*** PRINTING TRANSPORT LAYER DEVICE NODEMAP *** 
+
+Root
+    Device Information
+        Device ID: 19506455
+        Device Serial Number: 19506455
+        Device Vendor Name  : FLIR
+        Device Model Name: Firefly FFY-U3-16S2M-DL
+        Device Type: USB3Vision
+        Device Display Name: FLIR
+        Device Access Status: OpenReadWrite
+        Device Version: 1905.4.49.0
+        Device Driver Version: none : 0.0.0.0
+        Device User ID: 
+        Device Is Updater Mode: False
+        DeviceInstanceId: 19506455
+        Device Location: 
+        Device Current Speed: SuperSpeed
+        GUI XML Source: Device
+        GUI XML Path: Input.xml
+        GenICam XML Source: Device
+        GenICam XML Path: 
+        Device Is In U3V Protocol: True
+
+    Device Control
+        Device Endianess Mechanism: Standard
+
+
+*** PRINTING TL STREAM NODEMAP ***
+
+Root
+    Stream Information
+        Stream ID  : 0
+        Stream Type: USB3Vision
+
+    Buffer Handling Control
+        Manual Stream Buffer Count: 10
+        Resulting Stream Buffer Count: 10
+        Stream Buffer Count Max: 3472
+        Stream Buffer Count Mode: Manual
+        Stream Buffer Handling Mode: OldestFirst
+        Stream Announce Buffer Minimum: 1
+        Stream Announced Buffer Count: 0
+        Stream Started Frame Count: 0
+        Stream Delivered Frame Count: 0
+        Stream Lost Frame Count: 0
+        Stream Input Buffer Count: 0
+        Stream Output Buffer Count: 0
+        Stream Block Transfer Size: 0
+        CRC Check Enable: False
+        Stream Is Grabbing: False
+        Stream Chunk Count Maximum: 50
+        Stream Buffer Alignment: 1024
+
+    Stream Diagnostics
+        Failed Buffer Count: 0
+
+
+*** PRINTING GENICAM NODEMAP ***
+
+Root
+    Acquisition Control
+        Acquisition Mode: Continuous
+        Acquisition Frame Count: 2
+        Exposure Mode: Timed
+        Exposure Time: 7999.0
+        Exposure Auto: Off
+        Acquisition Frame Rate: 27.416735921341605
+        Resulting Frame Rate: 27.416734362307068
+        Acquisition Frame Rate Enable: True
+        Acquisition Line Rate: 67500.0
+        Trigger Selector: AcquisitionStart
+        Trigger Mode: Off
+        Trigger Source: Line1
+        Trigger Activation: RisingEdge
+        Sensor Shutter Mode: Global
+
+    Analog Control
+        Gain Selector: All
+        Gain: 0.0
+        Gain Auto: Off
+        Black Level Selector: All
+        Black Level: 0.0
+        Black Level Clamping Enable: True
+        Gamma: 0.800048828125
+        Gamma Enable: True
+        Sharpening Enable: False
+        Denoise Enable: False
+        Denoising: 0
+
+    Image Format Control
+        Sensor Width: 1456
+        Sensor Height: 1098
+        Width Max: 1440
+        Height Max: 1080
+        Width: 1440
+        Height: 1080
+        Offset X: 0
+        Offset Y: 0
+        Pixel Format: Mono8
+        Pixel Size: Bpp8
+        Pixel Color Filter: None
+        Pixel Dynamic Range Min: 0
+        Pixel Dynamic Range Max: 255
+        ISP Enable: True
+        Binning Selector: All
+        Binning Horizontal Mode: Sum
+        Binning Vertical Mode: Sum
+        Binning Horizontal: 1
+        Binning Vertical: 1
+        Reverse X: False
+        Reverse Y: False
+        Test Pattern Generator Selector: Sensor
+        Test Pattern: Off
+        Injected Image Width: 1440
+        Injected Image Height: 1080
+        ADC Bit Depth: Bit10
+
+    Device Control
+        Device Vendor Name: FLIR
+        Device Model Name: Firefly FFY-U3-16S2M-DL
+        Sensor Description: Sony IMX296 (1/2.9" Mono CMOS)
+        Device Manufacturer Info: Aug 29 2019 08:56:26
+        Device Version: 1905.4.49.0
+        Device Firmware Version: 1905.4.49.0
+        Device Serial Number: 19506455
+        Device ID: 19506455
+        Device User ID: 
+        Device TL Type: USB3Vision
+        Device Gen CP Version Major: 1
+        Device Gen CP Version Minor: 0
+        Device Max Throughput: 94578303
+        Device Link Speed: 500000000
+        Device Link Throughput Limit: 94578303
+        Device Link Bandwidth Reserve: 0.0
+        Device Link Current Throughput: 42640917
+        Device Indicator Mode: Active
+        Device Temperature Selector: Cpu0
+        Device Temperature: 57.649658203125
+        Timestamp Latch Value: 0
+        Timestamp Increment: 480
+        Device Uptime: 496
+        Link Uptime: 292
+        Enumeration Count: 3
+        Max Device Reset Time: 60000
+
+    Transport Layer Control
+        Payload Size: 1555200
+        TLParamsLocked: 0
+        USB3 Vision
+            Max Response Time: 200
+            Message Channel: 0
+            Access Privilege: 0
+            U3V Version Major: 1
+            U3V Version Minor: 0
+            U3V Capability: 0
+            U3V SIRM Available: True
+            U3V EIRM Available: True
+            U3V IIDC2 Available: False
+            Max Command Transfer Length: 1024
+            Max Ack Transfer Length: 1024
+            Number of Stream Channels: 1
+            Current Speed: SuperSpeed
+
+
+    Auto Algorithm Control
+        Target Grey Value Auto: Continuous
+        Lighting Mode: Normal
+        Exposure Time Lower Limit: 100.0
+        Exposure Time Upper Limit: 15000.0
+        Gain Lower Limit: 0.0
+        Gain Upper Limit: 18.000065071923338
+        Target Grey Value Lower Limit: 3.9215686274509802
+        Target Grey Value Upper Limit: 94.11764705882354
+        Auto Exposure Damping: 0.203125
+
+    Defective Pixel Correction
+        Defect Correct Static Enable: False
+        Defect Correct Dynamic Enable: False
+        Defect Table Pixel Count: 0
+        Defect Table Apply: Applies the current defect table, s...
+
+    Inference Control
+        Inference Enable: False
+        Network Type: Classification
+        Bounding Box Format: SSD
+        Bounding Box Threshold: 0.25
+        Inference Time: 0.0
+        Inference Preprocessing
+            Training Pixel Format: RGB8
+            Network Input Channel: Channel1
+            Training Mean: 127.5
+            Training Scalar: 127.5
+
+        Inference Properties
+            Max Input Width: 512
+            Max Input Height: 540
+            Max Bounding Boxes: 410
+            Network Size: 6416980
+            Network Total Layers: 30
+            Network Input Width: 224
+            Network Input Height: 224
+            Network Input Channels: 3
+            Output Classes: 2
+
+        Inference Network Name: 
+        Max Network Size: 16777216
+
+    User Set Control
+        User Set Selector: UserSet0
+        User Set Load: Loads the User Set specified by Use...
+        User Set Save: Saves the User Set specified by Use...
+        User Set Default: UserSet0
+        User Set Feature Selector: AcquisitionFrameCount
+        User Set Feature Enable: True
+
+    Chunk Data Control
+        Chunk Mode Active: False
+        Chunk Selector: FrameID
+        Chunk Enable: False
+        Chunk Gain Selector: All
+        Chunk Black Level Selector: All
+
+    LUT Control
+        LUTSelector: LUT1
+        LUTEnable: False
+        LUTIndex: 0
+        LUTValue: 0
+
+    Event Control
+        Event Selector: ExposureEnd
+        Event Notification: Off
+        Event Exposure End Data
+            Event Exposure End: 40003
+
+        Event Error Data
+            Event Error: 40000
+
+        Event Serial Port Receive Data
+            Event Serial Port Receive: 40005
+
+        Event Inference Data
+
+        Event Test Data
+            Event Test: 20479
+
+
+    Test Control
+        Test Pending Ack: 0
+        Test 0001: 0
+        GUI XML Manifest Address: 4026535968
+
+    Digital IO Control
+        Line Selector: Line0
+        Line Mode: Input
+        3.3V Enable: False
+        Line Inverter: False
+        Line Status: True
+        Line Status All: 13
+        Line Source: ExposureActive
+
+    Serial Port Control
+        Serial Port Selector: SerialPort0
+        Serial Port Source: Off
+        Serial Port Baud Rate: Baud57600
+        Serial Port Data Bits: 8
+        Serial Port Stop Bits: Bits1
+        Serial Port Parity: None
+        Transmit Queue Max Character Count: 4096
+        Transmit Queue Current Character Count: 0
+        Receive Queue Max Character Count: 4096
+        Receive Queue Current Character Count: 0
+        Receive Framing Error Count: 0
+        Receive Parity Error Count: 0
+
+    File Access
+        File Selector: UserSetDefault
+        File Operation Selector: Open
+        Save File To Camera: True
+        File Open Mode: Read
+        File Access Offset: 0
+        File Access Length: 1
+        File Operation Status: Success
+        File Operation Result: 0
+        File Size: 728
+        File System Command: NoCommand
+        File System Command Result: 
+
+    Transfer Control
+        Transfer Control Mode: Basic
+        Transfer Queue Max Block Count: 3
+        Transfer Queue Current Block Count: 0
+        Transfer Queue Overflow Count: 7760
+
+
+Camera 0 example complete... 
+
+Running example for camera 1...
+
+*** PRINTING TRANSPORT LAYER DEVICE NODEMAP *** 
+
+Root
+    Device Information
+        Device ID: 19506475
+        Device Serial Number: 0
+        Device Vendor Name  : FLIR
+        Device Model Name: Firefly FFY-U3-16S2M-DL
+        Device Type: USB3Vision
+        Device Display Name: FLIR
+        Device Access Status: OpenReadWrite
+        Device Version: 1905.4.49.0
+        Device Driver Version: none : 0.0.0.0
+        Device User ID: 
+        Device Is Updater Mode: False
+        DeviceInstanceId: 19506475
+        Device Location: 
+        Device Current Speed: SuperSpeed
+        GUI XML Source: Device
+        GUI XML Path: Input.xml
+        GenICam XML Source: Device
+        GenICam XML Path: 
+        Device Is In U3V Protocol: True
+
+    Device Control
+        Device Endianess Mechanism: Standard
+
+
+*** PRINTING TL STREAM NODEMAP ***
+
+Root
+    Stream Information
+        Stream ID  : 0
+        Stream Type: USB3Vision
+
+    Buffer Handling Control
+        Manual Stream Buffer Count: 10
+        Resulting Stream Buffer Count: 10
+        Stream Buffer Count Max: 3472
+        Stream Buffer Count Mode: Manual
+        Stream Buffer Handling Mode: OldestFirst
+        Stream Announce Buffer Minimum: 1
+        Stream Announced Buffer Count: 0
+        Stream Started Frame Count: 0
+        Stream Delivered Frame Count: 0
+        Stream Lost Frame Count: 0
+        Stream Input Buffer Count: 0
+        Stream Output Buffer Count: 0
+        Stream Block Transfer Size: 0
+        CRC Check Enable: False
+        Stream Is Grabbing: False
+        Stream Chunk Count Maximum: 50
+        Stream Buffer Alignment: 1024
+
+    Stream Diagnostics
+        Failed Buffer Count: 0
+
+
+*** PRINTING GENICAM NODEMAP ***
+
+Root
+    Acquisition Control
+        Acquisition Mode: Continuous
+        Acquisition Frame Count: 2
+        Exposure Mode: Timed
+        Exposure Time: 7999.0
+        Exposure Auto: Off
+        Acquisition Frame Rate: 60.810797662530234
+        Resulting Frame Rate: 60.810810810810814
+        Acquisition Frame Rate Enable: True
+        Acquisition Line Rate: 67500.0
+        Trigger Selector: AcquisitionStart
+        Trigger Mode: Off
+        Trigger Source: Line1
+        Trigger Activation: FallingEdge
+        Sensor Shutter Mode: Global
+
+    Analog Control
+        Gain Selector: All
+        Gain: 0.0
+        Gain Auto: Off
+        Black Level Selector: All
+        Black Level: 0.0
+        Black Level Clamping Enable: True
+        Gamma: 0.800048828125
+        Gamma Enable: True
+        Sharpening Enable: False
+        Denoise Enable: False
+        Denoising: 0
+
+    Image Format Control
+        Sensor Width: 1456
+        Sensor Height: 1098
+        Width Max: 1440
+        Height Max: 1080
+        Width: 1440
+        Height: 1080
+        Offset X: 0
+        Offset Y: 0
+        Pixel Format: Mono8
+        Pixel Size: Bpp8
+        Pixel Color Filter: None
+        Pixel Dynamic Range Min: 0
+        Pixel Dynamic Range Max: 255
+        ISP Enable: True
+        Binning Selector: All
+        Binning Horizontal Mode: Sum
+        Binning Vertical Mode: Sum
+        Binning Horizontal: 1
+        Binning Vertical: 1
+        Reverse X: False
+        Reverse Y: False
+        Test Pattern Generator Selector: Sensor
+        Test Pattern: Off
+        Injected Image Width: 1440
+        Injected Image Height: 1080
+        ADC Bit Depth: Bit10
+
+    Device Control
+        Device Vendor Name: FLIR
+        Device Model Name: Firefly FFY-U3-16S2M-DL
+        Sensor Description: Sony IMX296 (1/2.9" Mono CMOS)
+        Device Manufacturer Info: Aug 29 2019 08:56:26
+        Device Version: 1905.4.49.0
+        Device Firmware Version: 1905.4.49.0
+        Device Serial Number: 0
+        Device ID: 0
+        Device User ID: 
+        Device TL Type: USB3Vision
+        Device Gen CP Version Major: 1
+        Device Gen CP Version Minor: 0
+        Device Max Throughput: 94578303
+        Device Link Speed: 500000000
+        Device Link Throughput Limit: 94578303
+        Device Link Bandwidth Reserve: 0.0
+        Device Link Current Throughput: 94578324
+        Device Indicator Mode: Active
+        Device Temperature Selector: Cpu0
+        Device Temperature: 61.854736328125
+        Timestamp Latch Value: 0
+        Timestamp Increment: 480
+        Device Uptime: 20783
+        Link Uptime: 292
+        Enumeration Count: 14
+        Max Device Reset Time: 60000
+
+    Transport Layer Control
+        Payload Size: 1555200
+        TLParamsLocked: 0
+        USB3 Vision
+            Max Response Time: 200
+            Message Channel: 0
+            Access Privilege: 0
+            U3V Version Major: 1
+            U3V Version Minor: 0
+            U3V Capability: 0
+            U3V SIRM Available: True
+            U3V EIRM Available: True
+            U3V IIDC2 Available: False
+            Max Command Transfer Length: 1024
+            Max Ack Transfer Length: 1024
+            Number of Stream Channels: 1
+            Current Speed: SuperSpeed
+
+
+    Auto Algorithm Control
+        Target Grey Value Auto: Continuous
+        Lighting Mode: Normal
+        Exposure Time Lower Limit: 100.0
+        Exposure Time Upper Limit: 15000.0
+        Gain Lower Limit: 0.0
+        Gain Upper Limit: 18.000065071923338
+        Target Grey Value Lower Limit: 3.9215686274509802
+        Target Grey Value Upper Limit: 94.11764705882354
+        Auto Exposure Damping: 0.203125
+
+    Defective Pixel Correction
+        Defect Correct Static Enable: False
+        Defect Correct Dynamic Enable: False
+        Defect Table Pixel Count: 0
+        Defect Table Apply: Applies the current defect table, s...
+
+    Inference Control
+        Inference Enable: False
+        Network Type: Classification
+        Bounding Box Format: SSD
+        Bounding Box Threshold: 0.25
+        Inference Time: 0.0
+        Inference Preprocessing
+            Training Pixel Format: RGB8
+            Network Input Channel: Channel1
+            Training Mean: 127.5
+            Training Scalar: 127.5
+
+        Inference Properties
+            Max Input Width: 512
+            Max Input Height: 540
+            Max Bounding Boxes: 410
+            Network Size: 6416980
+            Network Total Layers: 30
+            Network Input Width: 224
+            Network Input Height: 224
+            Network Input Channels: 3
+            Output Classes: 2
+
+        Inference Network Name: 
+        Max Network Size: 16777216
+
+    User Set Control
+        User Set Selector: UserSet0
+        User Set Load: Loads the User Set specified by Use...
+        User Set Save: Saves the User Set specified by Use...
+        User Set Default: UserSet0
+        User Set Feature Selector: AcquisitionFrameCount
+        User Set Feature Enable: True
+
+    Chunk Data Control
+        Chunk Mode Active: False
+        Chunk Selector: FrameID
+        Chunk Enable: False
+        Chunk Gain Selector: All
+        Chunk Black Level Selector: All
+
+    LUT Control
+        LUTSelector: LUT1
+        LUTEnable: False
+        LUTIndex: 0
+        LUTValue: 0
+
+    Event Control
+        Event Selector: ExposureEnd
+        Event Notification: Off
+        Event Exposure End Data
+            Event Exposure End: 40003
+
+        Event Error Data
+            Event Error: 40000
+
+        Event Serial Port Receive Data
+            Event Serial Port Receive: 40005
+
+        Event Inference Data
+
+        Event Test Data
+            Event Test: 20479
+
+
+    Test Control
+        Test Pending Ack: 0
+        Test 0001: 0
+        GUI XML Manifest Address: 4026535968
+
+    Digital IO Control
+        Line Selector: Line0
+        Line Mode: Input
+        3.3V Enable: False
+        Line Inverter: False
+        Line Status: True
+        Line Status All: 9
+        Line Source: ExposureActive
+
+    Serial Port Control
+        Serial Port Selector: SerialPort0
+        Serial Port Source: Off
+        Serial Port Baud Rate: Baud57600
+        Serial Port Data Bits: 8
+        Serial Port Stop Bits: Bits1
+        Serial Port Parity: None
+        Transmit Queue Max Character Count: 4096
+        Transmit Queue Current Character Count: 0
+        Receive Queue Max Character Count: 4096
+        Receive Queue Current Character Count: 0
+        Receive Framing Error Count: 0
+        Receive Parity Error Count: 0
+
+    File Access
+        File Selector: UserSetDefault
+        File Operation Selector: Open
+        Save File To Camera: True
+        File Open Mode: Read
+        File Access Offset: 0
+        File Access Length: 1
+        File Operation Status: Success
+        File Operation Result: 0
+        File Size: 728
+        File System Command: NoCommand
+        File System Command Result: 
+
+    Transfer Control
+        Transfer Control Mode: Basic
+        Transfer Queue Max Block Count: 3
+        Transfer Queue Current Block Count: 0
+        Transfer Queue Overflow Count: 1688
+
+
+Camera 1 example complete... 
+
+Running example for camera 2...
+
+*** PRINTING TRANSPORT LAYER DEVICE NODEMAP *** 
+
+Root
+    Device Information
+        Device ID: 19506468
+        Device Serial Number: 0
+        Device Vendor Name  : FLIR
+        Device Model Name: Firefly FFY-U3-16S2M-DL
+        Device Type: USB3Vision
+        Device Display Name: FLIR
+        Device Access Status: OpenReadWrite
+        Device Version: 1905.4.49.0
+        Device Driver Version: none : 0.0.0.0
+        Device User ID: 
+        Device Is Updater Mode: False
+        DeviceInstanceId: 19506468
+        Device Location: 
+        Device Current Speed: SuperSpeed
+        GUI XML Source: Device
+        GUI XML Path: Input.xml
+        GenICam XML Source: Device
+        GenICam XML Path: 
+        Device Is In U3V Protocol: True
+
+    Device Control
+        Device Endianess Mechanism: Standard
+
+
+*** PRINTING TL STREAM NODEMAP ***
+
+Root
+    Stream Information
+        Stream ID  : 0
+        Stream Type: USB3Vision
+
+    Buffer Handling Control
+        Manual Stream Buffer Count: 10
+        Resulting Stream Buffer Count: 10
+        Stream Buffer Count Max: 3472
+        Stream Buffer Count Mode: Manual
+        Stream Buffer Handling Mode: OldestFirst
+        Stream Announce Buffer Minimum: 1
+        Stream Announced Buffer Count: 0
+        Stream Started Frame Count: 0
+        Stream Delivered Frame Count: 0
+        Stream Lost Frame Count: 0
+        Stream Input Buffer Count: 0
+        Stream Output Buffer Count: 0
+        Stream Block Transfer Size: 0
+        CRC Check Enable: False
+        Stream Is Grabbing: False
+        Stream Chunk Count Maximum: 50
+        Stream Buffer Alignment: 1024
+
+    Stream Diagnostics
+        Failed Buffer Count: 0
+
+
+*** PRINTING GENICAM NODEMAP ***
+
+Root
+    Acquisition Control
+        Acquisition Mode: Continuous
+        Acquisition Frame Count: 2
+        Exposure Mode: Timed
+        Exposure Time: 7999.0
+        Exposure Auto: Off
+        Acquisition Frame Rate: 60.810797662530234
+        Resulting Frame Rate: 60.810810810810814
+        Acquisition Frame Rate Enable: True
+        Acquisition Line Rate: 67500.0
+        Trigger Selector: AcquisitionStart
+        Trigger Mode: Off
+        Trigger Source: Line1
+        Trigger Activation: RisingEdge
+        Sensor Shutter Mode: Global
+
+    Analog Control
+        Gain Selector: All
+        Gain: 0.0
+        Gain Auto: Off
+        Black Level Selector: All
+        Black Level: 0.0
+        Black Level Clamping Enable: True
+        Gamma: 0.800048828125
+        Gamma Enable: True
+        Sharpening Enable: False
+        Denoise Enable: False
+        Denoising: 0
+
+    Image Format Control
+        Sensor Width: 1456
+        Sensor Height: 1098
+        Width Max: 1440
+        Height Max: 1080
+        Width: 1440
+        Height: 1080
+        Offset X: 0
+        Offset Y: 0
+        Pixel Format: Mono8
+        Pixel Size: Bpp8
+        Pixel Color Filter: None
+        Pixel Dynamic Range Min: 0
+        Pixel Dynamic Range Max: 255
+        ISP Enable: True
+        Binning Selector: All
+        Binning Horizontal Mode: Sum
+        Binning Vertical Mode: Sum
+        Binning Horizontal: 1
+        Binning Vertical: 1
+        Reverse X: False
+        Reverse Y: False
+        Test Pattern Generator Selector: Sensor
+        Test Pattern: Off
+        Injected Image Width: 1440
+        Injected Image Height: 1080
+        ADC Bit Depth: Bit10
+
+    Device Control
+        Device Vendor Name: FLIR
+        Device Model Name: Firefly FFY-U3-16S2M-DL
+        Sensor Description: Sony IMX296 (1/2.9" Mono CMOS)
+        Device Manufacturer Info: Aug 29 2019 08:56:26
+        Device Version: 1905.4.49.0
+        Device Firmware Version: 1905.4.49.0
+        Device Serial Number: 0
+        Device ID: 0
+        Device User ID: 
+        Device TL Type: USB3Vision
+        Device Gen CP Version Major: 1
+        Device Gen CP Version Minor: 0
+        Device Max Throughput: 94578303
+        Device Link Speed: 500000000
+        Device Link Throughput Limit: 94578303
+        Device Link Bandwidth Reserve: 0.0
+        Device Link Current Throughput: 94578324
+        Device Indicator Mode: Active
+        Device Temperature Selector: Cpu0
+        Device Temperature: 62.232421875
+        Timestamp Latch Value: 0
+        Timestamp Increment: 480
+        Device Uptime: 1213000
+        Link Uptime: 294
+        Enumeration Count: 36
+        Max Device Reset Time: 60000
+
+    Transport Layer Control
+        Payload Size: 1555200
+        TLParamsLocked: 0
+        USB3 Vision
+            Max Response Time: 200
+            Message Channel: 0
+            Access Privilege: 0
+            U3V Version Major: 1
+            U3V Version Minor: 0
+            U3V Capability: 0
+            U3V SIRM Available: True
+            U3V EIRM Available: True
+            U3V IIDC2 Available: False
+            Max Command Transfer Length: 1024
+            Max Ack Transfer Length: 1024
+            Number of Stream Channels: 1
+            Current Speed: SuperSpeed
+
+
+    Auto Algorithm Control
+        Target Grey Value Auto: Continuous
+        Lighting Mode: Normal
+        Exposure Time Lower Limit: 100.0
+        Exposure Time Upper Limit: 15000.0
+        Gain Lower Limit: 0.0
+        Gain Upper Limit: 18.000065071923338
+        Target Grey Value Lower Limit: 3.9215686274509802
+        Target Grey Value Upper Limit: 94.11764705882354
+        Auto Exposure Damping: 0.203125
+
+    Defective Pixel Correction
+        Defect Correct Static Enable: False
+        Defect Correct Dynamic Enable: False
+        Defect Table Pixel Count: 0
+        Defect Table Apply: Applies the current defect table, s...
+
+    Inference Control
+        Inference Enable: False
+        Network Type: Classification
+        Bounding Box Format: SSD
+        Bounding Box Threshold: 0.25
+        Inference Time: 0.0
+        Inference Preprocessing
+            Training Pixel Format: RGB8
+            Network Input Channel: Channel1
+            Training Mean: 127.5
+            Training Scalar: 127.5
+
+        Inference Properties
+            Max Input Width: 512
+            Max Input Height: 540
+            Max Bounding Boxes: 410
+            Network Size: 6416980
+            Network Total Layers: 30
+            Network Input Width: 224
+            Network Input Height: 224
+            Network Input Channels: 3
+            Output Classes: 2
+
+        Inference Network Name: 
+        Max Network Size: 16777216
+
+    User Set Control
+        User Set Selector: UserSet0
+        User Set Load: Loads the User Set specified by Use...
+        User Set Save: Saves the User Set specified by Use...
+        User Set Default: UserSet0
+        User Set Feature Selector: AcquisitionFrameCount
+        User Set Feature Enable: True
+
+    Chunk Data Control
+        Chunk Mode Active: False
+        Chunk Selector: FrameID
+        Chunk Enable: False
+        Chunk Gain Selector: All
+        Chunk Black Level Selector: All
+
+    LUT Control
+        LUTSelector: LUT1
+        LUTEnable: False
+        LUTIndex: 0
+        LUTValue: 0
+
+    Event Control
+        Event Selector: ExposureEnd
+        Event Notification: Off
+        Event Exposure End Data
+            Event Exposure End: 40003
+
+        Event Error Data
+            Event Error: 40000
+
+        Event Serial Port Receive Data
+            Event Serial Port Receive: 40005
+
+        Event Inference Data
+
+        Event Test Data
+            Event Test: 20479
+
+
+    Test Control
+        Test Pending Ack: 0
+        Test 0001: 0
+        GUI XML Manifest Address: 4026535968
+
+    Digital IO Control
+        Line Selector: Line0
+        Line Mode: Input
+        3.3V Enable: False
+        Line Inverter: False
+        Line Status: True
+        Line Status All: 13
+        Line Source: ExposureActive
+
+    Serial Port Control
+        Serial Port Selector: SerialPort0
+        Serial Port Source: Off
+        Serial Port Baud Rate: Baud57600
+        Serial Port Data Bits: 8
+        Serial Port Stop Bits: Bits1
+        Serial Port Parity: None
+        Transmit Queue Max Character Count: 4096
+        Transmit Queue Current Character Count: 0
+        Receive Queue Max Character Count: 4096
+        Receive Queue Current Character Count: 0
+        Receive Framing Error Count: 0
+        Receive Parity Error Count: 0
+
+    File Access
+        File Selector: UserSetDefault
+        File Operation Selector: Open
+        Save File To Camera: True
+        File Open Mode: Read
+        File Access Offset: 0
+        File Access Length: 1
+        File Operation Status: Success
+        File Operation Result: 0
+        File Size: 728
+        File System Command: NoCommand
+        File System Command Result: 
+
+    Transfer Control
+        Transfer Control Mode: Basic
+        Transfer Queue Max Block Count: 3
+        Transfer Queue Current Block Count: 0
+        Transfer Queue Overflow Count: 39670739
+
+
+Camera 2 example complete... 
+
+Done! Press Enter to exit...

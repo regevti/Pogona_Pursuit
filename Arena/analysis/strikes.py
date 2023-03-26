@@ -1,214 +1,23 @@
-import time
-from pathlib import Path
-import numpy as np
-from datetime import datetime
-from functools import cached_property, lru_cache
-import pandas as pd
-import pickle
+import os
 import cv2
-import yaml
-from tqdm.auto import tqdm
-from scipy.signal import find_peaks, savgol_filter
-import matplotlib
-if __name__ == '__main__':
-    import os
-    os.chdir('..')
-
+import traceback
+import numpy as np
+import pandas as pd
+from pathlib import Path
 import matplotlib.pyplot as plt
-import seaborn as sns
-from analysis.pose_utils import closest_index, pixels2cm, distance, remove_outliers, fit_circle
-from analysis.pose import ArenaPose
-# from analysis.predictors.deeplabcut import PredPlotter, DLCPose, MODEL_NAME as POSE_MODEL_NAME
-from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, Trial
-from calibration import CharucoEstimator
-from analysis.predictors.tongue_out import TONGUE_CLASS, TONGUE_PREDICTED_DIR, TongueOutAnalyzer
+from tqdm.autonotebook import tqdm
+from functools import cached_property
+from scipy.signal import find_peaks, savgol_filter
+if __name__ == '__main__':
+    os.chdir('../..')
+
+import config
+from analysis.pose_utils import closest_index, pixels2cm, distance, fit_circle
+from analysis.strikes.loader import Loader, MissingStrikeData
+from db_models import ORM, Experiment, Block, Strike
 
 NUM_FRAMES_TO_PLOT = 5
 NUM_POSE_FRAMES_PER_STRIKE = 30
-PREDICTOR_NAME = 'pogona_head_local'
-TONGUE_COL = ('tongue', '')
-
-
-class StrikeException(Exception):
-    """"""
-
-
-class MissingStrikeData(Exception):
-    """Could not find timestamps for video frames"""
-
-
-class Loader:
-    def __init__(self, strike_db_id, cam_name, is_load_pose=True, is_debug=True, is_load_tongue=True, orm=None):
-        self.strike_db_id = strike_db_id
-        self.cam_name = cam_name
-        self.is_load_pose = is_load_pose
-        self.is_load_tongue = is_load_tongue
-        self.is_debug = is_debug
-        self.orm = orm if orm is not None else ORM()
-        self.sec_back = 3
-        self.sec_after = 2
-        self.frames_delta = None
-        self.n_frames_back = None
-        self.n_frames_forward = None
-        self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_commit_db=False, orm=orm)
-        self.bug_traj_strike_id = None
-        self.bug_traj_before_strike = None
-        self.strike_frame_id = None
-        self.video_path = None
-        self.frames_df: pd.DataFrame = pd.DataFrame()
-        self.traj_df: pd.DataFrame = pd.DataFrame(columns=['time', 'x', 'y'])
-        self.info = {}
-        self.load()
-
-    def __str__(self):
-        return f'Strike-Loader:{self.strike_db_id}'
-
-    def load(self):
-        with self.orm.session() as s:
-            n_tries = 3
-            for i in range(n_tries):
-                try:
-                    strk = s.query(Strike).filter_by(id=self.strike_db_id).first()
-                    break
-                except Exception as exc:
-                    time.sleep(0.2)
-                    if i >= n_tries - 1:
-                        raise exc
-            if strk is None:
-                raise StrikeException(f'could not find strike id: {self.strike_db_id}')
-
-            self.info = {k: v for k, v in strk.__dict__.items() if not k.startswith('_')}
-            trial = s.query(Trial).filter_by(id=strk.trial_id).first()
-            if trial is None:
-                raise StrikeException('No trial found in DB')
-
-            self.load_bug_trajectory_data(trial, strk)
-            self.load_frames_data(s, trial, strk)
-            self.load_tongues_out()
-
-    def load_bug_trajectory_data(self, trial, strk):
-        self.traj_df = pd.DataFrame(trial.bug_trajectory)
-        self.traj_df['time'] = pd.to_datetime(self.traj_df.time).dt.tz_localize(None)
-        self.bug_traj_strike_id = (strk.time - self.traj_df.time).dt.total_seconds().abs().idxmin()
-
-        n = self.sec_back / self.traj_df['time'].diff().dt.total_seconds().mean()
-        self.bug_traj_before_strike = self.traj_df.loc[self.bug_traj_strike_id-n:self.bug_traj_strike_id].copy()
-
-    def load_frames_data(self, s, trial, strk):
-        block = s.query(Block).filter_by(id=trial.block_id).first()
-        for vid in block.videos:
-            if vid.cam_name != self.cam_name:
-                continue
-            video_path = Path(vid.path).resolve()
-            if not video_path.exists():
-                print(f'Video path does not exist: {video_path}')
-                continue
-            frames_times = self.load_frames_times(vid)
-            # check whether strike's time is in the loaded frames_times
-            if not frames_times.empty and \
-                    (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time):
-                # if load pose isn't needed finish here
-                self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
-                if not self.is_load_pose:
-                    self.frames_df = frames_times
-                # otherwise, load all pose data around strike frame
-                else:
-                    try:
-                        self.load_pose(video_path)
-                    except Exception as exc:
-                        raise MissingStrikeData(str(exc))
-                # break since the relevant video was found
-                self.video_path = video_path
-                break
-            # if strike's time not in frames_times continue to the next video
-            else:
-                continue
-
-        if self.frames_df.empty:
-            raise MissingStrikeData()
-
-    def load_frames_times(self, vid):
-        frames_times = self.dlc_pose.load_frames_times(vid.id)
-        if not frames_times.empty:
-            self.frames_delta = np.mean(frames_times.time.diff().dt.total_seconds())
-            self.n_frames_back = round(self.sec_back / self.frames_delta)
-            self.n_frames_forward = round(self.sec_after / self.frames_delta)
-        return frames_times
-
-    def get_strike_frame(self) -> np.ndarray:
-        for _, frame in self.gen_frames_around_strike(0, 1):
-            return frame
-
-    def gen_frames(self, frame_ids):
-        cap = cv2.VideoCapture(self.video_path.as_posix())
-        start_frame, end_frame = frame_ids[0], frame_ids[-1]
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        for i in range(start_frame, end_frame + 1):
-            ret, frame = cap.read()
-            if i not in frame_ids:
-                continue
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            yield i, frame
-        cap.release()
-
-    def gen_frames_around_strike(self, n_frames_back=None, n_frames_forward=None, center_frame=None, step=1):
-        n_frames_back, n_frames_forward = n_frames_back or self.n_frames_back, n_frames_forward or self.n_frames_forward
-        center_frame = center_frame or self.strike_frame_id
-        start_frame = center_frame - (n_frames_back * step)
-        frame_ids = [i for i in range(start_frame, start_frame + step * (n_frames_back + n_frames_forward), step)]
-        return self.gen_frames(frame_ids)
-
-    def load_pose(self, video_path):
-        pose_df = self.dlc_pose.load(video_path.as_posix(), only_load=True)
-        first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
-        last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
-        self.frames_df = pose_df.loc[first_frame:last_frame]
-
-    def load_tongues_out(self):
-        if not self.is_load_tongue:
-            return
-        toa = TongueOutAnalyzer(is_debug=self.is_debug)
-        self.frames_df[TONGUE_COL] = [0] * len(self.frames_df)
-
-        for i, frame in self.gen_frames_around_strike():
-            label, _ = toa.tr.predict(frame)
-            if label == TONGUE_CLASS:
-                self.frames_df.loc[i, [TONGUE_COL]] = 1
-                # cv2.imwrite(f'{TONGUE_PREDICTED_DIR}/{self.video_path.stem}_{i}.jpg', frame)
-
-    def plot_strike_events(self, n_frames_back=100, n_frames_forward=20):
-        plt.figure()
-        plt.axvline(self.strike_frame_id, color='r')
-        start_frame = self.strike_frame_id - n_frames_back
-        end_frame = start_frame + n_frames_back + n_frames_forward
-        plt.xlim([start_frame, end_frame])
-        for i in range(start_frame, end_frame):
-            tongue_val = self.frames_df[TONGUE_COL][i]
-            if tongue_val == 1:
-                plt.axvline(i, linestyle='--', color='b')
-        plt.title(str(self))
-        plt.show()
-
-    def play_strike(self, n_frames_back=100, n_frames_forward=20, annotations=None):
-        for i, frame in self.gen_frames_around_strike(n_frames_back, n_frames_forward):
-            if i == self.strike_frame_id:
-                self.dlc_pose.predictor.put_text('Strike Frame', frame, 30, 20)
-            if annotations and i in annotations:
-                self.dlc_pose.predictor.put_text(annotations[i], frame, 30, frame.shape[0]-30)
-            if self.is_load_pose:
-                self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
-            frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
-            # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            cv2.imshow(str(self), frame)
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                break
-        cv2.destroyAllWindows()
-
-    def get_block_info(self):
-        with self.orm.session() as s:
-            strk = s.query(Strike).filter_by(id=self.strike_db_id).first()
-            blk = s.query(Block).filter_by(id=strk.block_id).first()
-            return blk.__dict__
 
 
 class StrikeAnalyzer:
@@ -251,10 +60,13 @@ class StrikeAnalyzer:
                 self.payload = self.loader.info
             if self.pose_df is None:
                 self.pose_df = self.loader.frames_df.copy()
+                df = self.pose_df[['time', 'angle']].copy()
+                df.columns = df.columns.droplevel(1)
+                self.pose_df = pd.concat([df, self.pose_df.nose.copy()], axis=1)
                 # smoothing of x and y
                 for c in ['x', 'y']:
                     self.pose_df[f'orig_{c}'] = self.pose_df[c].copy()
-                    self.pose_df[c] = savgol_filter(self.pose_df[c], window_length=37, polyorder=0)
+                    self.pose_df[c] = savgol_filter(self.pose_df[c], window_length=37, polyorder=0, mode='nearest')
             if self.bug_traj is None:
                 self.bug_traj = self.loader.traj_df
 
@@ -269,7 +81,8 @@ class StrikeAnalyzer:
             self.pose_df[c] = np.nan
 
         t = self.pose_df.time.view('int64').values / 1e9
-        t = t - t[self.time_zero_frame]
+        zero_frame_id = self.pose_df.index.to_list().index(self.time_zero_frame)
+        t = t - t[zero_frame_id]
         self.pose_df['rel_time'] = t
         kdf = self.pose_df.loc[self.relevant_frames].copy()
         dt = float(np.mean(np.diff(kdf.rel_time)))
@@ -313,7 +126,6 @@ class StrikeAnalyzer:
         return d
 
     def plot_strike_analysis(self, n=6, only_save_to=None, only_return=False):
-        # get tongue frame IDs
         fig = plt.figure(figsize=(20, 15))
         grid = fig.add_gridspec(ncols=n, nrows=3, width_ratios=[1]*n, height_ratios=[3, 3, 5], hspace=0.2)
         self.plot_frames_sequence(grid[:2, :], n)
@@ -344,7 +156,8 @@ class StrikeAnalyzer:
         frames_iter = self.loader.gen_frames(frames_ids)
         for i, (frame_id, frame) in enumerate(frames_iter):
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-            frame = self.loader.dlc_pose.predictor.plot_single_part(self.loader.frames_df, frame_id, frame)
+            # frame = self.loader.dlc_pose.predictor.plot_single_part(self.loader.frames_df, frame_id, frame)
+            frame = self.loader.dlc_pose.predictor.plot_predictions(frame, frame_id, self.loader.frames_df)
             h, w = frame.shape[:2]
             frame = frame[h//2:, 350:w-350]
             labels = []
@@ -357,10 +170,10 @@ class StrikeAnalyzer:
                     if d != 0:
                         lfi = f"{'+' if d > 0 else '-'}{lfi}"
                     labels.append(lfi)
-            if frame_id in self.tongue_frame_ids:
-                labels.append('tongue')
-            if self.pose_df.loc[frame_id, 'is_in_screen'] >= 0:
-                labels.append('in_screen')
+            # if frame_id in self.tongue_frame_ids:
+            #     labels.append('tongue')
+            # if self.pose_df.loc[frame_id, 'is_in_screen'] >= 0:
+            #     labels.append('in_screen')
 
             h_text, text_colors = 30, {'strike_frame_id': (255, 0, 0), 'calc_strike_frame': (255, 255*0.647, 0),
                                        'tongue': (0, 255, 0), 'leap_frame': (0, 0, 255), 'in_screen': (0, 0, 0)}
@@ -387,29 +200,30 @@ class StrikeAnalyzer:
             ax.set_title(f'Nose {label} vs. frame_ids')
             ax.set_xlabel('Time around strike [sec]')
             if label == 'position':
-                ax.set_ylim([750, 950])
+                # ax.set_ylim([750, 950])
                 ax.legend()
             elif label == 'acceleration':
                 peaks_idx, _ = find_peaks(seg, height=50, distance=10)
                 peaks_idx = [int(pk) for pk in peaks_idx if t[pk] < 0]
-                max_peak_id = peaks_idx[np.argmax(seg.iloc[peaks_idx])]
-                ax.scatter(t[max_peak_id], seg.iloc[max_peak_id])
+                if peaks_idx:
+                    max_peak_id = peaks_idx[np.argmax(seg.iloc[peaks_idx])]
+                    ax.scatter(t[max_peak_id], seg.iloc[max_peak_id])
 
     def _plot_strikes_lines(self, ax, dt):
         if self.leap_frame:
-            ax.axvline(self.pose_df.loc[self.leap_frame, 'rel_time'], linestyle='--', color='blue',
+            ax.axvline(self.pose_df['rel_time'].loc[self.leap_frame], linestyle='--', color='blue',
                        label=f'leap_frame ({self.leap_frame})')
         if self.strike_frame_id in self.relevant_frames:
-            ax.axvline(self.pose_df.loc[self.strike_frame_id, 'rel_time'], linestyle='--', color='r',
+            ax.axvline(self.pose_df['rel_time'].loc[self.strike_frame_id], linestyle='--', color='r',
                        label=f'strike_frame ({self.strike_frame_id})')
         if self.calc_strike_frame in self.relevant_frames:
-            ax.axvline(self.pose_df.loc[self.calc_strike_frame, 'rel_time'], linestyle='--', color='orange',
+            ax.axvline(self.pose_df['rel_time'].loc[self.calc_strike_frame], linestyle='--', color='orange',
                        label=f'calc strike frame ({self.calc_strike_frame})')
         ymin, ymax = ax.get_ylim()
-        for frame_id in self.relevant_frames:
-            if frame_id in self.tongue_frame_ids:
-                x = self.pose_df.loc[frame_id, 'rel_time']
-                ax.add_patch(plt.Rectangle((x, ymin), dt, ymax-ymin, color='lightgreen', alpha=0.4))
+        # for frame_id in self.relevant_frames:
+        #     if frame_id in self.tongue_frame_ids:
+        #         x = self.pose_df['rel_time'].loc[frame_id]
+        #         ax.add_patch(plt.Rectangle((x, ymin), dt, ymax-ymin, color='lightgreen', alpha=0.4))
         ax.axhline(0)
 
     def plot_projected_strike(self, ax, is_plot_strike_only=False):
@@ -488,16 +302,16 @@ class StrikeAnalyzer:
     def bug_traj_leap_index(self):
         return closest_index(self.bug_traj.time, self.pose_df.loc[self.leap_frame, 'time'])
 
-    @cached_property
-    def tongue_frame_ids(self) -> list:
-        tng = self.loader.frames_df[TONGUE_COL]
-        return tng[tng == 1].index.tolist()
+    # @cached_property
+    # def tongue_frame_ids(self) -> list:
+    #     tng = self.loader.frames_df[TONGUE_COL]
+    #     return tng[tng == 1].index.tolist()
 
     @staticmethod
     def calc_derivative(x, y=None, dt=0.016, window_length=41, deriv=0):
-        dx = savgol_filter(x, window_length=window_length, polyorder=2, deriv=deriv, delta=dt)
+        dx = savgol_filter(x, window_length=window_length, polyorder=2, deriv=deriv, delta=dt, mode='nearest')
         if y is not None:
-            dy = savgol_filter(y, window_length=window_length, polyorder=2, deriv=deriv, delta=dt)
+            dy = savgol_filter(y, window_length=window_length, polyorder=2, deriv=deriv, delta=dt, mode='nearest')
             return np.insert(dx, 0, np.nan), np.insert(dy, 0, np.nan)
         else:
             return np.insert(dx, 0, np.nan)
@@ -720,16 +534,19 @@ def play_strikes(animal_id, start_time=None, cam_name='front', is_load_pose=True
             print(f'ERROR strike_id={sid}: {exc}')
 
 
-def analyze_strikes(animal_id, cam_name='front', n_frames_back=50, start_time=None, strike_id=None, movement_type=None):
+def analyze_strikes(animal_id, cam_name='front', start_time=None, strike_id=None, movement_type=None):
     if strike_id:
         strikes_ids = [strike_id]
     else:
         strikes_ids = load_strikes(animal_id, start_time=start_time, movement_type=movement_type)
         strikes_ids = sorted(strikes_ids)
+
+    output_dir = Path(f'{config.OUTPUT_DIR}/strike_analysis/{animal_id}')
+    output_dir.mkdir(exist_ok=True, parents=True)
     orm = ORM()
     for sid in tqdm(strikes_ids, desc='loading strikes'):
         try:
-            ld = Loader(sid, cam_name, is_debug=False)
+            ld = Loader(sid, cam_name, is_debug=False, orm=orm)
             # root_dir = Path('/data/Pogona_Pursuit/output/strike_analysis/PV80')
             # strk_dir = root_dir / str(sid)
             # strk_dir.mkdir(exist_ok=True)
@@ -740,23 +557,50 @@ def analyze_strikes(animal_id, cam_name='front', n_frames_back=50, start_time=No
             sa = StrikeAnalyzer(ld)
             # df.append({'speed': sa.bug_speed, 'prediction_distance': sa.prediction_distance})
 
-            sa.plot_strike_analysis(only_save_to='/data/Pogona_Pursuit/output/strike_analysis/PV80')
+            sa.plot_strike_analysis(only_save_to=output_dir.as_posix())
             with orm.session() as s:
                 strk = s.query(Strike).filter_by(id=sid).first()
                 strk.prediction_distance = sa.prediction_distance
                 strk.calc_speed = sa.bug_speed
-                strk.projected_strike_coords = sa.proj_strike_pos.tolist()
-                strk.projected_leap_coords = sa.proj_leap_pos.tolist()
+                if sa.proj_strike_pos is not None:
+                    strk.projected_strike_coords = sa.proj_strike_pos.tolist()
+                if sa.proj_leap_pos is not None:
+                    strk.projected_leap_coords = sa.proj_leap_pos.tolist()
                 strk.max_acceleration = sa.max_acceleration
                 s.commit()
-        except MissingStrikeData:
-            print(f'Strike-{sid}: No timestamps for frames')
+        except MissingStrikeData as exc:
+            print(f'Strike-{sid}: No timestamps for frames; {exc}')
         except Exception as exc:
-            print(f'Strike-{sid}: {exc}')
+            print(f'Strike-{sid}: {exc}\n{traceback.format_exc()}\n')
 
     # df = pd.DataFrame(df)
     # sns.scatterplot(data=df, x='speed', y='prediction_distance')
     # plt.show()
+
+
+def extract_bad_annotated_strike_frames(animal_id, cam_name='front', strike_id=None, n=6, extra=30, **kwargs):
+    if strike_id:
+        strikes_ids = [strike_id]
+    else:
+        strikes_ids = load_strikes(animal_id, **kwargs)
+        strikes_ids = sorted(strikes_ids)
+
+    output_dir = '/data/Pogona_Pursuit/output/models/deeplabcut/train/front_head_only/labeled-data/march23'
+    for sid in tqdm(strikes_ids, desc='loading strikes'):
+        try:
+            ld = Loader(sid, cam_name, is_debug=False)
+            sa = StrikeAnalyzer(ld)
+            frames_ids = np.linspace((sa.leap_frame or (sa.strike_frame_id - 120)) - extra,
+                                     sa.strike_frame_id + extra, 3 * n).astype(int)
+            step = max(np.diff(frames_ids))
+            frames_iter = ld.gen_frames(frames_ids)
+            for i, (frame_id, frame) in enumerate(frames_iter):
+                if any([ld.frames_df[bp].loc[frame_id, 'prob'] < 0.5 for bp in ld.dlc_pose.predictor.bodyparts]):
+                    cv2.imwrite(f'{output_dir}/{ld}_{frame_id}.jpg', frame)
+        except MissingStrikeData as exc:
+            print(f'Strike-{sid}: No timestamps for frames; {exc}')
+        except Exception as exc:
+            print(f'Strike-{sid}: {exc}\n{traceback.format_exc()}\n')
 
 
 if __name__ == '__main__':
@@ -766,7 +610,8 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    analyze_strikes('PV80')#, movement_type='random')
+    # analyze_strikes('PV85')#, movement_type='random')
+    extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
     # foo()
     # calibrate()

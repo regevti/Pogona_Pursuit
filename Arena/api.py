@@ -40,7 +40,7 @@ def index():
         cameras = list(config.cameras.keys())
     else:
         cameras = list(arena_mgr.units.keys())
-    return render_template('index.html', cameras=cameras, exposure=config.default_exposure,
+    return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
                            max_blocks=config.api_max_blocks_to_show,

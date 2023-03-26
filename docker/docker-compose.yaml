@@ -22,6 +22,7 @@ services:
     ports:
       - 3350:8888
       - 3351:5000
+    working_dir: ${ROOT_DIR}/Arena
     environment:
       - FLASK_APP=api.py
       - LC_ALL=C.UTF-8

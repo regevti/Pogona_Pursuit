@@ -1,0 +1,20 @@
+# every predictor must have the following fields: [model_path, threshold]
+
+
+deeplabcut:
+  model_path: '/data/Pogona_Pursuit/output/models/deeplabcut/front_head_only_resnet_50'
+  predictor_name: DLCPose
+  threshold: 0.5
+
+
+pogona_head:
+  model_path: ''
+  predictor_name: PogonaHead
+  threshold: 0.5
+
+
+tongue_out:
+  model_path: '/data/Pogona_Pursuit/output/models/tongue_out/20230114_221722'
+  dataset_path: ''
+  predictor_name: TongueOutAnalyzer
+  threshold: 0.95

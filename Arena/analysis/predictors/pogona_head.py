@@ -4,6 +4,7 @@ import cv2
 import torch
 import logging
 import numpy as np
+from analysis.predictors.base import Predictor
 from analysis.predictors.yolov5.models.common import DetectMultiBackend
 from analysis.predictors.yolov5.utils.torch_utils import select_device
 from analysis.predictors.yolov5.utils.augmentations import letterbox
@@ -16,8 +17,9 @@ MIN_DISTANCE = 5  # cm
 MAX_DISTANCE = 15  # pixels
 
 
-class PogonaHead:
+class PogonaHead(Predictor):
     def __init__(self, cam_name):
+        super(PogonaHead, self).__init__()
         self.cam_name = cam_name
         self.bodyparts = ['head']
         self.detector = YOLOv5Detector()

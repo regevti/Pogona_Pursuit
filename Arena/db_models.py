@@ -232,6 +232,9 @@ def commit_func(method):
     return wrapped
 
 
+ANIMAL_SETTINGS_LISTS = ['bug_types', 'reward_bugs']
+
+
 class ORM:
     def __init__(self):
         self.engine = get_engine()
@@ -381,7 +384,7 @@ class ORM:
     def extract_animal_settings(self, **data):
         kwargs = {}
         for k, v in data.items():
-            if k in ['bug_types', 'reward_bugs']:
+            if k in ANIMAL_SETTINGS_LISTS:
                 v = ','.join(v or [])
             kwargs[k] = v
         return kwargs
@@ -425,9 +428,10 @@ class ORM:
         with self.session() as s:
             animal = s.query(Animal).filter_by(animal_id=animal_id).first()
             animal_dict = {k: v for k, v in animal.__dict__.items() if not k.startswith('_')}
+            for k, v in animal_dict.copy().items():
+                if k in ANIMAL_SETTINGS_LISTS:
+                    animal_dict[k] = v.split(',')
         return animal_dict
-
-
 
     def get_upcoming_schedules(self):
         with self.session() as s:

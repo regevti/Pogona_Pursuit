@@ -1,21 +1,25 @@
+import os
 import cv2
 import warnings
 import pandas as pd
 from pathlib import Path
 import numpy as np
 import yaml
+import argparse
 from matplotlib.colors import TABLEAU_COLORS, CSS4_COLORS
-import config
+if __name__ == '__main__':
+    os.chdir('../..')
 
-MODEL_NAME = 'front_head_only_resnet_50'
-EXPORTED_MODEL = f'{config.DLC_FOLDER}/{MODEL_NAME}/'
-THRESHOLD = 0.5
-RELEVANT_BODYPARTS = ['nose', 'right_ear', 'left_ear', 'mid_ears']
+import config
+from analysis.predictors.base import Predictor
+from analysis.pose_utils import put_text
+
 COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 
-class DLCPose:
+class DLCPose(Predictor):
     def __init__(self, cam_name):
+        super().__init__()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
             from dlclive import DLCLive, Processor
@@ -25,7 +29,7 @@ class DLCPose:
         self.bodyparts = self.dlc_config['bodyparts'] + ['mid_ears']
         self.kp_colors = {k: COLORS[i] for i, k in enumerate(self.bodyparts)}
         self.processor = Processor()
-        self.detector = DLCLive(EXPORTED_MODEL, processor=self.processor)
+        self.detector = DLCLive(self.model_path, processor=self.processor)
         self.is_initialized = False
 
     def init(self, img):
@@ -38,7 +42,7 @@ class DLCPose:
         pdf = self._predict(img, frame_id)
         for bodypart in self.bodyparts:
             df_ = pdf.loc[frame_id, bodypart]
-            if df_['prob'] < THRESHOLD:
+            if df_['prob'] < self.threshold:
                 pdf.iloc[0][(bodypart, 'cam_x')] = None
                 pdf.iloc[0][(bodypart, 'cam_y')] = None
         return pdf
@@ -57,7 +61,7 @@ class DLCPose:
         cols = ['cam_x', 'cam_y', 'prob']
         zf = pd.DataFrame(pred, index=self.bodyparts[:-1], columns=cols)
         zf.loc['mid_ears', :] = zf.loc[['left_ear', 'right_ear'], :].mean()
-        zf = zf.loc[RELEVANT_BODYPARTS, :]
+        zf = zf.loc[self.bodyparts, :]
         if zf.empty:
             return zf
 
@@ -73,7 +77,7 @@ class DLCPose:
         for i, part in enumerate(df.columns.get_level_values(0).unique()):
             if not part or (parts2plot and part not in parts2plot):
                 continue
-            elif df[part].isnull().values.any() or df[part]['prob'].loc[frame_id] < THRESHOLD:
+            elif df[part].loc[frame_id].isnull().values.any() or df[part]['prob'].loc[frame_id] < self.threshold:
                 continue
 
             cX = round(df[part]['cam_x'][frame_id])
@@ -82,23 +86,9 @@ class DLCPose:
             cv2.circle(frame, (cX, cY), 5, color, -1)
 
             cv2.circle(frame, (x_legend, y_legend), 5, color, -1)
-            self.put_text(part, frame, x_legend + 20, y_legend)
+            put_text(part, frame, x_legend + 20, y_legend)
             y_legend += 30
         return frame
-
-    def put_text(self, text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, font=cv2.FONT_HERSHEY_SIMPLEX):
-        """
-        :param text: The text to put on frame
-        :param frame: The frame numpy array
-        :param x: x
-        :param y: y
-        :param font_scale:
-        :param color: default: yellow (255,255,0)
-        :param thickness: in px, default 2px
-        :param font: font
-        :return: frame with text
-        """
-        return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
 
     @staticmethod
     def plot_single_part(df, frame_id, frame):
@@ -161,3 +151,15 @@ class DLCPose:
 #     def save_cache(self, video_path, pdf: pd.DataFrame):
 #         cache_path = self.get_cache_path(video_path)
 #         pdf.to_parquet(cache_path)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Deeplabcut helper')
+    parser.add_argument('command', choices=['export', 'train'], help='helper command')
+    args = parser.parse_args()
+
+    if args.command == 'export':
+        name = input('>> please enter name for the new model: ')
+        assert all(c not in name for c in '$!@=+/`~:;±§()*%&'), f'{name} - invalid name'
+
+    elif args.command == 'train':
+        print('train')

@@ -1,0 +1,312 @@
+/*<meta />*/
+
+@media only screen and (max-width: 1000px)
+{
+	/* OffCanvas styles */
+
+	html,
+	body
+	{
+		height: 100%;
+		margin: 0;
+		overflow-x: hidden;
+	}
+
+	.left-off-canvas-menu,
+	.right-off-canvas-menu
+	{
+		display: block;
+	}
+
+	/* Foundation Overrides */
+
+	.foundation-wrap,
+	.off-canvas-wrap,
+	.inner-wrap
+	{
+		min-height: 100%;
+	}
+
+	.foundation-wrap,
+	.off-canvas-wrap
+	{
+		height: 100%;
+		overflow-y: auto;
+	}
+
+	nav.tab-bar .menu-icon
+	{
+		display: block;
+		border: none;
+		z-index: 100;
+		top: 50%;
+		margin-top: -24px;
+		position: absolute;
+		right: -13px;
+		left: auto;
+	}
+
+	nav.tab-bar
+	{
+		background-repeat: no-repeat;
+		background-position: center top;
+		background: transparent;
+		background: -moz-linear-gradient(top, #002f86 0%, #084885 100%);
+		background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,#084885));
+		background: -webkit-linear-gradient(top, #002f86 0%, #084885 100%);
+		background: -o-linear-gradient(top, #002f86 0%,#084885 100%);
+		background: -ms-linear-gradient(top, #002f86 0%,#084885 100%);
+		background: linear-gradient(top, #002f86 0%,#084885 100%);
+	}
+
+	/* Topbar Menu Styles */
+
+	.tab-bar-section.middle > div
+	{
+		min-height: 69px;
+	}
+
+	ul.navigation
+	{
+		display: none;
+	}
+
+	.responsive-header
+	{
+		display: block;
+		background: #292929;
+		height: 60px;
+	}
+
+	.tab-bar-section a.logo
+	{
+		background-position: center center;
+		background-repeat: no-repeat;
+		margin: 0 auto;
+		width: 180px;
+		height: 69px;
+		top: 0;
+		bottom: auto;
+		margin-top: 0;
+		background: transparent url('Images/FLIR-White-half.png') no-repeat center center;
+		background: url('Images/FLIR-White-half.png') no-repeat center center, -moz-linear-gradient(top, transparent 0%, transparent 100%);
+		background: url('Images/FLIR-White-half.png') no-repeat center center, -webkit-gradient(linear, left top, left bottom, color-stop(0%,transparent), color-stop(100%,transparent));
+		background: url('Images/FLIR-White-half.png') no-repeat center center, -webkit-linear-gradient(top, transparent 0%, transparent 100%);
+		background: url('Images/FLIR-White-half.png') no-repeat center center, -o-linear-gradient(top, transparent 0%,transparent 100%);
+		background: url('Images/FLIR-White-half.png') no-repeat center center, -ms-linear-gradient(top, transparent 0%,transparent 100%);
+		background: url('Images/FLIR-White-half.png') no-repeat center center, linear-gradient(top, transparent 0%,transparent 100%);
+	}
+
+	.tab-bar .menu-icon span
+	{
+		height: 48px;
+		width: 48px;
+		display: block;
+		top: 10px;
+		background: transparent url('Images/Menu.png') no-repeat center center;
+		-pie-background: transparent url('Skins/Fluid/Stylesheets/Images/Menu.png') no-repeat center center;
+	}
+
+	.search-submit
+	{
+		background-repeat: no-repeat;
+		background-position: center center;
+		background: #002f86 url('Images/SearchIcon.png') no-repeat center center;
+		background: url('Images/SearchIcon.png') no-repeat center center, -moz-linear-gradient(top, #002f86 0%, #ffffff 100%);
+		background: url('Images/SearchIcon.png') no-repeat center center, -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,#ffffff));
+		background: url('Images/SearchIcon.png') no-repeat center center, -webkit-linear-gradient(top, #002f86 0%, #ffffff 100%);
+		background: url('Images/SearchIcon.png') no-repeat center center, -o-linear-gradient(top, #002f86 0%,#ffffff 100%);
+		background: url('Images/SearchIcon.png') no-repeat center center, -ms-linear-gradient(top, #002f86 0%,#ffffff 100%);
+		background: url('Images/SearchIcon.png') no-repeat center center, linear-gradient(top, #002f86 0%,#ffffff 100%);
+	}
+
+	.search-filter
+	{
+		background-repeat: no-repeat;
+		background-position: center center;
+		background: #ffffff url('Images/FilterOutline.png') no-repeat center center;
+	}
+
+	.search-input
+	{
+		background-repeat: no-repeat;
+		background-position: center center;
+	}
+
+	.right-off-canvas-menu
+	{
+		background-position: top center;
+		background: transparent;
+		background: -moz-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,transparent));
+		background: -webkit-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -o-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: -ms-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: linear-gradient(top, #002f86 0%,transparent 100%);
+		-pie-background: linear-gradient(#002f86, transparent);
+	}
+
+	.right-off-canvas-menu ul ul
+	{
+		background-position: top center;
+		background: transparent;
+		background: -moz-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,transparent));
+		background: -webkit-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -o-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: -ms-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: linear-gradient(top, #002f86 0%,transparent 100%);
+		-pie-background: linear-gradient(#002f86, transparent);
+	}
+
+	.left-off-canvas-menu
+	{
+		background-position: top center;
+		background: transparent;
+		background: -moz-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,transparent));
+		background: -webkit-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -o-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: -ms-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: linear-gradient(top, #002f86 0%,transparent 100%);
+		-pie-background: linear-gradient(#002f86, transparent);
+	}
+
+	.left-off-canvas-menu ul ul
+	{
+		background-position: top center;
+		background: transparent;
+		background: -moz-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,transparent));
+		background: -webkit-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -o-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: -ms-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: linear-gradient(top, #002f86 0%,transparent 100%);
+		-pie-background: linear-gradient(#002f86, transparent);
+	}
+
+	.right-off-canvas-menu ul.off-canvas-list li.has-submenu > a:after,
+	.left-off-canvas-menu ul.off-canvas-list li.has-submenu > a:after
+	{
+		margin-left: 0.5rem;
+	}
+
+	.right-submenu .back > a:after,
+	.left-submenu .back > a:after
+	{
+		margin-left: 0.5em;
+	}
+
+	.inner-wrap nav.tab-bar .outer-row
+	{
+		
+	}
+
+	.inner-wrap .outer-row
+	{
+		
+	}
+
+	.main-section > .outer-row
+	{
+		
+	}
+
+	ul.off-canvas-list li a
+	{
+		font-family: 'Industry Light';
+		background: transparent;
+		background: -moz-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,transparent));
+		background: -webkit-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -o-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: -ms-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: linear-gradient(top, #002f86 0%,transparent 100%);
+		-pie-background: linear-gradient(#002f86, transparent);
+	}
+
+	ul.off-canvas-list li.back > a
+	{
+		background: transparent;
+		background: -moz-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#002f86), color-stop(100%,transparent));
+		background: -webkit-linear-gradient(top, #002f86 0%, transparent 100%);
+		background: -o-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: -ms-linear-gradient(top, #002f86 0%,transparent 100%);
+		background: linear-gradient(top, #002f86 0%,transparent 100%);
+		-pie-background: linear-gradient(#002f86, transparent);
+	}
+
+	ul.off-canvas-list li a:hover
+	{
+		background-color: #242424;
+	}
+
+	ul.off-canvas-list li.back > a:hover
+	{
+		background-color: #242424;
+	}
+
+	.row.nav-search
+	{
+		
+	}
+
+	.search-bar
+	{
+		
+	}
+
+	.search-field
+	{
+		padding-right: 106px;
+		background-color: #ffffff;
+	}
+
+	.search-filter-content
+	{
+		top: 2em;
+		background-color: #ffffff;
+	}
+
+	.search-filter.open
+	{
+		background-color: #ffffff;
+	}
+
+	.search-filter.selected
+	{
+		background: transparent url('Images/Filter.png') no-repeat center center;
+	}
+
+	.search-filter-content ul li:hover
+	{
+		background-color: #ffffff;
+	}
+
+	.search-field::-webkit-input-placeholder
+	{
+		
+	}
+
+	.search-field::-moz-placeholder
+	{
+		
+	}
+
+	.search-field:-moz-placeholder
+	{
+		
+	}
+
+	.search-field:-ms-input-placeholder
+	{
+		
+	}
+
+	.search-filter-wrapper
+	{
+		right: 56px;
+	}
+}
+

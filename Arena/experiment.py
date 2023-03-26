@@ -334,7 +334,8 @@ class Block:
         # start cameras for experiment with their predictors and set the output dir for videos
         self.turn_cameras('on')
         # screencast
-        threading.Thread(target=self.record_screen).start()
+        if config.IS_RECORD_SCREEN_IN_EXPERIMENT:
+            threading.Thread(target=self.record_screen).start()
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             self.cache.set_cam_output_dir(cam_name, output_dir)

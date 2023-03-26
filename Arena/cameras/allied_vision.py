@@ -3,7 +3,7 @@ import pandas as pd
 import time
 import config
 from arrayqueues.shared_arrays import Full
-from arena import Camera
+from arena import Camera, ArenaException
 from cache import RedisCache, CacheColumns as cc
 import vimba
 
@@ -44,27 +44,30 @@ class AlliedVisionCamera(Camera):
             self.logger.exception(f"Exception while configuring camera: ")
 
     def _run(self):
-        system = vimba.Vimba.get_instance()
-        with system as v:
-            cam_id = self.cam_config['id']
-            cam = v.get_camera_by_id(cam_id)
-            with cam:
-                try:
-                    self.configure(cam)
-                    self.update_time_delta(cam)
-                    self.logger.debug('start streaming')
-                    cache.append_to_list(cc.RECORDING_CAMERAS, self.cam_name)
-                    cam.start_streaming(self._frame_handler, buffer_count=10)
-                    self.stop_signal.wait()
-                    cache.remove_from_list(cc.RECORDING_CAMERAS, self.cam_name)
-                    if self.stop_signal.is_set():
-                        self.logger.debug('received stop event')
-                except KeyboardInterrupt:
-                    pass
-                finally:
-                    self.mp_metadata['cam_fps'].value = 0.0
-                    if cam.is_streaming():
-                        cam.stop_streaming()
+        try:
+            system = vimba.Vimba.get_instance()
+            with system as v:
+                cam_id = self.cam_config['id']
+                cam = v.get_camera_by_id(cam_id)
+                with cam:
+                    try:
+                        self.configure(cam)
+                        self.update_time_delta(cam)
+                        self.logger.debug('start streaming')
+                        cache.append_to_list(cc.RECORDING_CAMERAS, self.cam_name)
+                        cam.start_streaming(self._frame_handler, buffer_count=10)
+                        self.stop_signal.wait()
+                        cache.remove_from_list(cc.RECORDING_CAMERAS, self.cam_name)
+                        if self.stop_signal.is_set():
+                            self.logger.debug('received stop event')
+                    except KeyboardInterrupt:
+                        pass
+                    finally:
+                        self.mp_metadata['cam_fps'].value = 0.0
+                        if cam.is_streaming():
+                            cam.stop_streaming()
+        except vimba.error._LoggedError as exc:
+            raise ArenaException(str(exc))
 
     def _frame_handler(self, cam, frame):
         t0 = time.time()

@@ -7,98 +7,36 @@ from tqdm.auto import tqdm
 from dataclasses import dataclass
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
-import torch
 import torch.nn as nn
-from torch.optim import Adam
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import Compose, ToTensor, Normalize, Resize, ToPILImage, Grayscale
-from sklearn.cluster import DBSCAN
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
-import seaborn as sns
 if Path('.').resolve().name != 'Arena':
     import os
-    os.chdir('/data/Pogona_Pursuit/Arena')
+    os.chdir('../..')
 from analysis.image_embedding import ResNetPretrained
-from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, Trial
+from analysis.predictors.base import Predictor
+from db_models import ORM, Block, Video
 from analysis.trainer import ClassificationTrainer
+from analysis.strikes.loader import Loader
+from analysis.pose_utils import put_text
 
 DATASET_PATH = Path('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset')
 TONGUE_PREDICTED_DIR = '/data/Pogona_Pursuit/output/datasets/pogona_tongue/predicted/tongues'
-# MODEL_PATH = '/data/Pogona_Pursuit/output/models/tongue_out/20221216_170652'
-MODEL_PATH = '/data/Pogona_Pursuit/output/models/tongue_out/20230114_221722'
 RESIZE_SHAPE = (480, 640)
-THRESHOLD = 0.95
 TONGUE_CLASS = 'tongues'
-
-
-class TongueModel(nn.Module):
-    def __init__(self, input_size=512, is_embedded_input=False):
-        super().__init__()
-        self.is_embedded_input = is_embedded_input
-        self.embedding = ResNetPretrained(is_grey=True)
-        self.fc1 = nn.Linear(input_size, 120)
-        self.fc2 = nn.Linear(120, 60)
-        self.fc3 = nn.Linear(60, 2)
-        self.dropout = nn.Dropout(0.2)
-        self.norm = nn.BatchNorm1d(input_size)
-
-    def forward(self, x):
-        if not self.is_embedded_input:
-            _, x = self.embedding(x)
-        x = self.norm(x)
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = F.relu(self.fc2(x))
-        # x = self.dropout(x)
-        x = self.fc3(x)
-        return x
-
-
-@dataclass
-class TongueTrainer(ClassificationTrainer):
-    batch_size = 16
-    num_epochs = 30
-    targets = ['no_tongues', 'tongues']
-    monitored_metric = 'auc'
-    transforms = [
-        Grayscale(),
-        Resize(RESIZE_SHAPE),
-        ToTensor(),
-        Normalize((0.5,), (0.5,))
-    ]
-
-    def get_dataset(self):
-        dataset = ImageFolder(DATASET_PATH.as_posix(), transform=Compose(self.transforms))
-        return dataset
-
-    def get_model(self):
-        return TongueModel()
-
-    def predict(self, frame):
-        self.model.eval()
-        transforms = [ToPILImage()] + self.transforms
-        img_tensor = Compose(transforms)(frame).to(self.device)
-        outputs = self.model(img_tensor.unsqueeze(0))
-        y_pred, y_score = self.predict_proba(outputs)
-        label = self.targets[y_pred.item()]
-        prob = y_score.item()
-        return label, prob
-
-
 PREDICTION_STACK_DURATION = 0.25  # sec
 TONGUE_ACTION_TIMEOUT = 1  # sec
 NUM_TONGUES_IN_STACK = 6  # number of predicted tongues in the prediction stack to trigger action
 
 
-class TongueOutAnalyzer:
-    def __init__(self, td: TongueTrainer = None, action_callback=None, identifier=None, is_write_detected_image=False,
+class TongueOutAnalyzer(Predictor):
+    def __init__(self, td=None, action_callback=None, identifier=None, is_write_detected_image=False,
                  is_debug=True):
-        self.tr = TongueTrainer(model_path=MODEL_PATH, is_debug=is_debug) if td is None else td
+        super(TongueOutAnalyzer, self).__init__()
+        self.tr = TongueTrainer(model_path=self.model_path, is_debug=is_debug,
+                                resize_shape=self.pred_config.get('resize_shape')) if td is None else td
         self.identifier = identifier
         self.action_callback = action_callback
         self.is_debug = is_debug
@@ -109,12 +47,45 @@ class TongueOutAnalyzer:
         self.last_predicted_frame = None
 
     def predict(self, frame, timestamp):
-        label, _ = self.tr.predict(frame)
-        resized_frame = cv2.resize(frame, RESIZE_SHAPE)
+        orig_frame = frame.copy()
+        label, prob = self.tr.predict(frame)
+        if self.pred_config.get('resize_image'):
+            frame = cv2.resize(frame, self.pred_config['resize_image'][::-1])
+
+        frame = put_text(f'P={prob:.2f}', frame, frame.shape[1] - 120, 30, color=(255, 0, 0))
         self.push_to_predictions_stack(label, timestamp)
         is_tongue = label == TONGUE_CLASS
-        is_action = self.tongue_detected(frame, timestamp) if is_tongue else False
-        return is_action, resized_frame, label
+        is_action = self.tongue_detected(orig_frame, timestamp) if is_tongue else False
+        return is_action, frame, label
+
+    def predict_strike(self, strike_db_id, n_before=30, n_after=10, cols=8, save_frames_above=None):
+        ld = Loader(strike_db_id, 'front', is_debug=False)
+        frame_ids = []
+        n = n_before + n_after - 1
+        rows = int(np.ceil(n/cols))
+        fig, axes = plt.subplots(rows, cols, figsize=(30, 3*rows))
+        axes = axes.flatten()
+        for i, (frame_id, frame) in enumerate(ld.gen_frames_around_strike(n_before, n_after)):
+            label, prob = self.tr.predict(frame)
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+            if save_frames_above and prob > save_frames_above:
+                cv2.imwrite(f'{TONGUE_PREDICTED_DIR}/{strike_db_id}_{frame_id}.jpg', frame)
+
+            h, w = frame.shape[:2]
+            frame = frame[h // 2:, 350:w - 350]
+            axes[i].imshow(frame)
+            axes[i].set_xticks([]); axes[i].set_yticks([])
+            axes[i].set_title(frame_id)
+            curr_y = 60
+            if label == TONGUE_CLASS:
+                axes[i].text(30, curr_y, f'tongue (P={prob:.2f})', color='green')
+            else:
+                axes[i].text(30, curr_y, f'P={prob:.2f}', color='orange')
+            curr_y += 70
+            if frame_id == ld.strike_frame_id:
+                axes[i].text(30, curr_y, 'Strike Frame', color='red')
+            frame_ids.append(frame_id)
+        plt.show()
 
     def push_to_predictions_stack(self, label, timestamp):
         self.predictions_stack.append((label, timestamp))
@@ -142,67 +113,61 @@ class TongueOutAnalyzer:
             cv2.imwrite(f'{TONGUE_PREDICTED_DIR}/{filename}.jpg', frame)
 
 
-class TonguesOutVideoAnalyzer(TongueOutAnalyzer):
-    def __init__(self, vid_path, **kwargs):
-        self.vid_path = Path(vid_path).resolve()
-        self.identifier = self.vid_path.stem
-        assert self.vid_path.exists(), f'Video file {self.vid_path} does not exist'
-        super(TonguesOutVideoAnalyzer, self).__init__(**kwargs)
-        self.cap = cv2.VideoCapture(self.vid_path.as_posix())
-        self.n_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
-        self.tongue_timestamps = []
-        self.action_timestamps = []  # tongue frame ids that trigger action
+class TongueModel(nn.Module):
+    def __init__(self, input_size=512, is_embedded_input=False):
+        super().__init__()
+        self.is_embedded_input = is_embedded_input
+        self.embedding = ResNetPretrained(is_grey=True)
+        self.fc1 = nn.Linear(input_size, 120)
+        self.fc2 = nn.Linear(120, 60)
+        self.fc3 = nn.Linear(60, 2)
+        self.dropout = nn.Dropout(0.2)
+        self.norm = nn.BatchNorm1d(input_size)
 
-    def predict_video(self, is_show_video=False):
-        for frame_id in tqdm(range(self.n_frames)):
-            ret, frame = self.cap.read()
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            timestamp = frame_id / self.fps
-            is_action, _, label = self.predict(frame, timestamp)
-            if is_action:
-                self.action_timestamps.append(timestamp)
-            if is_show_video:
-                self.play_labelled_video(frame, label)
-        self.cap.release()
-        self.plot_video_predictions()
+    def forward(self, x):
+        if not self.is_embedded_input:
+            _, x = self.embedding(x)
+        x = self.norm(x)
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc2(x))
+        # x = self.dropout(x)
+        x = self.fc3(x)
+        return x
 
-    def plot_video_predictions(self):
-        for ts in self.action_timestamps:
-            plt.axvline(ts, linestyle='--', color='b')
 
-        for frame_id in self.get_video_strikes_frames_ids(self.vid_path):
-            plt.axvline(frame_id/self.fps, color='r')
-        plt.show()
+@dataclass
+class TongueTrainer(ClassificationTrainer):
+    resize_shape: tuple = (480, 640)
+    batch_size = 16
+    num_epochs = 30
+    targets = ['no_tongues', 'tongues']
+    monitored_metric = 'auc'
+    transforms = [
+        Grayscale(),
+        Resize(resize_shape),
+        ToTensor(),
+        Normalize((0.5,), (0.5,))
+    ]
 
-    def play_labelled_video(self, frame, label):
-        frame = cv2.putText(frame, label, (20, 30), cv2.FONT_HERSHEY_PLAIN, 1.8, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.imshow(self.vid_path.name, frame)
-        if cv2.waitKey(25) & 0xFF == ord('q'):
-            raise Exception('q was pressed')
+    def get_dataset(self):
+        dataset = ImageFolder(DATASET_PATH.as_posix(), transform=Compose(self.transforms))
+        info = pd.Series(dataset.targets).value_counts().rename({i: v for i, v in enumerate(self.targets)}).to_dict()
+        print(f'Loaded tongue dataset with: {info}')
+        return dataset
 
-    def get_video_strikes_frames_ids(self, vid_path):
-        vid_path = Path(vid_path)
-        assert vid_path.exists(), f'video file {vid_path} does not exist'
-        orm = ORM()
-        strike_frame_ids = []
-        with orm.session() as s:
-            vid = s.query(Video).filter(Video.path.contains(vid_path.name)).first()
-            if vid is None:
-                raise Exception(f'unable to find video {vid_path.name}')
-            start_ts, stop_ts = self.get_video_start_stop(vid)
-            frames_array = np.array(list(vid.frames.values()))
-            blk = s.query(Block).filter_by(id=vid.block_id).first()
-            for strk in blk.strikes:
-                strk_ts = datetime.timestamp(strk.time)
-                if start_ts <= strk_ts <= stop_ts:
-                    frame_id = int(np.argmin(np.abs(frames_array - strk_ts)))
-                    strike_frame_ids.append(frame_id)
-        return strike_frame_ids
+    def get_model(self):
+        return TongueModel()
 
-    @staticmethod
-    def get_video_start_stop(vid: Video):
-        return vid.frames['0'], vid.frames[list(vid.frames.keys())[-1]]
+    def predict(self, frame):
+        self.model.eval()
+        transforms = [ToPILImage()] + self.transforms
+        img_tensor = Compose(transforms)(frame).to(self.device)
+        outputs = self.model(img_tensor.unsqueeze(0))
+        y_pred, y_score = self.predict_proba(outputs)
+        label = self.targets[y_pred.item()]
+        prob = y_score.item()
+        return label, prob
 
 
 def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, min_dist=15, is_delete=False):
@@ -219,6 +184,7 @@ def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, min_dist=15, is_
 
     groups_dir = input_dir / 'grouped'
     groups_dir.mkdir(exist_ok=True)
+
     n = len(images)
     cache_file = f'{groups_dir}/m.npz'
     if not is_load:
@@ -289,10 +255,13 @@ if __name__ == '__main__':
     # check_dataset('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset/tongues', is_load=False, min_dist=15, is_delete=True)
     # clean_wrong_size_images()
 
-    # TongueTrainer().train(is_plot=True, is_save=True)
+    TongueTrainer().train(is_plot=True, is_save=True)
 
-    tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
-    tr.all_data_evaluation()
+    # toa = TongueOutAnalyzer()
+    # toa.predict_strike(7450, save_frames_above=0.01)
+
+    # tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
+    # tr.all_data_evaluation()
     # tr.plot_confusion_matrix()
 
     # target_ = 'tongues'

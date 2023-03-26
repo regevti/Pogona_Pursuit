@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 import numpy as np
 import asyncio
-from io import StringIO
+from functools import wraps
 from datetime import datetime
 from subprocess import Popen, PIPE
 from filterpy.kalman import KalmanFilter
@@ -307,3 +307,15 @@ def send_telegram_message(message: str):
                              data=data,
                              headers=headers)
     return response
+
+
+def timeit(func):
+    from time import time
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        t1 = time()
+        result = func(*args, **kwargs)
+        end = time() - t1
+        print(f'Time taken for {func.__name__}: {end:.1f} seconds')
+        return result
+    return wrapper
