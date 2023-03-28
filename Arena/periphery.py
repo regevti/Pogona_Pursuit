@@ -17,6 +17,10 @@ class Periphery:
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
 
+    def switch(self, name, state):
+        assert state in [0, 1]
+        self.mqtt_publish(config.mqtt['publish_topic'], f'["set","{name}",{state}]')
+
     def mqtt_publish(self, topic, payload):
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
         self.mqtt_client.publish(topic, payload)

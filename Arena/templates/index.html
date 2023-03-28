@@ -621,16 +621,16 @@
         })
 
         $("#led_light_on").click(function (e) {
-            $.get('/led_light/on')
+            $.get('/arena_switch/led/1')
         })
         $("#led_light_off").click(function (e) {
-            $.get('/led_light/off')
+            $.get('/arena_switch/led/0')
         })
-        $("#heat_light_on").click(function (e) {
-            $.get('/heat_light/on')
+        $("#ir_light_on").click(function (e) {
+            $.get('/arena_switch/ir/1')
         })
-        $("#heat_light_off").click(function (e) {
-            $.get('/heat_light/off')
+        $("#ir_light_off").click(function (e) {
+            $.get('/arena_switch/ir/0')
         })
         $("#display_on").click(function (e) {
             $.get('/display/on')

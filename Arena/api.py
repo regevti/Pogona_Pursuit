@@ -241,15 +241,21 @@ def reward():
     return Response('ok')
 
 
+@app.route('/arena_switch/<name>/<state>')
+def arena_switch(name, state):
+
+    periphery_mgr.switch(name, int(state))
+
+
 @app.route('/led_light/<state>')
 def led_light(state):
-    cache.publish_command('led_light', state)
+    # cache.publish_command('led_light', state)
     return Response('ok')
 
 
-@app.route('/heat_light/<state>')
-def heat_light(state):
-    cache.publish_command('heat_light', state)
+@app.route('/ir_light/<state>')
+def ir_light(state):
+    # cache.publish_command('ir_light', state)
     return Response('ok')
 
 
