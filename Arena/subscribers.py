@@ -228,8 +228,8 @@ class TemperatureLogger(Subscriber):
 
     def run(self):
         def callback(payload):
-            self.cache.publish(config.subscription_topics['temperature'], payload)
             self.commit_to_db(payload)
+            # self.cache.publish(config.subscription_topics['temperature'], payload)
 
         try:
             listener = TemperatureListener(is_debug=False, stop_event=self.stop_event, callback=callback)

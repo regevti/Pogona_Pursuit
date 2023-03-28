@@ -27,7 +27,8 @@
 <body>
 <div class="row">
     <div class="col-xl-7">
-        <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0.5em">Pogona Pursuit</h1>
+        <h1 class="p-2" style="font-size: 4em; text-align: center; margin-bottom: 0; padding-bottom: 0 !important;">Pogona Pursuit</h1>
+        <h4 style="text-align: center; margin-bottom: 1em">{{arena_name}}</h4>
         <div class="row top-border bottom-border" id="all-panels" style="padding-bottom: 0">
             <div class="col-md-5 control-panel right-border" style="padding: 0">
                 {% include "management/left_panel.html" %}
@@ -133,8 +134,12 @@
                     let expName = data['experiment_name']
                     let blockId = data['block_id']
                     let openAppHost = data['open_app_host']
-
-                    colorUpdate($("#temperatureValue"), data['temperature'], 'Temperature', '°C', 32, 25)
+                    let tempString = 'Temperature:'
+                    for (let sensor in data['temperature']) {
+                        tempString += `\n ${sensor}: ${data['temperature'][sensor].toFixed(1)}ºC`
+                    }
+                    $("#temperatureValue").text(tempString)
+                    // colorUpdate($("#temperatureValue"), data['temperature'], 'Temperature', '°C', 32, 25)
                     colorUpdate($("#gpuMetric"), data['gpu_usage']*100, 'GPU Usage', '%', 80)
                     colorUpdate($("#cpuMetric"), data['cpu_usage'], 'CPU Usage', '%', 80)
                     colorUpdate($("#memMetric"), data['memory_usage']*100, 'Memory Usage', '%', 80)

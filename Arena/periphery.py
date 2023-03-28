@@ -21,6 +21,10 @@ class Periphery:
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
         self.mqtt_client.publish(topic, payload)
 
+    def cam_trigger(self, state):
+        assert state in [0, 1]
+        self.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",{state}]')
+
     def feed(self):
         if self.cache.get(cc.IS_REWARD_TIMEOUT):
             return
@@ -82,7 +86,8 @@ class TemperatureListener(MQTTListener):
     topics = ['arena/value']
 
     def parse_payload(self, payload):
-        return json.loads(payload).get(config.mqtt['temperature_sensor_name'])[0]
+        payload = json.loads(payload)
+        return {k: v[0] for k, v in payload.items() if k in config.mqtt['temperature_sensors']}
 
 
 if __name__ == "__main__":

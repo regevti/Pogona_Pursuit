@@ -7,6 +7,7 @@ env.read_env('configurations/.env')
 
 # General
 version = '2.2'
+ARENA_NAME = env('ARENA_NAME')
 is_debug_mode = env.bool('DEBUG', False)
 is_use_parport = env.bool('IS_USE_PARPORT', False)
 IS_ANALYSIS_ONLY = env.bool('IS_ANALYSIS_ONLY', False)
@@ -107,7 +108,7 @@ mqtt = {
     'host': 'localhost',
     'port': 1883,
     'publish_topic': 'arena_command',
-    'temperature_sensor_name': 'Temp_front'
+    'temperature_sensors': ['Temp_front']
 }
 
 # temperature sensor

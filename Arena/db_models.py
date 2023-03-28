@@ -3,7 +3,7 @@ from types import FunctionType
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date, and_
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.dialects.postgresql import JSON
@@ -22,6 +22,7 @@ class Animal(Base):
     start_time = Column(DateTime)
     end_time = Column(DateTime, nullable=True)
     sex = Column(String)
+    arena = Column(String)
     bug_types = Column(String)
     reward_bugs = Column(String)
     background_color = Column(String)
@@ -86,6 +87,7 @@ class Experiment(Base):
     extra_time_recording = Column(Integer)
     time_between_blocks = Column(Integer)
     experiment_path = Column(String)
+    arena = Column(String)
     blocks = relationship('Block')
 
 
@@ -141,6 +143,8 @@ class Temperature(Base):
     id = Column(Integer, primary_key=True)
     time = Column(DateTime)
     value = Column(Float)
+    arena = Column(String)
+    sensor = Column(String)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
 
 
@@ -247,7 +251,8 @@ class ORM:
     def commit_experiment(self, exp):
         with self.session() as s:
             kwargs = {c.name: getattr(exp, c.name)
-                      for c in Experiment.__table__.columns if c.name not in ['id', 'end_time', 'cameras']}
+                      for c in Experiment.__table__.columns if c.name not in ['id', 'end_time', 'cameras', 'arena']}
+            kwargs['arena'] = config.ARENA_NAME
             exp_model = Experiment(**kwargs)
             exp_model.cameras = ','.join(list(exp.cameras.keys()))
             s.add(exp_model)
@@ -316,19 +321,28 @@ class ORM:
             s.commit()
 
     @commit_func
-    def commit_temperature(self, temp):
-        t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX))
-        with self.session() as s:
-            s.add(t)
-            s.commit()
+    def commit_temperature(self, temps):
+            with self.session() as s:
+                for sensor_name, temp in temps.items():
+                    t = Temperature(time=datetime.now(), value=temp, block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
+                                    arena=config.ARENA_NAME, sensor=sensor_name)
+                    s.add(t)
+                s.commit()
 
     def get_temperature(self):
         """return the last temperature value from the last 2 minutes, if none return None"""
         with self.session() as s:
             since = datetime.now() - timedelta(minutes=2)
-            temp = s.query(Temperature).filter(Temperature.time > since).order_by(Temperature.time.desc()).first()
-            if temp is not None:
-                return temp.value
+            temp = s.query(Temperature).filter(and_(Temperature.time > since,
+                                               Temperature.arena == config.ARENA_NAME)).order_by(
+                Temperature.time.desc()
+            ).all()
+
+            res = {}
+            for t in temp:
+                if t.sensor not in res:
+                    res[t.sensor] = t.value
+            return res
 
     @commit_func
     def commit_strike(self, strike_dict):
@@ -393,6 +407,7 @@ class ORM:
     def commit_animal_id(self, **data):
         with self.session() as s:
             kwargs = self.extract_animal_settings(**data)
+            kwargs['arena'] = config.ARENA_NAME
             animal = Animal(start_time=datetime.now(), **kwargs)
             s.add(animal)
             animal_settings = AnimalSettingsHistory(time=datetime.now(),
