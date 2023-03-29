@@ -52,6 +52,7 @@ class Schedule(Base):
     id = Column(Integer, primary_key=True)
     date = Column(DateTime)
     animal_id = Column(String)
+    arena = Column(String)
     experiment_name = Column(String)
 
 
@@ -170,6 +171,7 @@ class Strike(Base):
     max_acceleration = Column(Float, nullable=True)
     strike_frame = Column(Integer, nullable=True)
     leap_frame = Column(Integer, nullable=True)
+    arena = Column(String)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
@@ -224,6 +226,7 @@ class Reward(Base):
     id = Column(Integer, primary_key=True)
     time = Column(DateTime)
     animal_id = Column(String)
+    arena = Column(String)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
 
 
@@ -347,7 +350,8 @@ class ORM:
     @commit_func
     def commit_strike(self, strike_dict):
         kwargs = {c.name: strike_dict.get(c.name)
-                  for c in Strike.__table__.columns if c.name not in ['id'] and not c.foreign_keys}
+                  for c in Strike.__table__.columns if c.name not in ['id', 'arena'] and not c.foreign_keys}
+        kwargs['arena'] = config.ARENA_NAME
         kwargs['block_id'] = strike_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         kwargs['trial_id'] = strike_dict.get('trial_id')
 
@@ -441,7 +445,7 @@ class ORM:
 
     def get_animal_settings(self, animal_id):
         with self.session() as s:
-            animal = s.query(Animal).filter_by(animal_id=animal_id).first()
+            animal = s.query(Animal).filter_by(animal_id=animal_id, arena=config.ARENA_NAME).first()
             animal_dict = {k: v for k, v in animal.__dict__.items() if not k.startswith('_')}
             for k, v in animal_dict.copy().items():
                 if k in ANIMAL_SETTINGS_LISTS:
@@ -452,13 +456,14 @@ class ORM:
         with self.session() as s:
             animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
             schedules = s.query(Schedule).filter(Schedule.date >= datetime.now(),
-                                                 Schedule.animal_id == animal_id).order_by(Schedule.date)
+                                                 Schedule.animal_id == animal_id,
+                                                 Schedule.arena == config.ARENA_NAME).order_by(Schedule.date)
         return schedules
 
     def commit_schedule(self, date, experiment_name):
         with self.session() as s:
             animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
-            sch = Schedule(date=date, experiment_name=experiment_name, animal_id=animal_id)
+            sch = Schedule(date=date, experiment_name=experiment_name, animal_id=animal_id, arena=config.ARENA_NAME)
             s.add(sch)
             s.commit()
 
@@ -471,14 +476,17 @@ class ORM:
         with self.session() as s:
             rwd = Reward(time=time,
                          animal_id=self.cache.get(cc.CURRENT_ANIMAL_ID),
-                         block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX))
+                         block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
+                         arena=config.ARENA_NAME)
             s.add(rwd)
             s.commit()
 
     def get_todays_amount_strikes_rewards(self):
         with self.session() as s:
-            strikes = s.query(Strike).filter(cast(Strike.time, Date) == date.today()).all()
-            rewards = s.query(Reward).filter(cast(Reward.time, Date) == date.today()).all()
+            strikes = s.query(Strike).filter(and_(cast(Strike.time, Date) == date.today(),
+                                                  Strike.arena == config.ARENA_NAME)).all()
+            rewards = s.query(Reward).filter(and_(cast(Reward.time, Date) == date.today(),
+                                                  Reward.arena == config.ARENA_NAME)).all()
         return len(strikes), len(rewards)
 
 
