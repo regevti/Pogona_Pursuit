@@ -38,6 +38,7 @@ class AnimalSettingsHistory(Base):
     time = Column(DateTime)
     animal_id = Column(String)
     sex = Column(String)
+    arena = Column(String)
     bug_types = Column(String)
     reward_bugs = Column(String)
     background_color = Column(String)
