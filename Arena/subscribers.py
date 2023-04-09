@@ -15,7 +15,7 @@ import config
 from loggers import get_logger, get_process_logger
 from utils import Serializer, run_in_thread, run_command
 from db_models import ORM
-from periphery import Periphery, TemperatureListener, MQTTListener
+from periphery_integration import PeripheryIntegrator, TemperatureListener, MQTTListener
 
 
 class DoubleEvent(Exception):
@@ -160,7 +160,7 @@ class ExperimentLogger(Subscriber):
 class TouchLogger(ExperimentLogger):
     def __init__(self, *args, **kwargs):
         super(TouchLogger, self).__init__(*args, **kwargs)
-        self.periphery = Periphery()
+        self.periphery = PeripheryIntegrator()
         self.touches_queue = queue.Queue()
         self.start_touches_receiver_thread()
 
@@ -334,8 +334,8 @@ def start_management_subscribers(arena_shutdown_event, log_queue, subs_dict):
     if not config.DISABLE_PERIPHERY:
         threads['temperature'] = TemperatureLogger(arena_shutdown_event, log_queue)
         threads['temperature'].start()
-        threads['periphery_healthcheck'] = PeripheryHealthCheck(arena_shutdown_event, log_queue, channel='mqtt')
-        threads['periphery_healthcheck'].start()
+        # threads['periphery_healthcheck'] = PeripheryHealthCheck(arena_shutdown_event, log_queue, channel='mqtt')
+        # threads['periphery_healthcheck'].start()
     return threads
 
 

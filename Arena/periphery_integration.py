@@ -9,7 +9,7 @@ from db_models import ORM
 import config
 
 
-class Periphery:
+class PeripheryIntegrator:
     """class for communicating with reptilearn's arena.py"""
     def __init__(self):
         self.logger = get_logger('Periphery')
@@ -21,23 +21,24 @@ class Periphery:
         assert state in [0, 1]
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","{name}",{state}]')
 
-    def mqtt_publish(self, topic, payload):
-        self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
-        self.mqtt_client.publish(topic, payload)
-
     def cam_trigger(self, state):
         assert state in [0, 1]
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",{state}]')
+        self.cache.set(cc.CAM_TRIGGER_STATE, state)
 
     def feed(self):
         if self.cache.get(cc.IS_REWARD_TIMEOUT):
             return
         self.cache.set(cc.IS_REWARD_TIMEOUT, True)
-        self.mqtt_publish(config.mqtt['publish_topic'], '["dispense","Feeder"]')
+        self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{config.FEEDER_NAME}"]')
         n_rewards_left = int(self.cache.get(cc.REWARD_LEFT))
         self.cache.set(cc.REWARD_LEFT, max(n_rewards_left - 1, 0))
         self.logger.info('Reward was given')
         self.orm.commit_reward(datetime.now())
+
+    def mqtt_publish(self, topic, payload):
+        self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
+        self.mqtt_client.publish(topic, payload)
 
 
 class MQTTListener:
@@ -91,14 +92,24 @@ class TemperatureListener(MQTTListener):
 
     def parse_payload(self, payload):
         payload = json.loads(payload)
-        return {k: v[0] for k, v in payload.items() if k in config.mqtt['temperature_sensors']}
+        res = {}
+        for temp_label in config.mqtt['temperature_sensors']:
+            data = payload.get(temp_label, [])
+            if not data:
+                continue
+            elif len(data) == 1:
+                res[temp_label] = data[0]
+            else:
+                res.update({f'{temp_label}{i}': v for i, v in enumerate(data)})
+
+        return res
 
 
 if __name__ == "__main__":
     def hc_callback(payload):
         print(payload)
 
-    listener = MQTTListener(topics=['healthcheck'], is_debug=False, callback=hc_callback)
+    listener = MQTTListener(topics=['#'], is_debug=True, callback=hc_callback)
     # listener.loop()
     while True:
         listener.loop()

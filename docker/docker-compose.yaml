@@ -13,12 +13,13 @@ services:
       - db
       - mqtt
     volumes:
-    - ../pogona_hunter:/pogona_hunter
-    - /tmp/.X11-unix:/tmp/.X11-unix:ro
-    - ${MEDIA_DIR-/tmp}:/arena/media
+      - ../Arena:${ROOT_DIR}/Arena
+      - ../pogona_hunter:${ROOT_DIR}/pogona_hunter
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ${MEDIA_DIR-/tmp}:/arena/media
     restart: "no"
     runtime: nvidia
-    command: "flask run --host=0.0.0.0"
+    command: "python3 api.py"
     ports:
       - 3350:8888
       - 3351:5000
@@ -45,44 +46,17 @@ services:
     ports:
      - 8080:8080
 
-#  logger:
-#    build:
-#      context: ..
-#      dockerfile: ./docker/Dockerfile-logger
-#    image: pogona_logger:${logger_tag-latest}
-#    container_name: logger
-#    depends_on:
-#      - mqtt
-#      - cache
-#    restart: "no"
-#    command: 'celery -A logger worker --loglevel=INFO'
-#    devices:
-#      - ${PARPORT_DEVICE-/dev/parport0}
-#    volumes:
-#      - ../Arena:/logger
-#    environment:
-#      - PYTHONUNBUFFERED=1
-#      - IS_USE_PARPORT=${IS_USE_PARPORT-1}
-
-#  explore:
-#    build:
-#      context: ..
-#      dockerfile: ./docker/Dockerfile-explore
-#    image: pogona_explore:${explore_tag-latest}
-#    container_name: explore
-#    command: 'flask run --host=0.0.0.0'
-#    restart: "no"
-#    ports:
-#      - 3352:5000
-#    volumes:
-#      - ../Arena:/explore
-#      - ${EXPLORE_DIR-../Arena/experiments}:/explore/experiments
-#    environment:
-#      - PYTHONUNBUFFERED=1
-#      - EXPLORE_EXPERIMENT_DIR=/explore/experiments
-#      - FLASK_APP=explore.py
-#      - LC_ALL=C.UTF-8
-#      - LANG=C.UTF-8
+  periphery:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile-periphery
+    restart: "unless-stopped"
+    image: pogona_periphery:${periphery_tag-latest}
+    container_name: periphery
+    privileged: true
+    command: "python main.py --mqtt_host mqtt"
+    environment:
+      - PYTHONUNBUFFERED=1
 
   mqtt:
     build:
@@ -94,7 +68,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     ports:
-      - 1883:1883
+      - 1884:1883
 #      - 0.0.0.0:9001:9001
 
   cache:

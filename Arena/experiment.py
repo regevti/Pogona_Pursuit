@@ -23,6 +23,7 @@ from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id
 from subscribers import Subscriber, start_experiment_subscribers
+from periphery_integration import PeripheryIntegrator
 from db_models import ORM
 
 
@@ -119,9 +120,10 @@ class Experiment:
         checks = {
             'websocket_server_on': self.is_websocket_server_on(),
             'pogona_hunter_app_up': self.is_pogona_hunter_up(),
-            'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi(),
             'reward_left': is_reward_left(self.cache)
         }
+        if config.IS_CHECK_SCREEN_MAPPING:
+            checks.update({'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi(),})
         if all(checks.values()):
             return True
         else:
@@ -265,6 +267,7 @@ class Block:
     bug_height: int = None
     time_between_bugs: int = None
     background_color: str = ''
+    periphery: PeripheryIntegrator = PeripheryIntegrator()
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
@@ -278,7 +281,8 @@ class Block:
 
     @property
     def info(self):
-        non_relevant_fields = ['self', 'cache', 'is_use_predictions', 'cameras', 'experiment_path', 'orm', 'cam_units']
+        non_relevant_fields = ['self', 'cache', 'is_use_predictions', 'cameras', 'experiment_path', 'orm', 'cam_units',
+                               'periphery']
         for block_type, block_type_fields in config.experiment_types.items():
             if block_type != self.block_type:
                 non_relevant_fields += block_type_fields
@@ -336,6 +340,8 @@ class Block:
         # screencast
         if config.IS_RECORD_SCREEN_IN_EXPERIMENT:
             threading.Thread(target=self.record_screen).start()
+
+        self.hold_triggers()
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             self.cache.set_cam_output_dir(cam_name, output_dir)
@@ -346,7 +352,8 @@ class Block:
         self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         for cam_name in self.cameras.keys():
             self.cache.set_cam_output_dir(cam_name, '')
-        time.sleep(10)
+        self.hold_triggers()
+        time.sleep(8)
         self.turn_cameras('off')
 
     def turn_cameras(self, required_state):
@@ -428,6 +435,15 @@ class Block:
                 self.logger.debug('Trial ended')
                 return
             time.sleep(0.1)
+
+    def hold_triggers(self):
+        try:
+            self.logger.info(f'holding triggers for {config.HOLD_TRIGGERS_TIME} sec')
+            self.periphery.cam_trigger(0)
+            time.sleep(config.HOLD_TRIGGERS_TIME)
+            self.periphery.cam_trigger(1)
+        except Exception as exc:
+            self.logger.error(f'Error holding triggers: {exc}')
 
     def record_screen(self):
         filename = f'{self.block_path}/screen_record.mp4'

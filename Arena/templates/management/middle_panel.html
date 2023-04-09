@@ -11,10 +11,13 @@
                     <label class="form-check-label cams-labels" for="camera-{{cam}}">{{cam}}</label>
                     <input id="toggle-{{cam}}" type="checkbox" checked data-toggle="toggle"
                            data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
-                    <!--                <input class="form-check-input cam-prediction-checkbox" type="checkbox" value="{{cam}}"-->
-                    <!--                       id="use-predictions-{{cam}}" style="position: relative;margin-left: inherit" disabled>-->
                 </div>
                 {% endfor %}
+                <div class="row ml-4">
+                    <label class="form-check-label cams-labels" for="toggle-cam-trigger" style="font-weight: bold">Trigger</label>
+                    <input id="toggle-cam-trigger" type="checkbox" checked data-toggle="toggle"
+                           data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
+                </div>
             </div>
             <div class="col">
                 <div class="row">

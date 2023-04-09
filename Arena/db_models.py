@@ -447,10 +447,14 @@ class ORM:
     def get_animal_settings(self, animal_id):
         with self.session() as s:
             animal = s.query(Animal).filter_by(animal_id=animal_id, arena=config.ARENA_NAME).first()
-            animal_dict = {k: v for k, v in animal.__dict__.items() if not k.startswith('_')}
-            for k, v in animal_dict.copy().items():
-                if k in ANIMAL_SETTINGS_LISTS:
-                    animal_dict[k] = v.split(',')
+            if animal is not None:
+                animal_dict = {k: v for k, v in animal.__dict__.items() if not k.startswith('_')}
+                for k, v in animal_dict.copy().items():
+                    if k in ANIMAL_SETTINGS_LISTS:
+                        animal_dict[k] = v.split(',')
+            else:
+                self.logger.error('No Animal was found')
+                animal_dict = {}
         return animal_dict
 
     def get_upcoming_schedules(self):
