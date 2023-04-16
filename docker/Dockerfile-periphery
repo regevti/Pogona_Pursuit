@@ -1,0 +1,15 @@
+FROM python:3.8
+
+#USER root
+RUN mkdir /periphery
+RUN mkdir -p /Arena/configurations
+WORKDIR /periphery
+
+COPY ../periphery .
+COPY ../requirements/periphery.txt .
+COPY ../Arena/configurations/periphery_config.json /Arena/configurations
+
+RUN pip install -r periphery.txt
+#
+ENV TZ=Asia/Jerusalem
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

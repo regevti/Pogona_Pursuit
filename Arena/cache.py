@@ -31,6 +31,7 @@ class CacheColumns:
     CURRENT_ANIMAL_ID_DB_INDEX = Column('CURRENT_ANIMAL_ID_DB_INDEX', int, 'static')
     REWARD_LEFT = Column('REWARD_LEFT', int, 'static')
     IS_EXPERIMENT_CONTROL_CAMERAS = Column('IS_EXPERIMENT_CONTROL_CAMERAS', bool, config.experiments_timeout)
+    CAM_TRIGGER_STATE = Column('CAM_TRIGGER_STATE', int, None)
 
 
 class RedisCache:

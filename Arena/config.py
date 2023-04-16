@@ -91,6 +91,9 @@ arena_modules = {
     }
 }
 cameras = yaml.load(Path('configurations/cam_config.yaml').open(), Loader=yaml.FullLoader)
+QUEUE_WAIT_TIME = env.int('QUEUE_WAIT_TIME', 2)
+SINK_QUEUE_TIMEOUT = env.int('SINK_QUEUE_TIMEOUT', 2)
+VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG')
 DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000)
 camera_on_min_duration = env('camera_on_min_duration', 10*60)
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
@@ -106,10 +109,18 @@ capture_images_dir = env('capture_images_dir', f'{OUTPUT_DIR}/captures')
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False)
 mqtt = {
     'host': 'localhost',
-    'port': 1883,
+    'port': env.int('MQTT_PORT', 1883),
     'publish_topic': 'arena_command',
-    'temperature_sensors': ['Temp_front']
+    'temperature_sensors': env.list('temperature_sensors', ['Temp'])
 }
+IR_NAME = env('IR_NAME', 'IR_lights')
+LED_NAME = env('LED_NAME', 'day_lights')
+FEEDER_NAME = env('FEEDER_NAME', 'Feeder 1')
+TOUCH_SCREEN_NAME = env('TOUCH_SCREEN_NAME', 'Elo')
+IS_SCREEN_INVERTED = env.bool('IS_SCREEN_INVERTED', 0)
+IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', 1)
+SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080')  # must be written with comma
+HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
 
 # temperature sensor
 SERIAL_PORT_TEMP = env('SERIAL_PORT_TEMP', '/dev/ttyACM0')

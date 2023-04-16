@@ -151,7 +151,7 @@ class ImageSink(ArenaProcess):
         while not self.stop_signal.is_set():
             try:
                 self.cam_config = cache.get_cam_dict(self.cam_name)
-                timestamp, frame = self.frames_queue.get(timeout=2)
+                timestamp, frame = self.frames_queue.get(timeout=config.SINK_QUEUE_TIMEOUT)
                 if self.cam_config.get('crop'):
                     x, y, w, h = [int(c) for c in self.cam_config['crop']]
                     frame = frame[y:y+h, x:x+w]
@@ -237,7 +237,8 @@ class ImageSink(ArenaProcess):
         self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}')
         self.db_video_id = self.orm.commit_video(path=self.video_path, fps=self.writing_fps,
                                                  cam_name=self.cam_name, start_time=datetime.datetime.now())
-        self.mp_metadata['db_video_id'].value = self.db_video_id
+        if self.db_video_id is not None:
+            self.mp_metadata['db_video_id'].value = self.db_video_id
         self.write_video_timestamps = []
         self.start_writing_thread()
 

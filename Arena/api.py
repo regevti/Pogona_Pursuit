@@ -20,7 +20,7 @@ from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
 from calibration import CharucoEstimator
-from periphery import Periphery
+from periphery_integration import PeripheryIntegrator
 import matplotlib
 matplotlib.use('Agg')
 
@@ -54,12 +54,16 @@ def check():
     res['experiment_name'] = cache.get_current_experiment()
     res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
     res['open_app_host'] = cache.get(cc.OPEN_APP_HOST)
-    res['temperature'] = arena_mgr.orm.get_temperature()
-    res['n_strikes'], res['n_rewards'] = arena_mgr.orm.get_todays_amount_strikes_rewards()
+    if not config.DISABLE_DB:
+        res['temperature'] = arena_mgr.orm.get_temperature()
+        res['n_strikes'], res['n_rewards'] = arena_mgr.orm.get_todays_amount_strikes_rewards()
+    else:
+        res.update({'temperature': None, 'n_strikes': 0, 'n_rewards': 0})
     res['reward_left'] = cache.get(cc.REWARD_LEFT)
     res['streaming_camera'] = arena_mgr.get_streaming_camera()
     res['schedules'] = arena_mgr.schedules
     res['cached_experiments'] = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
+    res['cam_trigger_state'] = cache.get(cc.CAM_TRIGGER_STATE)
     for cam_name, cu in arena_mgr.units.items():
         res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
         res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}
@@ -167,6 +171,8 @@ def update_animal_id():
 
 @app.route('/get_current_animal', methods=['GET'])
 def get_current_animal():
+    if config.DISABLE_DB:
+        return jsonify({})
     animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
     animal_dict = arena_mgr.orm.get_animal_settings(animal_id)
     return jsonify(animal_dict)
@@ -193,6 +199,13 @@ def stop_camera_unit():
     arena_mgr.units[cam_name].stop()
     if cam_name == arena_mgr.get_streaming_camera():
         arena_mgr.stop_stream()
+    return Response('ok')
+
+
+@app.route('/set_cam_trigger', methods=['POST'])
+def set_cam_trigger():
+    state = int(request.form['state'])
+    periphery_mgr.cam_trigger(state)
     return Response('ok')
 
 
@@ -247,19 +260,13 @@ def reward():
 
 @app.route('/arena_switch/<name>/<state>')
 def arena_switch(name, state):
-
-    periphery_mgr.switch(name, int(state))
-
-
-@app.route('/led_light/<state>')
-def led_light(state):
-    # cache.publish_command('led_light', state)
-    return Response('ok')
-
-
-@app.route('/ir_light/<state>')
-def ir_light(state):
-    # cache.publish_command('ir_light', state)
+    d = {
+        'ir': config.IR_NAME,
+        'led': config.LED_NAME
+    }
+    assert name in d.keys(), f'unknown device: {name}'
+    assert int(state) in [0, 1], f'state must be 0 or 1; received {state}'
+    periphery_mgr.switch(d[name], int(state))
     return Response('ok')
 
 
@@ -516,7 +523,8 @@ if __name__ == "__main__":
     cache = RedisCache()
     if not config.IS_ANALYSIS_ONLY:
         arena_mgr = ArenaManager()
-        periphery_mgr = Periphery()
+        periphery_mgr = PeripheryIntegrator()
+        periphery_mgr.cam_trigger(1)
 
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
 

@@ -2,10 +2,10 @@ import cv2
 import time
 import re
 import os
+import PySpin
 import json
 import pandas as pd
 import numpy as np
-import PySpin
 from multiprocessing.dummy import Pool
 from cache import CacheColumns
 from utils import calculate_fps, mkdir, datetime_string
@@ -29,23 +29,42 @@ class FLIRCamera(Camera):
         cam.Init()
         self.configure_camera(cam)
         cam.BeginAcquisition()
+        image_result = None
+        time.sleep(1)
 
-        while not self.stop_signal.is_set():
-            image_result = cam.GetNextImage(2000)
-            if image_result.IsIncomplete():  # Ensure image completion
-                sts = image_result.GetImageStatus()
-                self.logger.warning(f'Image incomplete with image status {sts}')
-                if sts == 9:
-                    self.logger.warning(f'Breaking after status 9')
-                    image_result.Release()
-                    break
-            else:
-                self.image_handler(image_result)
-
-        if cam.IsStreaming():
-            cam.EndAcquisition()
-        cam.DeInit()
-        cam_list.Clear()
+        try:
+            while not self.stop_signal.is_set():
+                if image_result is not None:
+                    try:
+                        image_result.Release()
+                    except PySpin.SpinnakerException:
+                        pass
+                try:
+                    image_result = cam.GetNextImage(config.QUEUE_WAIT_TIME * 1000, 0)
+                except PySpin.SpinnakerException as e:
+                    if e.errorcode == -1011:
+                        # restart acquisition due to empty buffer bug
+                        # "Spinnaker: Failed waiting for EventData on NEW_BUFFER_DATA event. [-1011]"
+                        cam.EndAcquisition()
+                        cam.BeginAcquisition()
+                        time.sleep(0.1)
+                        continue
+                else:
+                    if image_result.IsIncomplete():  # Ensure image completion
+                        sts = image_result.GetImageStatus()
+                        self.logger.warning(f'Image incomplete with image status {sts}')
+                        if sts == 9:
+                            self.logger.warning(f'Breaking after status 9')
+                            break
+                    else:
+                        self.image_handler(image_result)
+        except Exception as exc:
+            self.logger.error(str(exc))
+        finally:
+            if cam.IsStreaming():
+                cam.EndAcquisition()
+            cam.DeInit()
+            cam_list.Clear()
 
     def image_handler(self, image_result: PySpin.ImagePtr):
         t0 = time.time()
@@ -69,17 +88,34 @@ class FLIRCamera(Camera):
     def configure_camera(self, cam):
         """Configure camera for trigger mode before acquisition"""
         try:
-            cam.AcquisitionFrameRateEnable.SetValue(True)
-            cam.AcquisitionFrameRate.SetValue(int(self.cam_config['fps']))
-            cam.TriggerSource.SetValue(PySpin.TriggerSource_Line1)
-            # cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
-            # cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
-            cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
-            # cam.LineSelector.SetValue(PySpin.LineSelector_Line1)
-            # cam.LineMode.SetValue(PySpin.LineMode_Input)
-            # cam.TriggerActivation.SetValue(PySpin.TriggerActivation_RisingEdge)
-            cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput(cam))
+            cam.ExposureAuto.SetValue(PySpin.ExposureAuto_Off)
+            cam.ExposureMode.SetValue(PySpin.ExposureMode_Timed)
             cam.ExposureTime.SetValue(int(self.cam_config['exposure']))
+            cam.AcquisitionMode.SetValue(PySpin.AcquisitionMode_Continuous)
+            cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
+
+            assert not (self.cam_config.get('trigger_source') and self.cam_config.get('fps')), \
+                'must provide either fps or trigger_source'
+            if self.cam_config.get('trigger_source'):
+                cam.AcquisitionFrameRateEnable.SetValue(False)
+                cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
+                cam.TriggerSource.SetValue(getattr(PySpin, f"TriggerSource_{self.cam_config['trigger_source']}"))
+                cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
+                cam.TriggerActivation.SetValue(PySpin.TriggerActivation_FallingEdge)
+
+            elif self.cam_config.get('fps'):
+                cam.AcquisitionFrameRate.SetValue(int(self.cam_config['fps']))
+                cam.AcquisitionFrameRateEnable.SetValue(True)
+                cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
+
+            else:
+                raise Exception('bad configuration. must provide either trigger_source or fps in cam_config')
+
+            # cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
+            # max_throughput = self.get_max_throughput(cam)
+            # self.logger.info(f'Max throughput: {max_throughput}')
+            # cam.DeviceLinkThroughputLimit.SetValue(max_throughput)
+
             self.logger.debug(f'Finished Configuration')
 
         except PySpin.SpinnakerException as exc:

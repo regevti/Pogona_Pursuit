@@ -100,7 +100,11 @@
                                 onCameras.push(camName)
                             }
                         }
-                        // $("#selectStreamCamera option").remove()
+                        // Cam-trigger update
+                        let trigTog = $(`#toggle-cam-trigger`)
+                        if (Number(data['cam_trigger_state']) !== Number(trigTog.prop('checked'))) {
+                            trigTog.bootstrapToggle('toggle')
+                        }
 
                         $("#selectStreamCamera option").each(function () {
                             if (onCameras.indexOf(this.value) === -1) {
@@ -230,16 +234,22 @@
         $recordButton.prop('disabled', true)
         $("streamButton").prop('disabled', true)
 
+        $("#toggle-cam-trigger").change((res) => {
+            isToggleCheckPause = true
+            let requestedState = Number($(`#toggle-cam-trigger`).prop('checked'))
+
+            $.post('/set_cam_trigger', {state: requestedState}).done(function () {
+                setTimeout(() => {
+                    isToggleCheckPause = false
+                }, apiCheckTimeout)
+            })
+        })
+
         cameras.forEach((cam) => {
             $(`#toggle-${cam}`).change((res) => {
                 isToggleCheckPause = true
                 let onRequested = $(`#toggle-${cam}`).prop('checked')
                 let url = onRequested ? '/start_camera_unit' : '/stop_camera_unit'
-                // let camCheck$ = $(`#camera-${cam}`)
-                // camCheck$.prop('disabled', !onRequested)
-                // if (!onRequested) {
-                //     camCheck$.prop('checked', false)
-                // }
                 $(`#stream-option-${cam}`).prop('disabled', !onRequested)
 
                 $.post(url, {camera: cam}).done(function () {

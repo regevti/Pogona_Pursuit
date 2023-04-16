@@ -29,15 +29,16 @@ DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 def turn_display_on(board='holes', app_only=False):
     touch_device_id = get_hdmi_xinput_id()
-    cmds = [f'scripts/start_pogona_hunter.sh {board}']  # start chrome with the bug application
+    cmds = [f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION}']  # start chrome with the bug application
     if not app_only:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
-            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4',  # turn touch screen on
+            f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4' +
+            ' --rotate inverted' if config.IS_SCREEN_INVERTED else '',  # turn touch screen on
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
             f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
             'sleep 1'
-        ] + [cmds[0] + ' --kiosk']
+            ] + [cmds[0] + ' --kiosk']
     return os.system(' && '.join(cmds))
 
 
@@ -53,7 +54,7 @@ def turn_display_off(app_only=False):
 
 
 def get_hdmi_xinput_id():
-    out = next(run_command('DISPLAY=":0" xinput | grep -i weida')).decode()
+    out = next(run_command(f'DISPLAY=":0" xinput | grep -i {config.TOUCH_SCREEN_NAME}')).decode()
     m = re.search(r'id=(\d+)', out)
     if m:
         return m.group(1)

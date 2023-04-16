@@ -1,5 +1,6 @@
 import cv2
 from utils import datetime_string
+import config
 
 
 class Writer:
@@ -27,7 +28,7 @@ class Writer:
 class OpenCVWriter(Writer):
     def __init__(self, frame, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+        fourcc = cv2.VideoWriter_fourcc(*config.VIDEO_WRITER_FORMAT)
         h, w = frame.shape[:2]
         self.writer = cv2.VideoWriter(self.video_path, fourcc, self.fps, (w, h), self.is_color)
 
