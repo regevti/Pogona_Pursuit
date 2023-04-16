@@ -124,9 +124,13 @@ def stop_experiment():
 @app.route('/commit_schedule', methods=['POST'])
 def commit_schedule():
     data = dict(request.form)
-    data['date'] = datetime.strptime(data['date'], '%d/%m/%Y %H:%M')
-    arena_mgr.orm.commit_schedule(**data)
-    arena_mgr.update_upcoming_schedules()
+    if not data.get('start_date'):
+        arena_mgr.logger.error('please enter start_date for schedule')
+    else:
+        data['start_date'] = datetime.strptime(data['start_date'], '%d/%m/%Y %H:%M')
+        data['every'] = int(data['every'])
+        arena_mgr.orm.commit_multiple_schedules(**data)
+        arena_mgr.update_upcoming_schedules()
     return Response('ok')
 
 

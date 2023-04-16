@@ -461,6 +461,17 @@ class ORM:
                                                  Schedule.arena == config.ARENA_NAME).order_by(Schedule.date)
         return schedules
 
+    def commit_multiple_schedules(self, start_date, experiment_name, end_date=None, every=None):
+        if not end_date:
+            end_date = start_date.replace(hour=18, minute=00)
+        if every:
+            curr_date = start_date
+            while curr_date < end_date:
+                self.commit_schedule(curr_date, experiment_name)
+                curr_date += timedelta(minutes=every)
+        else:
+            self.commit_schedule(start_date, experiment_name)
+
     def commit_schedule(self, date, experiment_name):
         with self.session() as s:
             animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)

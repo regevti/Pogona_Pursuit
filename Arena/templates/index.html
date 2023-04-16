@@ -53,7 +53,12 @@
 <script>
     $(function () {
         $('#datetimepicker1').datetimepicker({
-            format: "DD/MM/YYYY HH:mm"
+            format: "DD/MM/YYYY HH:mm",
+            todayHighlight: true
+        });
+        $('#datetimepicker2').datetimepicker({
+            format: "DD/MM/YYYY HH:mm",
+            useCurrent: false
         });
         let wsclient = new WebSocketClient('ws://127.0.0.1:6380', {
             reconnectEnabled: true,
@@ -462,11 +467,22 @@
 
         $("#saveScheduleButton").click(() => {
             $.post('/commit_schedule', {
-                    date: $("#datetimepicker1").data().date,
-                    experiment_name: $("#cachedExperimentsSelectSchedule").val()
+                    start_date: $("#datetimepicker1").data().date,
+                    experiment_name: $("#cachedExperimentsSelectSchedule").val(),
+                    every: Number($("#scheduleEveryMinutes").val()),
+                    end_date: $("#datetimepicker2").data().date
             })
             $("#scheduleModal").modal('toggle');
         });
+
+        $("#isRepeatSchedule").change(() => {
+            let isRepeat = $("#isRepeatSchedule").is(":checked")
+            if (isRepeat) {
+                $("#repeatScheduleSection").show()
+            } else {
+                $("#repeatScheduleSection").hide()
+            }
+        }).trigger('change')
 
         $("#updateRewardCount").click(() => {
             $.ajax({
