@@ -1,11 +1,11 @@
 import argparse
 import inspect
+import random
 import websocket
 import json
 import threading
 import time
 from typing import Union
-
 import humanize
 import re
 from datetime import datetime
@@ -24,7 +24,7 @@ from cache import RedisCache, CacheColumns as cc
 from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id
 from subscribers import Subscriber, start_experiment_subscribers
 from periphery_integration import PeripheryIntegrator
-from db_models import ORM
+from db_models import ORM, Experiment as Experiment_Model
 
 
 @dataclass
@@ -54,8 +54,8 @@ class Experiment:
         self.name = str(self)
         self.orm = ORM()
         blocks_ids = range(self.first_block, self.first_block + len(self.blocks))
-        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.cam_units, self.orm, self.cache,
-                             bug_types=self.bug_types, reward_bugs=self.reward_bugs, exit_hole=self.exit_hole,
+        self.blocks = [Block(i, self.cameras, str(self), self.experiment_path, self.animal_id, self.cam_units, self.orm,
+                             self.cache, bug_types=self.bug_types, reward_bugs=self.reward_bugs, exit_hole=self.exit_hole,
                              background_color=self.background_color, reward_any_touch_prob=self.reward_any_touch_prob,
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
@@ -186,6 +186,7 @@ class Experiment:
         self.cache.delete(cc.EXPERIMENT_NAME)
         self.cache.delete(cc.EXPERIMENT_PATH)
         self.cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, False)
+        self.cache.set(cc.IS_REWARD_TIMEOUT, False)
         if 'main' in self.threads:
             self.threads['main'].join()
         time.sleep(0.2)
@@ -212,6 +213,11 @@ class Experiment:
         self.cache.set(cc.EXPERIMENT_NAME, str(self), timeout=self.experiment_duration)
         self.cache.set(cc.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
         self.cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, True)
+        if self.is_test:
+            # cancel reward in test experiments
+            self.cache.set(cc.IS_REWARD_TIMEOUT, True, timeout=self.experiment_duration)
+        else:
+            self.cache.set(cc.IS_REWARD_TIMEOUT, False)
 
     @property
     def experiment_path(self):
@@ -241,6 +247,7 @@ class Block:
     cameras: dict
     experiment_name: str
     experiment_path: str
+    animal_id: str
     cam_units: dict
     orm: ORM
     cache: RedisCache
@@ -278,6 +285,9 @@ class Block:
         elif not self.reward_bugs:
             self.logger.debug(f'No reward bugs were given, using all bug types as reward; {self.reward_bugs}')
             self.reward_bugs = self.bug_types
+
+        if self.is_random_low_horizontal:
+            self.init_random_low_horizontal()
 
     @property
     def info(self):
@@ -395,6 +405,8 @@ class Block:
                 command, options = 'init_media', self.media_options
             else:
                 command, options = 'init_bugs', self.bug_options
+                if self.is_random_low_horizontal:
+                    options = self.set_random_low_horizontal_trial(options)
             options['trialID'] = trial_id
             options['trialDBId'] = trial_db_id
             self.cache.publish_command(command, json.dumps(options))
@@ -454,6 +466,27 @@ class Block:
             text='%{{localtime}}':x=30:y=30:fontcolor=red:fontsize=30" {filename}''', is_debug=False)
         )
 
+    def init_random_low_horizontal(self, max_strikes=30):
+        speeds = [2, 4, 6, 8, 10]
+        speed_strikes_count = {k: 0 for k in speeds}
+        with self.orm.session() as s:
+            exps = s.query(Experiment_Model).filter_by(animal_id=self.animal_id).all()
+            for e in exps:
+                for b in e.blocks:
+                    if b.movement_type != 'random_low_horizontal' or b.bug_speed not in speeds:
+                        continue
+                    speed_strikes_count[b.bug_speed] = speed_strikes_count.get(b.bug_speed, 0) + len(b.strikes)
+        available_speeds = [s for s in speeds if speed_strikes_count[s] < max_strikes]
+        self.bug_speed = random.choice(available_speeds)
+        self.logger.info(f'random_low_horizontal starts with bug_speed={self.bug_speed}; '
+                         f'speeds strikes: {speed_strikes_count}')
+
+    @staticmethod
+    def set_random_low_horizontal_trial(options):
+        options['exitHole'] = random.choice(['bottomLeft', 'bottomRight'])
+        options['movementType'] = 'low_horizontal'
+        return options
+
     @property
     def media_options(self) -> dict:
         return {
@@ -512,6 +545,10 @@ class Block:
     @property
     def is_blank_block(self):
         return self.block_type == 'blank'
+
+    @property
+    def is_random_low_horizontal(self):
+        return self.movement_type == 'random_low_horizontal'
 
     @property
     def is_always_reward(self):
@@ -607,5 +644,34 @@ def main():
     print(e)
 
 
+def start_trial():
+    arg_parser = argparse.ArgumentParser(description='Experiments')
+    arg_parser.add_argument('-m', '--movement_type', default='random')
+    arg_parser.add_argument('--exit_hole', default='bottomLeft', choices=['bottomLeft', 'bottomRight'])
+    arg_parser.add_argument('--speed', type=int, default=5)
+    args = arg_parser.parse_args()
+    cache_ = RedisCache()
+    options = {
+        'numOfBugs': 1,
+        'trialID': 1,  # default value, changed in init_bugs
+        'trialDBId': 1, # default value, changed in init_bugs
+        'numTrials': 1,
+        'iti': 30,
+        'trialDuration': 30,
+        'speed': args.speed,
+        'bugTypes': ['cockroach'],
+        'rewardBugs': [],
+        'movementType': args.movement_type,
+        # 'timeBetweenBugs': self.time_between_bugs,
+        # 'isStopOnReward': self.is_always_reward,
+        'isLogTrajectory': True,
+        # 'bugSize': self.bug_size,
+        # 'backgroundColor': self.background_color,
+        'exitHole': args.exit_hole,
+        'rewardAnyTouchProb': 0
+    }
+    cache_.publish_command('init_bugs', json.dumps(options))
+
+
 if __name__ == "__main__":
-    main()
+    start_trial()

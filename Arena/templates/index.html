@@ -369,6 +369,15 @@
                     $(`#bugSizeDiv${i}`).show()
                 }
             }).trigger('change')
+            let $movementType = $(`#movementTypeSelect${i}`)
+            $movementType.change(function () {
+                if (['static', 'random_speeds', 'random_low_horizontal'].indexOf($movementType.val()) !== -1) {
+                    $(`#bugSpeedDiv${i}`).hide()
+                } else {
+                    $(`#bugSpeedDiv${i}`).show()
+                }
+            }
+            ).trigger('change')
         }
 
         function stopStreaming() {

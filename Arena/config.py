@@ -111,7 +111,7 @@ mqtt = {
     'host': 'localhost',
     'port': env.int('MQTT_PORT', 1883),
     'publish_topic': 'arena_command',
-    'temperature_sensors': env.list('temperature_sensors', ['Temp'])
+    'temperature_sensors': env.list('TEMPERATURE_SENSORS', ['Temp'])
 }
 IR_NAME = env('IR_NAME', 'IR_lights')
 LED_NAME = env('LED_NAME', 'day_lights')
@@ -119,7 +119,10 @@ FEEDER_NAME = env('FEEDER_NAME', 'Feeder 1')
 TOUCH_SCREEN_NAME = env('TOUCH_SCREEN_NAME', 'Elo')
 IS_SCREEN_INVERTED = env.bool('IS_SCREEN_INVERTED', 0)
 IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', 1)
+APP_SCREEN = env('APP_SCREEN', ':0.0')
+TEST_SCREEN = env('TEST_SCREEN', ':1.0')
 SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080')  # must be written with comma
+SCREEN_DISPLACEMENT = env.int('SCREEN_DISPLACEMENT', 2025)  # used for displacing the screen contents in multi screen setup
 HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
 
 # temperature sensor

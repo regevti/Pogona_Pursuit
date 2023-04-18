@@ -99,7 +99,9 @@ export default {
         } else {
           this.straightMove(0)
         }
-      // random + low_horizontal
+      // random
+      } else if (this.isLowHorizontalMovement) {
+        this.straightMove(0)
       } else {
         this.straightMove()
       }
@@ -152,7 +154,6 @@ export default {
       this.y = this.entranceHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
       this.xTarget = this.exitHolePos[0] + (this.bugsSettings.holeSize[0] / 2)
       this.yTarget = this.exitHolePos[1] + (this.bugsSettings.holeSize[1] / 2)
-      this.directionAngle = randomRange(3 * Math.PI / 4, 2 * Math.PI)
       this.isRetreated = false
       this.isHoleRetreatStarted = false
       this.isCircleTrackReached = true
@@ -171,16 +172,20 @@ export default {
           this.r0 = [(this.x + this.xTarget) / 2, this.y + (this.r / 2.3)]
           break
         case 'low_horizontal':
+          this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.startRetreat()
           break
         case 'low_horizontal_noise':
+          this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.setRetreatSpeeds()
           break
         case 'random_speeds':
+          this.directionAngle = randomRange(3 * Math.PI / 4, 2 * Math.PI)
           this.bugsSettings.speed = randomRange(2, 10)
           this.setNextAngle()
           break
         default:
+          this.directionAngle = randomRange(3 * Math.PI / 4, 2 * Math.PI)
           this.setNextAngle()
       }
     },

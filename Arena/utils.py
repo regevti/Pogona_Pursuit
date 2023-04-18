@@ -29,12 +29,13 @@ DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 def turn_display_on(board='holes', app_only=False):
     touch_device_id = get_hdmi_xinput_id()
-    cmds = [f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION}']  # start chrome with the bug application
+    screen = config.APP_SCREEN if not app_only else config.TEST_SCREEN
+    cmds = [f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT}']
     if not app_only:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
             f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4' +
-            ' --rotate inverted' if config.IS_SCREEN_INVERTED else '',  # turn touch screen on
+            (' --rotate inverted' if config.IS_SCREEN_INVERTED else ''),  # turn touch screen on
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
             f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
             'sleep 1'

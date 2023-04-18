@@ -97,9 +97,9 @@
   },
   "movementTypes": {
     "static": "static",
-    "holes": "holes",
     "random": "random walk",
     "random_speeds": "random speeds",
+    "random_low_horizontal": "random low horizontal",
     "circle": "circle",
     "half_circle": "half circle",
     "low_horizontal": "low horizontal",
@@ -108,7 +108,7 @@
     "rect_tunnel": "rect tunnel"
   },
   "boards": {
-    "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "jump_up"],
+    "holes": ["random", "random_speeds", "circle", "low_horizontal", "low_horizontal_noise", "jump_up", "random_low_horizontal"],
     "tunnel": ["rect_tunnel"]
   },
   "targetDrifts": {
