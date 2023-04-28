@@ -104,8 +104,9 @@ class FLIRCamera(Camera):
                 cam.TriggerActivation.SetValue(PySpin.TriggerActivation_FallingEdge)
 
             elif self.cam_config.get('fps'):
-                cam.AcquisitionFrameRate.SetValue(int(self.cam_config['fps']))
+                cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput(cam))
                 cam.AcquisitionFrameRateEnable.SetValue(True)
+                cam.AcquisitionFrameRate.SetValue(int(self.cam_config['fps']))
                 cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
 
             else:
@@ -160,8 +161,8 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
     cam_list = system.GetCameras()
     for cam in cam_list:
         sc = SpinCamera(cam)
-        if not sc.is_firefly():
-            continue
+        # if not sc.is_firefly():
+        #     continue
         d = {'DeviceID': sc.device_id}
         d.update({k: v for k, v in zip(info_fields, sc.info())})
         df.append(d)
@@ -186,10 +187,15 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
 def get_device_id(cam) -> str:
     """Get the camera device ID of the cam instance"""
     nodemap_tldevice = cam.GetTLDeviceNodeMap()
-    device_id = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
+    device_id = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceSerialNumber')).GetValue()
     m = re.search(r'\d{8}', device_id)
     if not m:
-        return device_id
+        device_id = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceID')).GetValue()
+        m = re.search(r'\d{8}', device_id)
+        if m:
+            return m[0]
+        else:
+            return device_id
     return m[0]
 
 

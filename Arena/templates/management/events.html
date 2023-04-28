@@ -1,23 +1,18 @@
 <div class="col" id="events_column">
     <h4 style="text-align: center;">Events</h4>
-    <div class="row mb-1" id="leds-div">
-        <h7 class="col ml-2">LED:</h7>
-        <div class="col ml-5">
-            <button id="led_light_on" type="button" class="btn btn-sm btn-primary">ON</button>
+
+    {% for name in toggels %}
+        <div class="row mb-1" id="toggle-{{ name }}">
+            <h7 class="col ml-2">{{ name }}:</h7>
+            <div class="col ml-5">
+                <button id="{{ name }}-on" type="button" class="btn btn-sm btn-primary">ON</button>
+            </div>
+            <div class="col ml-2">
+                <button id="{{ name }}-off" type="button" class="btn btn-sm btn-outline-danger">OFF</button>
+            </div>
         </div>
-        <div class="col ml-2">
-            <button id="led_light_off" type="button" class="btn btn-sm btn-outline-danger">OFF</button>
-        </div>
-    </div>
-    <div class="row mb-1" id="ir-div">
-        <h7 class="col ml-2">IR:</h7>
-        <div class="col ml-5">
-            <button id="ir_light_on" type="button" class="btn btn-sm btn-primary">ON</button>
-        </div>
-        <div class="col ml-2">
-            <button id="ir_light_off" type="button" class="btn btn-sm btn-outline-danger">OFF</button>
-        </div>
-    </div>
+    {% endfor %}
+
     <div class="row mb-1" id="display-div">
         <h7 class="col ml-2">Display:</h7>
         <div class="col ml-5">
@@ -114,3 +109,87 @@
         </div>
     </div>
 </div>
+
+
+<script>
+    {% for name in toggels %}
+        $("#{{ name }}-on").click(function (e) {
+            $.get('/arena_switch/{{ name }}/1')
+        })
+        $("#{{ name }}-off").click(function (e) {
+            $.get('/arena_switch/{{ name }}/0')
+        })
+    {% endfor %}
+
+    $("#display_on").click(function (e) {
+        $.get('/display/on')
+    })
+    $("#display_off").click(function (e) {
+        $.get('/display/off')
+    })
+    $("#reloadApp").click(function (e) {
+        $.get('/reload_app')
+        console.log('>> App reload command sent manually')
+    })
+
+    $("#reward").click(function (e) {
+        $.get('/reward', function (data) {
+            console.log('>> Reward sent manually')
+        })
+    })
+
+    $("#init_bugs").click(function (e) {
+        let blockValues = new Block(1).values
+        let payload = {
+            numOfBugs: 1,
+            numTrials: blockValues.num_trials,
+            iti: blockValues.iti,
+            trialDuration: blockValues.trial_duration,
+            speed: blockValues.bug_speed,
+            bugTypes: blockValues.bug_types || ['cockroach'],
+            rewardBugs: blockValues.reward_bugs || [],
+            movementType: blockValues.movement_type,
+            backgroundColor: blockValues.background_color,
+            exitHole: blockValues.exit_hole
+        }
+        if (!$("#isDefaultBugSize1").is(':checked')) {
+            Object.assign(payload, {bugSize: Number($("#bugSize1").val())})
+        }
+        $.ajax({
+            url: "/init_bugs",
+            type: "POST",
+            data: JSON.stringify(payload),
+            contentType: "application/json",
+            complete: function (res) {
+                console.log('>> Bugs initiated manually')
+            }
+        })
+    })
+
+    $("#hide_bugs").click(function (e) {
+        $.get('/hide_bugs')
+        console.log('>> Bugs stopped manually')
+    })
+
+    $("#loadMediaManual").click(function () {
+        let video = $("#manualMediaSelect").val()
+        $('#startMediaModal').modal('toggle');
+        $.ajax({
+            url: "/start_media",
+            type: "POST",
+            data: JSON.stringify({
+                media_url: video
+            }),
+            contentType: "application/json",
+            complete: function (res) {
+                console.log(`>> Video ${video} started manually`)
+            }
+        })
+    })
+
+    $("#media_stop").click(function () {
+        $.get('/stop_media', (data) => {
+        })
+    })
+
+</script>

@@ -43,8 +43,8 @@ def index():
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
-                           max_blocks=config.api_max_blocks_to_show,
-                           extra_time_recording=config.extra_time_recording,
+                           max_blocks=config.api_max_blocks_to_show, toggels=periphery_mgr.toggles,
+                           extra_time_recording=config.extra_time_recording, feeders=periphery_mgr.feeders,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -59,7 +59,7 @@ def check():
         res['n_strikes'], res['n_rewards'] = arena_mgr.orm.get_todays_amount_strikes_rewards()
     else:
         res.update({'temperature': None, 'n_strikes': 0, 'n_rewards': 0})
-    res['reward_left'] = cache.get(cc.REWARD_LEFT)
+    res['reward_left'] = periphery_mgr.get_feeders_counts()
     res['streaming_camera'] = arena_mgr.get_streaming_camera()
     res['schedules'] = arena_mgr.schedules
     res['cached_experiments'] = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
@@ -148,8 +148,10 @@ def delete_schedule():
 @app.route('/update_reward_count', methods=['POST'])
 def update_reward_count():
     data = request.json
+    feeder_name = data.get('name')
     reward_count = int(data.get('reward_count', 0))
-    cache.set(cc.REWARD_LEFT, reward_count)
+    arena_mgr.logger.info(f'Update {feeder_name} to {reward_count}')
+    periphery_mgr.update_reward_count(feeder_name, reward_count)
     return Response('ok')
 
 
@@ -174,6 +176,9 @@ def get_current_animal():
     if config.DISABLE_DB:
         return jsonify({})
     animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
+    if not animal_id:
+        arena_mgr.logger.warning('No animal ID is set')
+        return jsonify({})
     animal_dict = arena_mgr.orm.get_animal_settings(animal_id)
     return jsonify(animal_dict)
 
@@ -260,13 +265,10 @@ def reward():
 
 @app.route('/arena_switch/<name>/<state>')
 def arena_switch(name, state):
-    d = {
-        'ir': config.IR_NAME,
-        'led': config.LED_NAME
-    }
-    assert name in d.keys(), f'unknown device: {name}'
-    assert int(state) in [0, 1], f'state must be 0 or 1; received {state}'
-    periphery_mgr.switch(d[name], int(state))
+    state = int(state)
+    assert state in [0, 1], f'state must be 0 or 1; received {state}'
+    arena_mgr.logger.debug(f'Turn {name} {"on" if state == 1 else "off"}')
+    periphery_mgr.switch(name, state)
     return Response('ok')
 
 
@@ -524,7 +526,7 @@ if __name__ == "__main__":
     if not config.IS_ANALYSIS_ONLY:
         arena_mgr = ArenaManager()
         periphery_mgr = PeripheryIntegrator()
-        periphery_mgr.cam_trigger(1)
+        # periphery_mgr.cam_trigger(1)
 
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
 

@@ -16,8 +16,10 @@ def test_structure():
 
     assert 'arena' in cfg
     assert 'camera_trigger' in cfg
-    for i, device in enumerate(cfg['arena']):
+    for i, device in enumerate(cfg['arena']['interfaces']):
         assert 'name' in device, f'Device #{i + 1} has no name'
         device_name = device['name']
         assert 'type' in device, f'Device {device_name} has no "type"'
         assert 'pins' in device or 'pin' in device, f'Device {device_name} has no "pin" or "pins"'
+        if device['type'] == 'feeder':
+            assert 'order' in device, f'Feeder {device["name"]} must have "order" field'

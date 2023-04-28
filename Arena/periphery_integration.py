@@ -16,13 +16,14 @@ class PeripheryIntegrator:
         self.cache = RedisCache()
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
-        self.config = self.read_config()
+        self.devices = self.read_config()
 
     @staticmethod
-    def read_config():
+    def read_config() -> list:
         with open('configurations/periphery_config.json', 'r') as f:
             d = json.load(f)
-        return d
+        devices = d['arena']['interfaces']
+        return devices
 
     def switch(self, name, state):
         assert state in [0, 1]
@@ -37,15 +38,44 @@ class PeripheryIntegrator:
         if self.cache.get(cc.IS_REWARD_TIMEOUT):
             return
         self.cache.set(cc.IS_REWARD_TIMEOUT, True)
-        self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{config.FEEDER_NAME}"]')
-        n_rewards_left = int(self.cache.get(cc.REWARD_LEFT))
-        self.cache.set(cc.REWARD_LEFT, max(n_rewards_left - 1, 0))
-        self.logger.info('Reward was given')
-        self.orm.commit_reward(datetime.now())
+
+        feed_counts = self.get_feeders_counts()
+        if all([c == 0 for c in feed_counts.values()]):
+            self.logger.warning('No reward left in feeders')
+            return
+
+        for feeder_name, count in self.get_feeders_counts().items():
+            if count == 0:
+                continue
+
+            self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{feeder_name}"]')
+            self.update_reward_count(feeder_name, count - 1)
+            self.logger.info(f'Reward was given by {feeder_name}')
+            self.orm.commit_reward(datetime.now())
+            break
 
     def mqtt_publish(self, topic, payload):
         self.mqtt_client.connect(config.mqtt['host'], config.mqtt['port'], keepalive=60)
         self.mqtt_client.publish(topic, payload)
+
+    def get_feeders_counts(self) -> dict:
+        counts = self.cache.get(cc.REWARD_LEFT)
+        return {n: int(c) for n, c in zip(self.feeders, counts)}
+
+    def update_reward_count(self, feeder_name, reward_count):
+        c = self.get_feeders_counts()
+        c[feeder_name] = reward_count
+        new_counts = [str(c.get(feeder, 0)) for feeder in self.feeders]
+        self.cache.set(cc.REWARD_LEFT, new_counts)
+
+    @property
+    def toggles(self) -> list:
+        return [dev['name'] for dev in self.devices if dev['type'] == 'line']
+
+    @property
+    def feeders(self) -> list:
+        feeds = [(dev['name'], dev['order']) for dev in self.devices if dev['type'] == 'feeder']
+        return [x[0] for x in sorted(feeds, key=lambda x: x[1])]
 
 
 class MQTTListener:
