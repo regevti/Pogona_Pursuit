@@ -16,6 +16,13 @@ class PeripheryIntegrator:
         self.cache = RedisCache()
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
+        self.config = self.read_config()
+
+    @staticmethod
+    def read_config():
+        with open('configurations/periphery_config.json', 'r') as f:
+            d = json.load(f)
+        return d
 
     def switch(self, name, state):
         assert state in [0, 1]
