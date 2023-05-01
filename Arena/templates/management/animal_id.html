@@ -21,19 +21,21 @@
     </div>
 </div>
 
-<div class="form-group row pr-3 pl-3">
-    <div class="col-sm-4" style="max-width: 25.5%; padding-right: 0">
-        <label for="rewardCount" class="col-form-label">Reward Left:</label>
+{% for feeder in feeders %}
+    <div class="form-group row pr-3 pl-3">
+        <div class="col-sm-4" style="max-width: 40%; padding-right: 0">
+            <label for="rewardCount" class="col-form-label">{{ feeder }}:</label>
+        </div>
+        <div class="col" id="rewardCount-{{ feeder | replace(" ", "-") }}" style="padding-top: 8px"></div>
+        <div class="col-sm-3">
+            <input type="number" class="form-control" id="rewardCountInput-{{ feeder | replace(" ", "-") }}">
+        </div>
+        <div class="col" style="flex-basis: content; padding-left: 0">
+            <label for="updateRewardCount-{{ feeder | replace(" ", "-") }}" class="col-form-label"></label>
+            <button id="updateRewardCount-{{ feeder | replace(" ", "-") }}" type="button" class="btn btn-sm btn-outline-info">Update</button>
+        </div>
     </div>
-    <div class="col" id="rewardCount" style="padding-top: 8px"></div>
-    <div class="col-sm-3">
-        <input type="number" class="form-control" id="rewardCountInput">
-    </div>
-    <div class="col" style="flex-basis: content; padding-left: 0">
-        <label for="updateRewardCount" class="col-form-label"></label>
-        <button id="updateRewardCount" type="button" class="btn btn-sm btn-outline-info">Update</button>
-    </div>
-</div>
+{% endfor %}
 
 <div class="modal fade" id="validateAnimalModal" tabindex="-1" role="dialog"
      aria-labelledby="exampleModalLabel" aria-hidden="true">
@@ -131,3 +133,54 @@
         </div>
     </div>
 </div>
+
+<script>
+    {% for feeder in feeders %}
+        {#$("#rewardCountInput-{{ feeder | replace(" ", "-") }}").val('')  // initiate the reward value#}
+        $("#updateRewardCount-{{ feeder | replace(" ", "-") }}").click(() => {
+            console.log('update feeder')
+            $.ajax({
+                url: "/update_reward_count",
+                type: "POST",
+                data: JSON.stringify({
+                    'reward_count': $("#rewardCountInput-{{ feeder | replace(" ", "-") }}").val(),
+                    'name': "{{ feeder }}"
+                }),
+                contentType: "application/json",
+                error: function (data) {
+                    console.log(data.responseText)
+                }
+            })
+        })
+    {% endfor %}
+
+    $("#updateAnimalId").click(() => {
+        $("#validateAnimalModal").modal('toggle');
+    })
+
+    function updateAnimalId() {
+        $.ajax({
+            url: "/update_animal_id",
+            type: "POST",
+            data: JSON.stringify(AnimalIDFields.values),
+            contentType: "application/json",
+            error: function (data) {
+                console.log(data.responseText)
+            }
+        })
+    }
+
+    $("#yesUpdateAnimalId").click(() => {
+        updateAnimalId()
+        $("#validateAnimalModal").modal('toggle');
+    })
+
+    $("#openAnimalSettings").click(() => {
+        $("#animalSettingsModal").modal('toggle');
+    })
+
+    $("#updateAnimalSettings").click(() => {
+        updateAnimalId()
+        $("#animalSettingsModal").modal('toggle');
+    })
+</script>

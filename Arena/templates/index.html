@@ -162,7 +162,11 @@
                     $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
                     $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards']).toFixed(0)}`)
 
-                    $("#rewardCount").text(data['reward_left'] ? data['reward_left'] : 0)
+                    for (let feederName in data['reward_left']) {
+                        let feederCount = data['reward_left'][feederName]
+                        feederName = feederName.replace(' ', '-')
+                        $(`#rewardCount-${feederName}`).text(feederCount ? feederCount : 0)
+                    }
 
                     if (!settingStreamCamera && currentStreamingCamera && data['streaming_camera'] !== currentStreamingCamera) {
                         console.log(currentStreamingCamera, data['streaming_camera'])
@@ -281,8 +285,6 @@
                 }
             }).trigger('change')
         })
-
-        $("#rewardCountInput").val('')
 
         // Get animal ID
         setTimeout(() => {
@@ -513,48 +515,6 @@
             }
         }).trigger('change')
 
-        $("#updateRewardCount").click(() => {
-            $.ajax({
-                url: "/update_reward_count",
-                type: "POST",
-                data: JSON.stringify({'reward_count': $("#rewardCountInput").val()}),
-                contentType: "application/json",
-                error: function (data) {
-                    console.log(data.responseText)
-                }
-            })
-        })
-
-        $("#updateAnimalId").click(() => {
-            $("#validateAnimalModal").modal('toggle');
-        })
-
-        function updateAnimalId() {
-            $.ajax({
-                url: "/update_animal_id",
-                type: "POST",
-                data: JSON.stringify(AnimalIDFields.values),
-                contentType: "application/json",
-                error: function (data) {
-                    console.log(data.responseText)
-                }
-            })
-        }
-
-        $("#yesUpdateAnimalId").click(() => {
-            updateAnimalId()
-            $("#validateAnimalModal").modal('toggle');
-        })
-
-        $("#openAnimalSettings").click(() => {
-            $("#animalSettingsModal").modal('toggle');
-        })
-
-        $("#updateAnimalSettings").click(() => {
-            updateAnimalId()
-            $("#animalSettingsModal").modal('toggle');
-        })
-
         $recordButton.click(function (event) {
             // event.preventDefault();
             $.ajax({
@@ -593,95 +553,12 @@
             })
         })
 
-        $("#loadMediaManual").click(function () {
-            let video = $("#manualMediaSelect").val()
-            $('#startMediaModal').modal('toggle');
-            $.ajax({
-                url: "/start_media",
-                type: "POST",
-                data: JSON.stringify({
-                    media_url: video
-                }),
-                contentType: "application/json",
-                complete: function (res) {
-                    console.log(`>> Video ${video} started manually`)
-                }
-            })
-        })
-
-        $("#media_stop").click(function () {
-            $.get('/stop_media', (data) => {
-            })
-        })
-
-        $("#init_bugs").click(function (e) {
-            let blockValues = new Block(1).values
-            let payload = {
-                numOfBugs: 1,
-                numTrials: blockValues.num_trials,
-                iti: blockValues.iti,
-                trialDuration: blockValues.trial_duration,
-                speed: blockValues.bug_speed,
-                bugTypes: blockValues.bug_types || ['cockroach'],
-                rewardBugs: blockValues.reward_bugs || [],
-                movementType: blockValues.movement_type,
-                backgroundColor: blockValues.background_color,
-                exitHole: blockValues.exit_hole
-            }
-            if (!$("#isDefaultBugSize1").is(':checked')) {
-                Object.assign(payload, {bugSize: Number($("#bugSize1").val())})
-            }
-            $.ajax({
-                url: "/init_bugs",
-                type: "POST",
-                data: JSON.stringify(payload),
-                contentType: "application/json",
-                complete: function (res) {
-                    console.log('>> Bugs initiated manually')
-                }
-            })
-        })
-        $("#hide_bugs").click(function (e) {
-            $.get('/hide_bugs')
-            console.log('>> Bugs stopped manually')
-        })
-
         $("#calibrate").click(function (e) {
             $.post(`/calibrate`, {camera: $("#selectStreamCamera").val()}).done( function (data) {
                 let bytestring = data['status']
                 let image = bytestring.split('\'')[1]
                 $("#stream_img").attr('src' , 'data:image/jpeg;base64,'+image)
             })
-        })
-
-        $("#reloadApp").click(function (e) {
-            $.get('/reload_app')
-            console.log('>> App reload command sent manually')
-        })
-
-        $("#reward").click(function (e) {
-            $.get('/reward', function (data) {
-                console.log('>> Reward sent manually')
-            })
-        })
-
-        $("#led_light_on").click(function (e) {
-            $.get('/arena_switch/led/1')
-        })
-        $("#led_light_off").click(function (e) {
-            $.get('/arena_switch/led/0')
-        })
-        $("#ir_light_on").click(function (e) {
-            $.get('/arena_switch/ir/1')
-        })
-        $("#ir_light_off").click(function (e) {
-            $.get('/arena_switch/ir/0')
-        })
-        $("#display_on").click(function (e) {
-            $.get('/display/on')
-        })
-        $("#display_off").click(function (e) {
-            $.get('/display/off')
         })
 
         $("#clearOutputButton").click(function (e) {

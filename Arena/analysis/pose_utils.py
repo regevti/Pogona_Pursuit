@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from scipy import optimize
-from scipy.stats import zscore
+from scipy.stats import zscore, linregress
 import matplotlib.pyplot as plt
 import colorsys
 import matplotlib.collections as mcoll
@@ -168,3 +168,14 @@ def put_text(text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, 
     :return: frame with text
     """
     return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
+
+
+def plot_regression(ax, x, y, color='deeppink'):
+    assert isinstance(x, np.ndarray) and isinstance(y, np.ndarray), f'inputs must be numpy arrays'
+    exclude_idx = np.concatenate([np.argwhere(np.isnan(x)), np.argwhere(np.isnan(y))])
+    x, y = np.delete(x, exclude_idx), np.delete(y, exclude_idx)
+    slope, intercept, r_value, p_value, std_err = linregress(x, y)
+    y_reg = slope * x + intercept
+    p_val_text = f'p={p_value:.3f}' if p_value >= 0.001 else 'p<0.001'
+    ax.plot(x, y_reg, color=color, label=f'r={r_value:.2f}, {p_val_text}')
+    ax.legend()

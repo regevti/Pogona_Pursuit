@@ -24,8 +24,9 @@ def serial_port_by_id(serial_number):
     candidates = [port for port in port_list if port.serial_number and serial_number in port.serial_number]
     if len(candidates) == 1:
         return candidates[0]
-
-    raise ValueError(f"Found zero or multiple candidates for port serial number '{serial_number}'")
+    else:
+        raise ValueError(f"Found zero or multiple candidates for port serial number '{serial_number}'\n"
+                         f"Instead found the following boards: {[p.serial_number for p in port_list if p.serial_number]}")
 
 
 class MQTTLogHandler(logging.Handler):
