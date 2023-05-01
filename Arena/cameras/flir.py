@@ -28,6 +28,7 @@ class FLIRCamera(Camera):
         cam = self.get_cam(cam_list)
         cam.Init()
         self.configure_camera(cam)
+        self.update_time_delta(cam)
         cam.BeginAcquisition()
         image_result = None
         time.sleep(1)
@@ -94,6 +95,11 @@ class FLIRCamera(Camera):
             cam.AcquisitionMode.SetValue(PySpin.AcquisitionMode_Continuous)
             cam.TriggerSelector.SetValue(PySpin.TriggerSelector_FrameStart)
 
+            if self.cam_config.get('is_color'):
+                self.logger.info(f'setting camera {self.cam_name} to BGR8; '
+                                 f'due to is_color={self.cam_config.get("is_color")}')
+                cam.PixelFormat.SetValue(PySpin.PixelFormat_BGR8)
+
             assert not (self.cam_config.get('trigger_source') and self.cam_config.get('fps')), \
                 'must provide either fps or trigger_source'
             if self.cam_config.get('trigger_source'):
@@ -105,9 +111,9 @@ class FLIRCamera(Camera):
 
             elif self.cam_config.get('fps'):
                 cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput(cam))
+                cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
                 cam.AcquisitionFrameRateEnable.SetValue(True)
                 cam.AcquisitionFrameRate.SetValue(int(self.cam_config['fps']))
-                cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
 
             else:
                 raise Exception('bad configuration. must provide either trigger_source or fps in cam_config')
@@ -137,6 +143,12 @@ class FLIRCamera(Camera):
 
         return max_throughput
 
+    def update_time_delta(self, cam):
+        cam.TimestampLatch.Execute()
+        cam_time = cam.TimestampLatchValue.GetValue()  # in nanosecs
+        server_time = time.time_ns()
+        self.camera_time_delta = (server_time - cam_time) / 1e9
+
 
 info_fields = [
     'AcquisitionFrameRate',
@@ -148,6 +160,7 @@ info_fields = [
     'EventSelector',
     'LineStatus',
     'ExposureTime',
+    'PixelFormat',
     'DeviceLinkCurrentThroughput',
     'DeviceLinkThroughputLimit',
     'DeviceMaxThroughput',

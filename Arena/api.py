@@ -530,7 +530,8 @@ if __name__ == "__main__":
     if not config.IS_ANALYSIS_ONLY:
         arena_mgr = ArenaManager()
         periphery_mgr = PeripheryIntegrator()
-        # periphery_mgr.cam_trigger(1)
+        utils.turn_display_off()
+        periphery_mgr.cam_trigger(1)
 
     app.run(host='0.0.0.0', port=config.FLASK_PORT, debug=False)
 

@@ -155,11 +155,8 @@ class ImageSink(ArenaProcess):
                 if self.cam_config.get('crop'):
                     x, y, w, h = [int(c) for c in self.cam_config['crop']]
                     frame = frame[y:y+h, x:x+w]
-                if self.cam_config.get('is_color'):
-                    if self.cam_config.get('module') == 'flir':
-                        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-                    else:
-                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                if self.cam_config.get('is_color') and self.cam_config.get('module') != 'flir':
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 self.write_to_shm(frame, timestamp)
                 self.write_to_video_file(frame, timestamp)
                 self.calc_fps(time.time())
@@ -254,7 +251,8 @@ class ImageSink(ArenaProcess):
         calc_fps = 1 / np.diff(self.write_video_timestamps).mean()
         self.logger.info(f'Video with {len(self.write_video_timestamps)} frames and calc_fps={calc_fps:.1f} '
                          f'saved into {self.video_path}')
-        self.commit_video_frames_to_db()
+        if self.write_video_timestamps:
+            self.commit_video_frames_to_db()
         self.video_out = None
         self.video_path = None
         self.write_output_dir = None

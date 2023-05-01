@@ -146,7 +146,7 @@
                     let openAppHost = data['open_app_host']
                     let tempString = 'Temperature:'
                     for (let sensor in data['temperature']) {
-                        tempString += `\n ${sensor}: ${data['temperature'][sensor].toFixed(1)}ºC`
+                        tempString += `\n ${sensor}: ${data['temperature'][sensor] ? data['temperature'][sensor].toFixed(1) : "-"}ºC`
                     }
                     $("#temperatureValue").text(tempString)
                     // colorUpdate($("#temperatureValue"), data['temperature'], 'Temperature', '°C', 32, 25)

@@ -49,7 +49,8 @@ class Scheduler(threading.Thread):
             if not t1 or time.time() - t1 >= 60 * 10:  # every 10 minutes
                 t1 = time.time()
                 self.compress_videos()
-                self.run_pose()
+                if config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
+                    self.run_pose()
 
     @schedule_method
     def check_scheduled_experiments(self):

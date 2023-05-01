@@ -9,7 +9,7 @@ from tqdm.autonotebook import tqdm
 from functools import cached_property
 from scipy.signal import find_peaks, savgol_filter
 if __name__ == '__main__':
-    os.chdir('../..')
+    os.chdir('../../..')
 
 import config
 from analysis.pose_utils import closest_index, pixels2cm, distance, fit_circle

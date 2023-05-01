@@ -138,6 +138,7 @@ ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.65)  # centimeters
 # Schedules
 DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
 schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
+IS_RUN_NIGHTLY_POSE_ESTIMATION = env.bool('IS_RUN_NIGHTLY_POSE_ESTIMATION', True)
 
 # Experiments
 EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments")

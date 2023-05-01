@@ -27,7 +27,7 @@ def run_command(cmd, is_debug=True):
 DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 
-def turn_display_on(board='holes', app_only=False):
+def turn_display_on(board='holes', is_test=False):
     touch_device_id = get_hdmi_xinput_id()
     screen = config.APP_SCREEN if not app_only else config.TEST_SCREEN
 

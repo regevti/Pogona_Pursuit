@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.2.0-devel-ubuntu18.04
+FROM nvidia/cuda:11.7.1-devel-ubuntu22.04
 # Built using PyImageSearch guide:
 # http://www.pyimagesearch.com/2015/06/22/install-opencv-3-0-and-python-2-7-on-ubuntu/
 

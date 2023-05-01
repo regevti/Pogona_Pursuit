@@ -91,6 +91,9 @@ class Experiment:
                              f' with cameras: {",".join(self.cameras.keys())}')
             self.orm.commit_experiment(self)
             self.turn_screen('on', board=self.get_board())
+            if not config.IS_CHECK_SCREEN_MAPPING:
+                # if you don't check the screen's mapping, map it again in each experiment
+                self.map_touchscreen_to_hdmi(is_display_on=True)
 
             try:
                 for i, block in enumerate(self.blocks):
@@ -120,16 +123,15 @@ class Experiment:
         checks = {
             'websocket_server_on': self.is_websocket_server_on(),
             'pogona_hunter_app_up': self.is_pogona_hunter_up(),
-            'reward_left': is_reward_left(self.cache)
+            'reward_left': is_reward_left(self.cache),
+            'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi()
         }
-        if config.IS_CHECK_SCREEN_MAPPING:
-            checks.update({'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi(),})
         if all(checks.values()):
             return True
         else:
-            utils.send_telegram_message(f'Aborting experiment due to violation of '
-                                        f'{", ".join([k for k, v in checks.items() if not v])}.')
-            self.logger.error('aborting experiment')
+            msg = f'Aborting experiment due to violation of {", ".join([k for k, v in checks.items() if not v])}.'
+            utils.send_telegram_message(msg)
+            self.logger.error(msg)
 
     def is_websocket_server_on(self):
         try:
@@ -146,11 +148,26 @@ class Experiment:
         except Exception:
             self.logger.error('pogona hunter app is down')
 
-    def is_touchscreen_mapped_to_hdmi(self):
+    @staticmethod
+    def get_touchscreen_device_id():
         touchscreen_device_id = get_hdmi_xinput_id()
         if not touchscreen_device_id:
-            self.logger.error('unable to find touch USB')
-            return
+            raise Exception('unable to find touch USB')
+        return touchscreen_device_id
+
+    def map_touchscreen_to_hdmi(self, is_display_on=False):
+        touchscreen_device_id = self.get_touchscreen_device_id()
+        cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+        if not is_display_on:
+            turn_display_on()
+            time.sleep(5)
+        next(run_command(cmd))
+
+    def is_touchscreen_mapped_to_hdmi(self):
+        if not config.IS_CHECK_SCREEN_MAPPING:
+            return True
+
+        touchscreen_device_id = self.get_touchscreen_device_id()
 
         def _check_mapped():
             # if the matrix under "Coordinate Transformation Matrix" has values different from 0,1 - that means
@@ -164,9 +181,7 @@ class Experiment:
             if not is_mapped:
                 self.logger.info('Fixing mapping of touchscreen output')
                 cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
-                turn_display_on()
-                time.sleep(5)
-                next(run_command(cmd))
+                self.map_touchscreen_to_hdmi()
                 time.sleep(1)
                 is_mapped = _check_mapped()
                 if not is_mapped:
@@ -202,7 +217,7 @@ class Experiment:
         assert val in ['on', 'off'], 'val must be either "on" or "off"'
         try:
             if val.lower() == 'on':
-                turn_display_on(board, app_only=self.is_test)
+                turn_display_on(board, is_test=self.is_test)
             else:
                 turn_display_off(app_only=self.is_test)
             self.logger.debug(f'screen turned {val}')
@@ -483,7 +498,7 @@ class Block:
         )
 
     def init_random_low_horizontal(self, max_strikes=30):
-        speeds = [2, 4, 6, 8, 10]
+        speeds = [2, 4, 6, 8]
         speed_strikes_count = {k: 0 for k in speeds}
         with self.orm.session() as s:
             exps = s.query(Experiment_Model).filter_by(animal_id=self.animal_id).all()
@@ -619,7 +634,7 @@ class EndExperimentException(Exception):
 def is_reward_left(cache):
     is_left = False
     try:
-        is_left = int(cache.get(cc.REWARD_LEFT)) > 0
+        is_left = sum([int(x) for x in cache.get(cc.REWARD_LEFT)]) > 0
     except Exception:
         pass
     return is_left

@@ -76,6 +76,8 @@ class RedisCache:
                 d.pop(k)
             if v is None:  # if none
                 d[k] = ''
+            if isinstance(v, bool):
+                d[k] = int(v)
         return self._redis.hmset(key, d)
 
     def get_cam_dict(self, cam_name):
@@ -86,6 +88,8 @@ class RedisCache:
             if type(k) == bytes:
                 d.pop(k)  # remove binary keys from dict
                 k = k.decode("utf-8")
+            if k in ['is_color']:
+                v = int(v)
 
             if k.endswith('_list'):
                 k, v = k.replace('_list', ''), v.split(',')

@@ -60,6 +60,8 @@ class PeripheryIntegrator:
 
     def get_feeders_counts(self) -> dict:
         counts = self.cache.get(cc.REWARD_LEFT)
+        if counts is None:
+            counts = [0 for _ in self.feeders]
         return {n: int(c) for n, c in zip(self.feeders, counts)}
 
     def update_reward_count(self, feeder_name, reward_count):

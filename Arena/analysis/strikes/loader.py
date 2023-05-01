@@ -3,9 +3,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import cv2
+import config
 from analysis.pose import ArenaPose
 from analysis.pose_utils import put_text
-from db_models import ORM, Block, Strike, Trial
+from db_models import ORM, Block, Strike, Trial, Temperature
+
+DEFAULT_OUTPUT_DIR = '/data/Pogona_Pursuit/output'
 
 
 class StrikeException(Exception):
@@ -33,6 +36,7 @@ class Loader:
         self.bug_traj_before_strike = None
         self.strike_frame_id = None
         self.video_path = None
+        self.avg_temperature = None
         self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_commit_db=False, orm=orm)
         self.frames_df: pd.DataFrame = pd.DataFrame()
         self.traj_df: pd.DataFrame = pd.DataFrame(columns=['time', 'x', 'y'])
@@ -63,6 +67,7 @@ class Loader:
 
             self.load_bug_trajectory_data(trial, strk)
             self.load_frames_data(s, trial, strk)
+            self.load_temperature(s, trial.block_id)
 
     def load_bug_trajectory_data(self, trial, strk):
         self.traj_df = pd.DataFrame(trial.bug_trajectory)
@@ -74,10 +79,14 @@ class Loader:
 
     def load_frames_data(self, s, trial, strk):
         block = s.query(Block).filter_by(id=trial.block_id).first()
+        self.update_info_with_block_data(block)
         for vid in block.videos:
             if vid.cam_name != self.cam_name:
                 continue
             video_path = Path(vid.path).resolve()
+            # fix for cases in which the analysis runs from other servers
+            if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
+                video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
             if not video_path.exists():
                 print(f'Video path does not exist: {video_path}')
                 continue
@@ -105,6 +114,10 @@ class Loader:
         if self.frames_df.empty:
             raise MissingStrikeData()
 
+    def update_info_with_block_data(self, blk: Block):
+        fields = ['movement_type', 'exit_hole', 'bug_speed']
+        self.info.update({k: blk.__dict__.get(k) for k in fields})
+
     def load_frames_times(self, vid):
         frames_times = self.dlc_pose.load_frames_times(vid.id)
         if not frames_times.empty:
@@ -112,6 +125,10 @@ class Loader:
             self.n_frames_back = round(self.sec_before / self.frames_delta)
             self.n_frames_forward = round(self.sec_after / self.frames_delta)
         return frames_times
+
+    def load_temperature(self, s, block_id):
+        temps = s.query(Temperature).filter_by(block_id=block_id).all()
+        self.avg_temperature = np.mean([t.value for t in temps])
 
     def get_strike_frame(self) -> np.ndarray:
         for _, frame in self.gen_frames_around_strike(0, 1):
@@ -178,6 +195,7 @@ class Loader:
 
     def play_strike(self, n_frames_back=100, n_frames_forward=20, annotations=None):
         for i, frame in self.gen_frames_around_strike(n_frames_back, n_frames_forward):
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
             if i == self.strike_frame_id:
                 put_text('Strike Frame', frame, 30, 20)
             if annotations and i in annotations:
@@ -185,7 +203,6 @@ class Loader:
             if self.is_load_pose:
                 self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
-            # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             cv2.imshow(str(self), frame)
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
