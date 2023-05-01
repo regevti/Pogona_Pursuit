@@ -15,7 +15,7 @@ import sentry_sdk
 import config
 import utils
 from cache import RedisCache, CacheColumns as cc
-from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics
+from utils import titlize, turn_display_on, turn_display_off, get_sys_metrics, get_psycho_files
 from experiment import ExperimentCache
 from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
@@ -43,7 +43,7 @@ def index():
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
-                           max_blocks=config.api_max_blocks_to_show,
+                           max_blocks=config.api_max_blocks_to_show, psycho_files=get_psycho_files(),
                            extra_time_recording=config.extra_time_recording,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
@@ -204,6 +204,9 @@ def stop_camera_unit():
 
 @app.route('/set_cam_trigger', methods=['POST'])
 def set_cam_trigger():
+    if cache.get(cc.CAM_TRIGGER_DISABLE):
+        # during experiments the trigger gui is disabled
+        return Response('ok')
     state = int(request.form['state'])
     periphery_mgr.cam_trigger(state)
     return Response('ok')
@@ -215,6 +218,7 @@ def capture():
     folder_prefix = request.form.get('folder_prefix')
     img = arena_mgr.get_frame(cam)
     dir_path = config.capture_images_dir
+    Path(dir_path).mkdir(exist_ok=True, parents=True)
     if folder_prefix:
         dir_path = Path(dir_path) / folder_prefix
         dir_path.mkdir(exist_ok=True, parents=True)

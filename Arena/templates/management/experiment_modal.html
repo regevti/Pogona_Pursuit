@@ -110,6 +110,18 @@
                             </select>
                         </div>
                     </div>
+
+                    <div class="form-group row pr-3 psycho-options{{i}}" style="display: none">
+                        <label for="psycho-file{{i}}" class="col col-form-label">Psycho File:</label>
+                        <div class="col">
+                            <select id="psycho-file{{i}}" class="form-control col">
+                                {% for psychoFile in psycho_files %}
+                                <option value="{{psychoFile}}">{{psychoFile}}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>

@@ -21,7 +21,7 @@ import config
 import utils
 from loggers import get_logger
 from cache import RedisCache, CacheColumns as cc
-from utils import mkdir, Serializer, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id
+from utils import mkdir, to_integer, turn_display_on, turn_display_off, run_command, get_hdmi_xinput_id, get_psycho_files
 from subscribers import Subscriber, start_experiment_subscribers
 from periphery_integration import PeripheryIntegrator
 from db_models import ORM, Experiment as Experiment_Model
@@ -197,7 +197,7 @@ class Experiment:
 
     def turn_screen(self, val, board='holes'):
         """val must be on or off"""
-        if config.DISABLE_ARENA_SCREEN:
+        if config.DISABLE_ARENA_SCREEN or board == 'blank':
             return
         assert val in ['on', 'off'], 'val must be either "on" or "off"'
         try:
@@ -231,6 +231,9 @@ class Experiment:
         with open('../pogona_hunter/src/config.json', 'r') as f:
             app_config = json.load(f)
 
+        block_type = self.blocks[0].block_type
+        if block_type in ['psycho', 'blank']:
+            return block_type
         curr_mt = self.blocks[0].movement_type
         curr_board = None
         for board, boards_mts in app_config['boards'].items():
@@ -267,6 +270,8 @@ class Block:
     reward_any_touch_prob: float = 0.0
 
     media_url: str = ''
+
+    psycho_file: str = ''
 
     movement_type: str = None
     is_anticlockwise: bool = False
@@ -400,6 +405,8 @@ class Block:
         trial_db_id = self.orm.commit_trial({
             'start_time': datetime.now(),
             'in_block_trial_id': trial_id})
+        if self.block_type == 'psycho':
+            self.run_psycho()
         if not self.is_blank_block:
             if self.is_media_block:
                 command, options = 'init_media', self.media_options
@@ -448,12 +455,21 @@ class Block:
                 return
             time.sleep(0.1)
 
+    def run_psycho(self):
+        psycho_files = get_psycho_files()
+        cmd = f'cd {psycho_files[self.psycho_file]} && DISPLAY="{config.ARENA_DISPLAY}" {config.PSYCHO_PYTHON_INTERPRETER} {self.psycho_file}.py'
+        self.logger.info(f'Running the following psycho cmd: {cmd}')
+        next(run_command(cmd))
+
     def hold_triggers(self):
         try:
             self.logger.info(f'holding triggers for {config.HOLD_TRIGGERS_TIME} sec')
+            self.cache.set(cc.CAM_TRIGGER_DISABLE, True, timeout=self.block_duration)
             self.periphery.cam_trigger(0)
             time.sleep(config.HOLD_TRIGGERS_TIME)
             self.periphery.cam_trigger(1)
+            time.sleep(1)
+            self.cache.set(cc.CAM_TRIGGER_DISABLE, False)
         except Exception as exc:
             self.logger.error(f'Error holding triggers: {exc}')
 

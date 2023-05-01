@@ -210,7 +210,7 @@ class ImageSink(ArenaProcess):
                (self.cam_config.get('rec_time') and rec_time >= int(self.cam_config['rec_time'])):
             cache.set_cam_output_dir(self.cam_name, '')
         # check if video exceeds maximum video duration
-        if rec_time > config.max_video_time_sec:
+        if config.max_video_time_sec and rec_time > config.max_video_time_sec:
             self.close_video_out()
 
     def start_writing_thread(self):

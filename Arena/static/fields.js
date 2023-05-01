@@ -242,6 +242,9 @@ const blockFields = {
   },
   media: {
     media_url: new FieldObject('media-url', Field)
+  },
+  psycho: {
+    psycho_file: new FieldObject('psycho-file', Field)
   }
 }
 

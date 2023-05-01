@@ -30,7 +30,8 @@ DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 def turn_display_on(board='holes', app_only=False):
     touch_device_id = get_hdmi_xinput_id()
     screen = config.APP_SCREEN if not app_only else config.TEST_SCREEN
-    cmds = [f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT}']
+
+    cmds = []
     if not app_only:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
@@ -39,7 +40,13 @@ def turn_display_on(board='holes', app_only=False):
             f'{DISPLAY} xinput enable {touch_device_id}',  # enable touch
             f'{DISPLAY} xinput map-to-output {touch_device_id} HDMI-0',
             'sleep 1'
-            ] + [cmds[0] + ' --kiosk']
+        ]
+    # Pogona hunter
+    if board != 'psycho':
+        flags = '--kiosk' if not app_only else ''
+        cmds += [
+            f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} {flags}'
+        ]
     return os.system(' && '.join(cmds))
 
 
@@ -321,3 +328,14 @@ def timeit(func):
         print(f'Time taken for {func.__name__}: {end:.1f} seconds')
         return result
     return wrapper
+
+
+def get_psycho_files():
+    files = {}
+    for p in Path(config.PSYCHO_FOLDER).glob('*'):
+        if not p.is_dir():
+            continue
+        main_file = p / f'{p.name}.py'
+        if main_file.exists():
+            files[p.name] = p
+    return files

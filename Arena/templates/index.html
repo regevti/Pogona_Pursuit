@@ -82,13 +82,14 @@
         let checkedCameras = []
         let schedulesList = []
 
-        let isToggleCheckPause = false
+        let isToggleCamsCheckPause = false
+        let isToggleTriggerCheckPause = false
         let api_check = function () {
             $.ajax({
                 url: '/check',
                 type: 'GET',
                 success: function (data) {
-                    if (!isToggleCheckPause) {
+                    if (!isToggleCamsCheckPause) {
                         let onCameras = []
                         for (let camName in data['cam_units_status']) {
                             let tog = $(`#toggle-${camName}`)
@@ -234,27 +235,30 @@
         $recordButton.prop('disabled', true)
         $("streamButton").prop('disabled', true)
 
-        $("#toggle-cam-trigger").change((res) => {
-            isToggleCheckPause = true
-            let requestedState = Number($(`#toggle-cam-trigger`).prop('checked'))
-
-            $.post('/set_cam_trigger', {state: requestedState}).done(function () {
-                setTimeout(() => {
-                    isToggleCheckPause = false
-                }, apiCheckTimeout)
-            })
-        })
+        // $("#toggle-cam-trigger").change((res) => {
+        //     if (isToggleTriggerCheckPause) {
+        //         return
+        //     }
+        //     isToggleTriggerCheckPause = true
+        //     let requestedState = Number($(`#toggle-cam-trigger`).prop('checked'))
+        //
+        //     $.post('/set_cam_trigger', {state: requestedState}).done(function () {
+        //         setTimeout(() => {
+        //             isToggleTriggerCheckPause = false
+        //         }, apiCheckTimeout)
+        //     })
+        // })
 
         cameras.forEach((cam) => {
             $(`#toggle-${cam}`).change((res) => {
-                isToggleCheckPause = true
+                isToggleCamsCheckPause = true
                 let onRequested = $(`#toggle-${cam}`).prop('checked')
                 let url = onRequested ? '/start_camera_unit' : '/stop_camera_unit'
                 $(`#stream-option-${cam}`).prop('disabled', !onRequested)
 
                 $.post(url, {camera: cam}).done(function () {
                     setTimeout(() => {
-                        isToggleCheckPause = false
+                        isToggleCamsCheckPause = false
                     }, apiCheckTimeout)
                 })
             })
@@ -352,14 +356,20 @@
                 if (isMediaExperiment(i)) {
                     $(`.media-options${i}`).show()
                     $(`.bugs-options${i}`).hide()
+                    $(`.psycho-options${i}`).hide()
                 } else if (isBlankExperiment(i)) {
                     $(`.media-options${i}`).hide()
                     $(`.bugs-options${i}`).hide()
+                    $(`.psycho-options${i}`).hide()
+                } else if (isPsychoExperiment(i)) {
+                    $(`.media-options${i}`).hide()
+                    $(`.bugs-options${i}`).hide()
+                    $(`.psycho-options${i}`).show()
                 } else {
                     $(`.bugs-options${i}`).show()
                     $(`#rewardBugDiv${i}`).hide()
-                    // $isAntiClockWiseDiv.hide()
                     $(`.media-options${i}`).hide()
+                    $(`.psycho-options${i}`).hide()
                 }
             }).trigger('change')
             $(`#isDefaultBugSize${i}`).change(function () {
@@ -684,6 +694,10 @@
 
         function isBlankExperiment(i) {
             return $(`#blockTypeSelect${i}`).val() === 'blank'
+        }
+
+        function isPsychoExperiment(i) {
+            return $(`#blockTypeSelect${i}`).val() === 'psycho'
         }
 
         function getCheckedCameras() {

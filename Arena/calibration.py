@@ -10,8 +10,6 @@ import config
 import utils
 from loggers import get_logger
 
-CHESSBOARD_DIM = (9, 6)
-ARUCO_MARKER_SIZE = 2.65  # centimeters
 ARUCO_DICT = cv2.aruco.DICT_4X4_1000
 ARUCO_IDS = np.arange(240).tolist()
 CENTER_ID = 0  # the marker that stands for (0, 0) in the new coordinate system
@@ -46,8 +44,8 @@ class Calibrator:
         # termination criteria
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
         # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
-        objp = np.zeros((np.prod(CHESSBOARD_DIM), 3), np.float32)
-        objp[:, :2] = np.mgrid[:CHESSBOARD_DIM[0], :CHESSBOARD_DIM[1]].T.reshape(-1, 2)
+        objp = np.zeros((np.prod(config.CHESSBOARD_DIM), 3), np.float32)
+        objp[:, :2] = np.mgrid[:config.CHESSBOARD_DIM[0], :config.CHESSBOARD_DIM[1]].T.reshape(-1, 2)
         img_files = self.get_calib_images()
         if is_plot:
             cols = 3
@@ -63,14 +61,14 @@ class Calibrator:
             if self.resize_dim:
                 gray = cv2.resize(gray, self.resize_dim)
             # Find the chess board corners
-            ret, corners = cv2.findChessboardCorners(gray, CHESSBOARD_DIM, None)
+            ret, corners = cv2.findChessboardCorners(gray, config.CHESSBOARD_DIM, None)
             # If found, add object points, image points (after refining them)
             if ret:
                 objpoints.append(objp)
                 corners_ = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
                 imgpoints.append(corners_)
                 if is_plot:
-                    cv2.drawChessboardCorners(gray, CHESSBOARD_DIM, corners_, ret)
+                    cv2.drawChessboardCorners(gray, config.CHESSBOARD_DIM, corners_, ret)
                     axes[i].imshow(gray)
 
         h, w = gray.shape[:2]
@@ -200,8 +198,8 @@ class CharucoEstimator:
         d = self.markers[closest_marker_id]
         top = distance.euclidean(d['top_right'], d['top_left'])
         side = distance.euclidean(d['top_right'], d['bottom_right'])
-        pixel2cm_x = ARUCO_MARKER_SIZE / (side if self.is_swap_xy else top)
-        pixel2cm_y = ARUCO_MARKER_SIZE / (top if self.is_swap_xy else side)
+        pixel2cm_x = config.ARUCO_MARKER_SIZE / (side if self.is_swap_xy else top)
+        pixel2cm_y = config.ARUCO_MARKER_SIZE / (top if self.is_swap_xy else side)
         dx = self.sign_mask[0] * (frame_x - d['top_left'][0])
         dy = self.sign_mask[1] * (frame_y - d['top_left'][1])
         xr = d['x'] + pixel2cm_x * (dx if not self.is_swap_xy else dy)
@@ -222,7 +220,7 @@ class CharucoEstimator:
         self.logger.info(f'start Aruco marker detection for image size: {frame.shape}')
         marker_corners, ids, rejected = cv2.aruco.detectMarkers(gray_frame, self.arucoDict, parameters=self.arucoParams)
         mtx, dist = self.calibrator.calib_params['mtx'], self.calibrator.calib_params['dist']
-        rVec, tVec, _ = cv2.aruco.estimatePoseSingleMarkers(marker_corners, ARUCO_MARKER_SIZE, mtx, dist)
+        rVec, tVec, _ = cv2.aruco.estimatePoseSingleMarkers(marker_corners, config.ARUCO_MARKER_SIZE, mtx, dist)
 
         missing_ids = []
         for marker_id in ARUCO_IDS:
@@ -235,8 +233,8 @@ class CharucoEstimator:
             top_right, top_left, bottom_right, bottom_left = self.flatten_corners(corners)
             row, col = marker_id // CHARUCO_COLS, marker_id % CHARUCO_COLS
             self.markers[marker_id] = {
-                'x': round((2*col + 1 if row % 2 else 2*col) * ARUCO_MARKER_SIZE),
-                'y': round(row * ARUCO_MARKER_SIZE),
+                'x': round((2*col + 1 if row % 2 else 2*col) * config.ARUCO_MARKER_SIZE),
+                'y': round(row * config.ARUCO_MARKER_SIZE),
                 # 'x': round(tVec[i][0][0], 1),
                 # 'y': round(tVec[i][0][1], 1),
                 'cam_distance': np.sqrt(tVec[i][0][2] ** 2 + tVec[i][0][0] ** 2 + tVec[i][0][1] ** 2),

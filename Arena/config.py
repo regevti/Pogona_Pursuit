@@ -122,7 +122,7 @@ IS_CHECK_SCREEN_MAPPING = env.bool('IS_CHECK_SCREEN_MAPPING', 1)
 APP_SCREEN = env('APP_SCREEN', ':0.0')
 TEST_SCREEN = env('TEST_SCREEN', ':1.0')
 SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080')  # must be written with comma
-SCREEN_DISPLACEMENT = env.int('SCREEN_DISPLACEMENT', 2025)  # used for displacing the screen contents in multi screen setup
+SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '2025')  # used for displacing the screen contents in multi screen setup
 HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
 
 # temperature sensor
@@ -132,6 +132,8 @@ SERIAL_BAUD = env.int('SERIAL_BAUD', 9600)
 # Calibration
 calibration_dir = env('calibration_dir', f'{OUTPUT_DIR}/calibrations')
 min_calib_images = env.int('min_calib_images', 7)
+CHESSBOARD_DIM = env.list('CHESSBOARD_DIM', (9, 6))
+ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.65)  # centimeters
 
 # Schedules
 DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
@@ -150,7 +152,8 @@ experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
              'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
     'media': ['media_url'],
-    'blank': []
+    'blank': [],
+    'psycho': ['psycho_file']
 }
 reward_types = [
     'always',
@@ -173,3 +176,7 @@ TELEGRAM_TOKEN = env('TELEGRAM_TOKEN')
 
 # Predictors
 DLC_FOLDER = env('DLC_FOLDER', f'{OUTPUT_DIR}/models/deeplabcut')
+
+# PsychoPy
+PSYCHO_FOLDER = env('PSYCHO_FOLDER', '/data/Pogona_Pursuit/psycho_files')
+PSYCHO_PYTHON_INTERPRETER = env('PSYCHO_PYTHON_INTERPRETER', '/home/regev/anaconda3/envs/psycho/bin/python')
