@@ -708,6 +708,8 @@ class ArenaManager(SyncManager):
         output = f"{output_dir or config.recordings_output_dir}/{folder_name}"
         return mkdir(output)
 
+    def is_cam_trigger_setup(self):
+        return any(cu.cam_config.get('trigger_source') for cu in self.units.values())
 
 # def main():
 #     """Main function for Arena capture"""

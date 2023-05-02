@@ -29,10 +29,10 @@ DISPLAY = f'DISPLAY="{config.ARENA_DISPLAY}"'
 
 def turn_display_on(board='holes', is_test=False):
     touch_device_id = get_hdmi_xinput_id()
-    screen = config.APP_SCREEN if not app_only else config.TEST_SCREEN
+    screen = config.APP_SCREEN if not is_test else config.TEST_SCREEN
 
     cmds = []
-    if not app_only:
+    if not is_test:
         cmds = [
             'pkill chrome || true',  # kill all existing chrome processes
             f'{DISPLAY} xrandr --output HDMI-0 --auto --right-of DP-4' +
@@ -43,9 +43,8 @@ def turn_display_on(board='holes', is_test=False):
         ]
     # Pogona hunter
     if board != 'psycho':
-        flags = '--kiosk' if not app_only else ''
         cmds += [
-            f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} {flags}'
+            f'scripts/start_pogona_hunter.sh {board} {config.SCREEN_RESOLUTION} {screen} {config.SCREEN_DISPLACEMENT} --kiosk'
         ]
     return os.system(' && '.join(cmds))
 

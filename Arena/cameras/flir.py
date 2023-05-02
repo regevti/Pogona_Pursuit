@@ -26,6 +26,9 @@ class FLIRCamera(Camera):
         system = PySpin.System.GetInstance()
         cam_list = system.GetCameras()
         cam = self.get_cam(cam_list)
+        if cam is None:
+            self.logger.error(f'unable to find camera {self.cam_name}')
+            return
         cam.Init()
         self.configure_camera(cam)
         self.update_time_delta(cam)

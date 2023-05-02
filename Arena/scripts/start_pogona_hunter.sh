@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# https://peter.sh/experiments/chromium-command-line-switches/
+
 params=( "--disable-session-crashed-bubble" "--disable-infobars" "--disable-component-update" \
          "--disable-pinch" "--chrome-frame" "--window-size=$2"  "--window-position=$4,001" \
          "--remember-cert-error-decisions" "--ignore-certificate-errors" \
