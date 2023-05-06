@@ -7,11 +7,11 @@ import multiprocessing
 from loggers import get_logger
 import config
 from cache import RedisCache, CacheColumns as cc
-from compress_videos import get_videos_for_compression, compress
+from compress_videos import get_videos_ids_for_compression, compress
 from analysis.pose import convert_all_videos
 
 TIME_TABLE = {
-    'cameras_on': ('07:10', '18:45')
+    'cameras_on': (config.CAMERAS_ON_TIME, config.CAMERAS_OFF_TIME)
 }
 ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()
@@ -34,6 +34,7 @@ class Scheduler(threading.Thread):
         self.arena_mgr = arena_mgr
         self.next_experiment_time = None
         self.dlc_on = multiprocessing.Event()
+        self.compress_threads = {}
 
     def run(self):
         time.sleep(10)  # let all other arena processes and threads to start
@@ -46,7 +47,7 @@ class Scheduler(threading.Thread):
                 self.check_scheduled_experiments()
                 self.arena_mgr.update_upcoming_schedules()
 
-            if not t1 or time.time() - t1 >= 60 * 10:  # every 10 minutes
+            if not t1 or time.time() - t1 >= 60 * 5:  # every 5 minutes
                 t1 = time.time()
                 self.compress_videos()
                 if config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
@@ -113,15 +114,29 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def compress_videos(self):
-        if self.is_in_range('cameras_on'):
+        if self.is_in_range('cameras_on') or not self.is_compression_thread_available():
             return
 
-        videos = get_videos_for_compression()
+        videos = get_videos_ids_for_compression(sort_by_size=True)
         if not videos:
             return
 
-        t = threading.Thread(target=compress, args=(videos[0],))
-        t.start()
+        while self.is_compression_thread_available():
+            currently_compressed_vids = [v for _, v in self.compress_threads.values()]
+            vids_ = [v for v in videos if v not in currently_compressed_vids]
+            if not vids_:
+                return
+            t = threading.Thread(target=compress, args=(vids_[0],))
+            t.start()
+            self.compress_threads[t.name] = (t, vids_[0])
+
+    def is_compression_thread_available(self):
+        for thread_name in list(self.compress_threads.keys()):
+            t, _ = self.compress_threads[thread_name]
+            if not t.is_alive():
+                self.compress_threads.pop(thread_name)
+
+        return len(self.compress_threads) < config.MAX_COMPRESSION_THREADS
 
     @schedule_method
     def run_pose(self):

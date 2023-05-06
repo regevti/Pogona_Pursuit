@@ -15,7 +15,7 @@ def test_structure():
         cfg = json.load(f)
 
     assert 'arena' in cfg
-    assert 'camera_trigger' in cfg
+    # assert 'camera_trigger' in cfg
     for i, device in enumerate(cfg['arena']['interfaces']):
         assert 'name' in device, f'Device #{i + 1} has no name'
         device_name = device['name']

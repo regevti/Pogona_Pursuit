@@ -4,12 +4,26 @@ from db_models import ORM, Video, VideoPrediction, PoseEstimation
 import time
 
 
-def get_videos_for_compression():
+def get_videos_ids_for_compression(sort_by_size=False):
     orm = ORM()
-    videos = []
+    videos = {}
     with orm.session() as s:
-        videos = [v.id for v in s.query(Video).filter(Video.compression_status < 1).all()]
-    return videos
+        for v in s.query(Video).filter(Video.compression_status < 1).all():
+            videos[v.id] = v.path
+    # get videos sizes
+    if not sort_by_size:
+        return list(videos.keys())
+
+    sizes = []
+    for vid_id, vid_path in videos.items():
+        try:
+            size = Path(vid_path).stat().st_size
+        except Exception:
+            size = 0
+        sizes.append((vid_id, size))
+
+    videos_ids = [v for v, _ in sorted(sizes, key=lambda x: x[1], reverse=True)]
+    return videos_ids
 
 
 def compress(video_db_id):
@@ -81,7 +95,7 @@ def clear_missing_videos():
 
 
 if __name__ == "__main__":
-    vids = get_videos_for_compression()
+    vids, sizes_ = get_videos_ids_for_compression(return_sizes=True)
     compress(vids[0])
     # main()
     # foo()
