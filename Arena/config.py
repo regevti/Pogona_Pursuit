@@ -139,6 +139,9 @@ ARUCO_MARKER_SIZE = env.float('ARUCO_MARKER_SIZE', 2.65)  # centimeters
 DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
 schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
 IS_RUN_NIGHTLY_POSE_ESTIMATION = env.bool('IS_RUN_NIGHTLY_POSE_ESTIMATION', True)
+MAX_COMPRESSION_THREADS = env.int('MAX_COMPRESSION_THREADS', 2)
+CAMERAS_ON_TIME = env('CAMERAS_ON_TIME', '07:00')
+CAMERAS_OFF_TIME = env('CAMERAS_OFF_TIME', '19:00')
 
 # Experiments
 EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments")
@@ -181,3 +184,7 @@ DLC_FOLDER = env('DLC_FOLDER', f'{OUTPUT_DIR}/models/deeplabcut')
 # PsychoPy
 PSYCHO_FOLDER = env('PSYCHO_FOLDER', '/data/Pogona_Pursuit/psycho_files')
 PSYCHO_PYTHON_INTERPRETER = env('PSYCHO_PYTHON_INTERPRETER', '/home/regev/anaconda3/envs/psycho/bin/python')
+
+
+class UserEnv:
+    pass
