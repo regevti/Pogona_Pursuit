@@ -128,7 +128,7 @@ class Loader:
 
     def load_temperature(self, s, block_id):
         temps = s.query(Temperature).filter_by(block_id=block_id).all()
-        self.avg_temperature = np.mean([t.value for t in temps])
+        self.avg_temperature = np.mean([t.value for t in temps if isinstance(t.value, (int, float))])
 
     def get_strike_frame(self) -> np.ndarray:
         for _, frame in self.gen_frames_around_strike(0, 1):

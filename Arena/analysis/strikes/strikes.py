@@ -336,13 +336,14 @@ class StrikeAnalyzer:
         # yf = yf[~yf.y.isnull()]
         # t = yf.time.values.astype(np.int64) / 10 ** 9
         # yf.loc[yf.index[2:], 'accl'] = self.calc_derivative(self.calc_derivative(yf.y.values, t), t[1:])
-        stop_frame_id = self.pose_df[~self.pose_df.velocity_y.isnull()].index[0]
-        v = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'acceleration_y']
-        cross_idx = v[np.sign(v).diff().fillna(0) == 2].index.tolist()
-        if len(cross_idx) > 0:
-            return cross_idx[-1]
-        else:
-            return None
+        try:
+            stop_frame_id = self.pose_df[~self.pose_df.velocity_y.isnull()].index[0]
+            v = self.pose_df.loc[stop_frame_id:self.strike_frame_id-10, 'acceleration_y']
+            cross_idx = v[np.sign(v).diff().fillna(0) == 2].index.tolist()
+            if len(cross_idx) > 0:
+                return cross_idx[-1]
+        except Exception:
+            pass
         #
         # leap_frame_idx = None
         # grace_count = 0

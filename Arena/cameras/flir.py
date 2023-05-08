@@ -176,19 +176,22 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
     system = PySpin.System.GetInstance()
     cam_list = system.GetCameras()
     for cam in cam_list:
-        sc = SpinCamera(cam)
-        # if not sc.is_firefly():
-        #     continue
-        d = {'DeviceID': sc.device_id}
-        d.update({k: v for k, v in zip(info_fields, sc.info())})
-        df.append(d)
-        # find camera name from cam_config.yaml
-        cam_name = 'unknown'
-        for n, cam_config in config.cameras.items():
-            if str(cam_config['id']) == sc.device_id:
-                cam_name = n
-                break
-        cam_names.append(cam_name)
+        try:
+            sc = SpinCamera(cam)
+            # if not sc.is_firefly():
+            #     continue
+            d = {'DeviceID': sc.device_id}
+            d.update({k: v for k, v in zip(info_fields, sc.info())})
+            df.append(d)
+            # find camera name from cam_config.yaml
+            cam_name = 'unknown'
+            for n, cam_config in config.cameras.items():
+                if str(cam_config['id']) == sc.device_id:
+                    cam_name = n
+                    break
+            cam_names.append(cam_name)
+        except Exception as exc:
+            print(f'Unable to load camera; {exc}')
 
     df = pd.DataFrame(df, index=cam_names)
     del cam, sc
@@ -234,7 +237,6 @@ class SpinCamera:
         self.video_out = None
         self.start_acquire_time = None
         # self.mqtt_client = MQTTPublisher()
-
         self.cam.Init()
         # self.logger = get_logger(self.device_id, dir_path, log_stream=log_stream)
         self.name = self.get_camera_name()
