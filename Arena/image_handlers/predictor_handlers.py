@@ -33,7 +33,7 @@ class PredictHandler(ImageHandler):
     def loop(self):
         self.logger.info('start predictor loop')
         try:
-            while not self.stop_signal.is_set():
+            while not self.stop_signal.is_set() and not self.mp_metadata['predictors_stop'].is_set():
                 db_video_id = self.get_db_video_id()
                 timestamp = self.wait_for_next_frame()
                 img = np.frombuffer(self.shm.buf, dtype=config.shm_buffer_dtype).reshape(self.cam_config['image_size'])
@@ -58,7 +58,7 @@ class PredictHandler(ImageHandler):
         finally:
             self.mp_metadata[self.calc_fps_name].value = 0.0
             self.mp_metadata['pred_delay'].value = 0.0
-            self.logger.info('loop is terminated')
+            self.logger.info('predict loop is closed')
 
     def before_predict(self, img):
         return img

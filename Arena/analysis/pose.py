@@ -292,8 +292,8 @@ class DLCArenaPose(ArenaPose):
 
     @staticmethod
     def calc_head_angle(row):
-        x_nose, y_nose = row.nose.x, row.nose.y
-        x_ears = (row.right_ear.x + row.left_ear.x) / 2
+        x_nose, y_nose = row.nose.y, row.nose.y
+        x_ears = (row.right_ear.y + row.left_ear.y) / 2
         y_ears = (row.right_ear.y + row.left_ear.y) / 2
         dy = y_ears - y_nose
         dx = x_ears - x_nose
@@ -339,13 +339,13 @@ class SpatialAnalyzer:
         res = self.query_pose()
         if not res:
             raise Exception('No pose recordings found')
-        pose = pd.DataFrame([(r.x, r.y, r.start_time) for r in res], columns=['x', 'y', 'time'])
+        pose = pd.DataFrame([(r.y, r.y, r.start_time) for r in res], columns=['x', 'y', 'time'])
         pose = self.drop_out_of_arena_coords(pose)
         return pose
 
     def drop_out_of_arena_coords(self, df):
         xmin, xmax = self.coords['arena'][:, 0].flatten().tolist()
-        idx = df[(df.x < xmin) | (df.x > xmax)].index
+        idx = df[(df.y < xmin) | (df.y > xmax)].index
         return df.drop(idx)
 
     def plot_spatial(self, pose=None, ax=None):
@@ -423,7 +423,7 @@ def get_day_from_path(p):
 
 
 def get_screen_coords(name):
-    s = yaml.load(Path('/data/Pogona_Pursuit/Arena/analysis/screen_coords.yaml').open(), Loader=yaml.FullLoader)
+    s = yaml.load(Path('/analysis/strikes/screen_coords.yaml').open(), Loader=yaml.FullLoader)
     cnt = s['screens'][name]
     return np.array(cnt)
 

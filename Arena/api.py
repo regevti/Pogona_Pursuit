@@ -132,6 +132,8 @@ def commit_schedule():
         arena_mgr.logger.error('please enter start_date for schedule')
     else:
         data['start_date'] = datetime.strptime(data['start_date'], '%d/%m/%Y %H:%M')
+        if data.get('end_date'):
+            data['end_date'] = datetime.strptime(data['end_date'], '%d/%m/%Y %H:%M')
         data['every'] = int(data['every'])
         arena_mgr.orm.commit_multiple_schedules(**data)
         arena_mgr.update_upcoming_schedules()

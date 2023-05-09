@@ -71,13 +71,14 @@ class ArenaProcess(mp.Process):
         self.logger = get_process_logger(str(self), self.log_queue)
         try:
             self._run()
-            if self.calc_fps_name:
-                self.clear_fps()
         except ArenaException as exc:
             self.logger.error(str(exc))
         except Exception as exc:
             sentry_sdk.capture_exception(exc)
             self.logger.exception(exc)
+        finally:
+            if self.calc_fps_name:
+                self.clear_fps()
 
     def _run(self):
         raise NotImplemented('_run is not implemented')
@@ -155,6 +156,7 @@ class ImageSink(ArenaProcess):
                 if self.cam_config.get('crop'):
                     x, y, w, h = [int(c) for c in self.cam_config['crop']]
                     frame = frame[y:y+h, x:x+w]
+
                 if self.cam_config.get('is_color') and self.cam_config.get('module') != 'flir':
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 self.write_to_shm(frame, timestamp)
@@ -330,7 +332,8 @@ class CameraUnit:
             'shm_frame_timestamp': mp.Value('d', 0.0),
             'db_video_id': mp.Value('i', 0),
             'pred_delay': mp.Value('d', 0.0),
-            'is_streaming': mp.Event()
+            'is_streaming': mp.Event(),
+            'predictors_stop': mp.Event()
         }
         self.stop_signal.set()
         self.logger = get_process_logger(str(self), self.log_queue)
@@ -437,6 +440,7 @@ class CameraUnit:
     def start_predictors(self, is_experiment=False, **kwargs):
         predictors = self.cam_config.get('predictors', {})
         self.is_starting = True
+        self.mp_metadata['predictors_stop'].clear()
         for pred_name, pred_dict in predictors.items():
             try:
                 self.logger.debug(f'start predictor {pred_name}')
@@ -468,20 +472,23 @@ class CameraUnit:
         self.processes[pred_name] = prd
         self.logger.info(f'Predictor {pred_name} is up')
 
-    def stop_predictors(self, predictors=None):
-        assert predictors is None or isinstance(predictors, list), 'predictors input must be either None or list'
-        preds_to_close = predictors or self.get_alive_predictors()
+    def stop_predictors(self):
+        """stop all alive predictors for this camera unit"""
+        preds_to_close = self.get_alive_predictors()
+        self.mp_metadata['predictors_stop'].set()
         for pred in preds_to_close:
             if self.processes.get(pred) is not None:
                 self.is_stopping = True
-                self.logger.debug(f'terminating predictor {pred}')
-                self.processes[pred].terminate()
+                self.processes[pred].join(timeout=5)
+                if self.processes[pred].is_alive():
+                    self.logger.debug(f'terminating predictor {pred}')
+                    self.processes[pred].terminate()
                 del self.processes[pred]
                 self.is_stopping = False
 
-    def reload_predictors(self, is_experiment, predictors=None, **kwargs):
+    def reload_predictors(self, is_experiment, **kwargs):
         """start the configured experiment predictors. If any predictors are already running - stop them"""
-        self.stop_predictors(predictors)
+        self.stop_predictors()
         self.start_predictors(is_experiment, **kwargs)
 
     def is_on(self):
@@ -516,10 +523,6 @@ class CameraUnit:
     @property
     def time_on(self):
         return time.time() - self.start_time
-
-    @property
-    def is_manual(self):
-        """"""
 
 
 class ArenaManager(SyncManager):

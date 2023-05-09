@@ -3,6 +3,8 @@ import shutil
 import numpy as np
 import pandas as pd
 from datetime import datetime
+
+import torch
 from tqdm.auto import tqdm
 from dataclasses import dataclass
 from multiprocessing.pool import ThreadPool
@@ -10,7 +12,8 @@ from pathlib import Path
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.datasets import ImageFolder
-from torchvision.transforms import Compose, ToTensor, Normalize, Resize, ToPILImage, Grayscale
+from torchvision.transforms import Compose, ToTensor, Normalize, Resize, Lambda, Grayscale, ToPILImage
+from torchvision.transforms.functional import crop
 import matplotlib.pyplot as plt
 if Path('.').resolve().name != 'Arena':
     import os
@@ -24,7 +27,7 @@ from analysis.pose_utils import put_text
 
 DATASET_PATH = Path('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset')
 TONGUE_PREDICTED_DIR = '/data/Pogona_Pursuit/output/datasets/pogona_tongue/predicted/tongues'
-RESIZE_SHAPE = (480, 640)
+CROPPED_SHAPE = (480, 850)
 TONGUE_CLASS = 'tongues'
 PREDICTION_STACK_DURATION = 0.25  # sec
 TONGUE_ACTION_TIMEOUT = 1  # sec
@@ -35,8 +38,7 @@ class TongueOutAnalyzer(Predictor):
     def __init__(self, td=None, action_callback=None, identifier=None, is_write_detected_image=False,
                  is_debug=True):
         super(TongueOutAnalyzer, self).__init__()
-        self.tr = TongueTrainer(model_path=self.model_path, is_debug=is_debug,
-                                resize_shape=self.pred_config.get('resize_shape')) if td is None else td
+        self.tr = TongueTrainer(model_path=self.model_path, is_debug=is_debug) if td is None else td
         self.identifier = identifier
         self.action_callback = action_callback
         self.is_debug = is_debug
@@ -49,13 +51,14 @@ class TongueOutAnalyzer(Predictor):
     def predict(self, frame, timestamp):
         orig_frame = frame.copy()
         label, prob = self.tr.predict(frame)
+        self.push_to_predictions_stack(label, timestamp)
+        is_tongue = label == TONGUE_CLASS and prob >= self.pred_config.get('threshold')
+        is_action = self.tongue_detected(orig_frame, timestamp) if is_tongue else False
+
         if self.pred_config.get('resize_image'):
             frame = cv2.resize(frame, self.pred_config['resize_image'][::-1])
-
         frame = put_text(f'P={prob:.2f}', frame, frame.shape[1] - 120, 30, color=(255, 0, 0))
-        self.push_to_predictions_stack(label, timestamp)
-        is_tongue = label == TONGUE_CLASS
-        is_action = self.tongue_detected(orig_frame, timestamp) if is_tongue else False
+
         return is_action, frame, label
 
     def predict_strike(self, strike_db_id, n_before=30, n_after=10, cols=8, save_frames_above=None):
@@ -80,7 +83,7 @@ class TongueOutAnalyzer(Predictor):
             if label == TONGUE_CLASS:
                 axes[i].text(30, curr_y, f'tongue (P={prob:.2f})', color='green')
             else:
-                axes[i].text(30, curr_y, f'P={prob:.2f}', color='orange')
+                axes[i].text(30, curr_y, f'P={prob:.3f}', color='orange')
             curr_y += 70
             if frame_id == ld.strike_frame_id:
                 axes[i].text(30, curr_y, 'Strike Frame', color='red')
@@ -136,22 +139,33 @@ class TongueModel(nn.Module):
         return x
 
 
+def crop_transform(img):
+    if isinstance(img, np.ndarray):
+        h, w = img.shape[:2]
+    elif isinstance(img, torch.Tensor):
+        h, w = img.shape[1:]
+    else:
+        w, h = img.size[:2]
+    w0 = (w // 2) - (CROPPED_SHAPE[1] // 2)
+    return crop(img, h - CROPPED_SHAPE[0], w0, CROPPED_SHAPE[0], CROPPED_SHAPE[1])
+
+
 @dataclass
 class TongueTrainer(ClassificationTrainer):
-    resize_shape: tuple = (480, 640)
+    cropped_shape: tuple = CROPPED_SHAPE
     batch_size = 16
     num_epochs = 30
     targets = ['no_tongues', 'tongues']
     monitored_metric = 'auc'
-    transforms = [
-        Grayscale(),
-        Resize(resize_shape),
-        ToTensor(),
-        Normalize((0.5,), (0.5,))
-    ]
 
     def get_dataset(self):
-        dataset = ImageFolder(DATASET_PATH.as_posix(), transform=Compose(self.transforms))
+        transforms = [
+            Grayscale(),
+            Lambda(crop_transform),
+            ToTensor(),
+            Normalize((0.5,), (0.5,))
+        ]
+        dataset = ImageFolder(DATASET_PATH.as_posix(), transform=Compose(transforms))
         info = pd.Series(dataset.targets).value_counts().rename({i: v for i, v in enumerate(self.targets)}).to_dict()
         print(f'Loaded tongue dataset with: {info}')
         return dataset
@@ -160,9 +174,20 @@ class TongueTrainer(ClassificationTrainer):
         return TongueModel()
 
     def predict(self, frame):
+        torch.cuda.empty_cache()
         self.model.eval()
-        transforms = [ToPILImage()] + self.transforms
-        img_tensor = Compose(transforms)(frame).to(self.device)
+        img_tensor = Compose([
+            ToPILImage(),
+            Lambda(crop_transform),
+            Grayscale(),
+            ToTensor(),
+        ])(frame).to(self.device)
+        img_tensor = Compose([
+            Normalize((0.5,), (0.5,))
+        ])(img_tensor)
+        # img_tensor = Lambda(crop_transform)(img_tensor)
+        # transforms = [ToPILImage()] + self.transforms
+        # img_tensor = Compose(transforms)(frame).to(self.device)
         outputs = self.model(img_tensor.unsqueeze(0))
         y_pred, y_score = self.predict_proba(outputs)
         label = self.targets[y_pred.item()]
@@ -213,7 +238,7 @@ def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, min_dist=15, is_
 
     processed_ids = set()
     groups = []
-    for i, k in enumerate(tqdm(np.unique(r), desc='grouping frames')):
+    for i, k in enumerate(tqdm(np.unique(r), desc='grouping frames', total=len(np.unique(r)))):
         if k in processed_ids:
             continue
         neighs = get_neighs(k)
@@ -252,13 +277,13 @@ if __name__ == '__main__':
     # tde = TonguesOutVideoAnalyzer(vidpath)
     # tde.predict_video()
 
-    # check_dataset('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset/tongues', is_load=False, min_dist=15, is_delete=True)
+    # check_dataset(is_load=True, min_dist=35, is_delete=True)
     # clean_wrong_size_images()
 
-    TongueTrainer().train(is_plot=True, is_save=True)
+    # TongueTrainer().train(is_plot=True, is_save=True)
 
-    # toa = TongueOutAnalyzer()
-    # toa.predict_strike(7450, save_frames_above=0.01)
+    toa = TongueOutAnalyzer()
+    toa.predict_strike(8432, save_frames_above=0.5)
 
     # tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
     # tr.all_data_evaluation()

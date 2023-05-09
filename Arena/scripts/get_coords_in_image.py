@@ -14,7 +14,7 @@ def onclick(event):
 
 
 def is_in_screen():
-    s = yaml.load(Path('/data/Pogona_Pursuit/Arena/analysis/screen_coords.yaml').open(), Loader=yaml.FullLoader)
+    s = yaml.load(Path('/analysis/strikes/screen_coords.yaml').open(), Loader=yaml.FullLoader)
     cnt = s['screens']['pogona_pursuit2']
     cnt = np.array(cnt)
 

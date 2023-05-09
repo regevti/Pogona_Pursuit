@@ -83,7 +83,7 @@ class DLCPose(Predictor):
             cX = round(df[part]['cam_x'][frame_id])
             cY = round(df[part]['cam_y'][frame_id])
             color = tuple(int(COLORS[i][j:j + 2], 16) for j in (1, 3, 5))
-            cv2.circle(frame, (cX, cY), 5, color, -1)
+            cv2.circle(frame, (cX, cY), 8, color, -1)
 
             cv2.circle(frame, (x_legend, y_legend), 5, color, -1)
             put_text(part, frame, x_legend + 20, y_legend)

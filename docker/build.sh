@@ -1,4 +1,3 @@
-app_tag=v1.0.0
 #!/bin/bash
 
 

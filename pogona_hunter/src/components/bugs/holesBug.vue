@@ -99,9 +99,10 @@ export default {
         } else {
           this.straightMove(0)
         }
-      // random
-      } else if (this.isLowHorizontalMovement) {
+      // low horizontal
+      } else if (this.isLowHorizontalMovement || this.isJumpUpMovement) {
         this.straightMove(0)
+      // random
       } else {
         this.straightMove()
       }
@@ -172,6 +173,7 @@ export default {
           this.r0 = [(this.x + this.xTarget) / 2, this.y + (this.r / 2.3)]
           break
         case 'low_horizontal':
+        case 'jump_up':
           this.directionAngle = this.isRightExit ? 2 * Math.PI : Math.PI
           this.startRetreat()
           break
