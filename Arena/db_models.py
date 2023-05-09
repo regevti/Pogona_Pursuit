@@ -467,7 +467,8 @@ class ORM:
 
     def commit_multiple_schedules(self, start_date, experiment_name, end_date=None, every=None):
         if not end_date:
-            end_date = start_date.replace(hour=18, minute=00)
+            hour, minute = [int(x) for x in config.SCHEDULE_EXPERIMENTS_END_TIME.split(':')]
+            end_date = start_date.replace(hour=hour, minute=minute)
         if every:
             curr_date = start_date
             while curr_date < end_date:
