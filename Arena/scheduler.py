@@ -8,10 +8,14 @@ from loggers import get_logger
 import config
 from cache import RedisCache, CacheColumns as cc
 from compress_videos import get_videos_ids_for_compression, compress
+from periphery_integration import PeripheryIntegrator
 from analysis.pose import convert_all_videos
 
+env = config.env
 TIME_TABLE = {
-    'cameras_on': (config.CAMERAS_ON_TIME, config.CAMERAS_OFF_TIME)
+    'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
+    'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
+    'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
 }
 ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()
@@ -32,9 +36,11 @@ class Scheduler(threading.Thread):
         super().__init__()
         self.logger = get_logger('Scheduler')
         self.arena_mgr = arena_mgr
+        self.periphery = PeripheryIntegrator()
         self.next_experiment_time = None
         self.dlc_on = multiprocessing.Event()
         self.compress_threads = {}
+        self.lights_state = 0  # 0 - off, 1 - on
 
     def run(self):
         time.sleep(10)  # let all other arena processes and threads to start
@@ -43,6 +49,7 @@ class Scheduler(threading.Thread):
         while not self.arena_mgr.arena_shutdown_event.is_set():
             if not t0 or time.time() - t0 >= 60:  # every minute
                 t0 = time.time()
+                self.check_lights()
                 self.check_camera_status()
                 self.check_scheduled_experiments()
                 self.arena_mgr.update_upcoming_schedules()
@@ -52,6 +59,22 @@ class Scheduler(threading.Thread):
                 self.compress_videos()
                 if config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
                     self.run_pose()
+
+    @schedule_method
+    def check_lights(self):
+        """Check that during the day LEDs are on and IR is off, and vice versa during the night"""
+        if self.is_in_range('lights_sunrise'):
+            self.turn_light(config.IR_LIGHT_NAME, 0)
+            self.turn_light(config.DAY_LIGHT_NAME, 1)
+        elif self.is_in_range('lights_sunset'):
+            self.turn_light(config.IR_LIGHT_NAME, 1)
+            self.turn_light(config.DAY_LIGHT_NAME, 0)
+
+    def turn_light(self, name, state):
+        if not name:
+            return
+        self.periphery.switch(name, state)
+        self.logger.info(f'turn {name} {"on" if state else "off"}')
 
     @schedule_method
     def check_scheduled_experiments(self):
@@ -66,8 +89,15 @@ class Scheduler(threading.Thread):
     @staticmethod
     def is_in_range(label):
         now = datetime.now()
-        start, end = [datetime.combine(now, datetime.strptime(t, '%H:%M').time())
-                      for t in TIME_TABLE[label]]
+        val = TIME_TABLE[label]
+        if isinstance(val, tuple):
+            start, end = [datetime.combine(now, datetime.strptime(t, '%H:%M').time()) for t in val]
+        elif isinstance(val, str):
+            dt = datetime.combine(now, datetime.strptime(val, '%H:%M').time())
+            start, end = dt, dt + timedelta(minutes=1)
+        else:
+            raise Exception(f'bad value for {label}: {val}')
+
         return ((now - start).total_seconds() >= 0) and ((now - end).total_seconds() <= 0)
 
     @schedule_method
@@ -140,7 +170,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def run_pose(self):
-        if self.is_in_range('cameras_on') or self.dlc_on.is_set():
+        if self.is_in_range('cameras_on') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set():
             return
 
         multiprocessing.Process(target=_run_pose_callback, args=(self.dlc_on,)).start()

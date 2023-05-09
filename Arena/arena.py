@@ -233,8 +233,10 @@ class ImageSink(ArenaProcess):
     def init_video_out(self, frame):
         self.write_output_dir = self.cam_config[config.output_dir_key]
         is_color = self.cam_config.get('is_color', False)
-        self.video_out = OpenCVWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
-        # self.video_out = ImageIOWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
+        if not cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING):
+            self.video_out = OpenCVWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
+        else:
+            self.video_out = ImageIOWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
         self.video_path = self.video_out.video_path
         self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}')
         self.db_video_id = self.orm.commit_video(path=self.video_path, fps=self.writing_fps,

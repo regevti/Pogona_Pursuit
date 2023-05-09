@@ -43,6 +43,7 @@ def index():
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
+                           blank_rec_types=config.blank_rec_types,
                            max_blocks=config.api_max_blocks_to_show, toggels=periphery_mgr.toggles, psycho_files=get_psycho_files(),
                            extra_time_recording=config.extra_time_recording, feeders=periphery_mgr.feeders,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})

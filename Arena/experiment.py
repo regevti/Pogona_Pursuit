@@ -200,8 +200,8 @@ class Experiment:
         self.cache.delete(cc.IS_ALWAYS_REWARD)
         self.cache.delete(cc.EXPERIMENT_NAME)
         self.cache.delete(cc.EXPERIMENT_PATH)
-        self.cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, False)
-        self.cache.set(cc.IS_REWARD_TIMEOUT, False)
+        self.cache.delete(cc.IS_EXPERIMENT_CONTROL_CAMERAS)
+        self.cache.delete(cc.IS_REWARD_TIMEOUT)
         if 'main' in self.threads:
             self.threads['main'].join()
         time.sleep(0.2)
@@ -227,7 +227,7 @@ class Experiment:
     def init_experiment_cache(self):
         self.cache.set(cc.EXPERIMENT_NAME, str(self), timeout=self.experiment_duration)
         self.cache.set(cc.EXPERIMENT_PATH, self.experiment_path, timeout=self.experiment_duration)
-        self.cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, True)
+        self.cache.set(cc.IS_EXPERIMENT_CONTROL_CAMERAS, True, timeout=self.experiment_duration)
         if self.is_test:
             # cancel reward in test experiments
             self.cache.set(cc.IS_REWARD_TIMEOUT, True, timeout=self.experiment_duration)
@@ -275,6 +275,7 @@ class Block:
     num_trials: int = 1
     trial_duration: int = 10
     iti: int = 10
+    notes: str = ''
     block_type: str = 'bugs'
     bug_speed: int = None
     bug_size: int = None
@@ -288,6 +289,7 @@ class Block:
 
     psycho_file: str = ''
 
+    blank_rec_type: str = 'trials'
     movement_type: str = None
     is_anticlockwise: bool = False
     target_drift: str = ''
@@ -308,6 +310,11 @@ class Block:
 
         if self.is_random_low_horizontal:
             self.init_random_low_horizontal()
+
+        if self.is_continuous_blank:
+            self.num_trials, self.iti = 1, 0
+            self.trial_duration = config.MAX_DURATION_CONT_BLANK
+            self.cache.set(cc.IS_BLANK_CONTINUOUS_RECORDING, True, timeout=self.trial_duration)
 
     @property
     def info(self):
@@ -334,11 +341,11 @@ class Block:
             self.run_block()
         except EndExperimentException as exc:
             self.hide_visual_app_content()
-            self.end_block()
             self.logger.warning('block stopped externally')
             raise exc
         finally:
             self.orm.update_block_end_time()
+            self.end_block()
 
         self.logger.info(self.block_summary)
 
@@ -362,7 +369,6 @@ class Block:
     def init_block(self):
         mkdir(self.block_path)
         self.save_block_log_files()
-        self.cache.publish_command('led_light', 'on')
         self.cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
         self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
         # start cameras for experiment with their predictors and set the output dir for videos
@@ -377,7 +383,6 @@ class Block:
             self.cache.set_cam_output_dir(cam_name, output_dir)
 
     def end_block(self):
-        self.cache.publish_command('led_light', 'off')
         self.cache.delete(cc.EXPERIMENT_BLOCK_ID)
         self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         for cam_name in self.cameras.keys():
@@ -385,6 +390,8 @@ class Block:
         self.hold_triggers()
         time.sleep(8)
         self.turn_cameras('off')
+        if self.is_continuous_blank:
+            self.cache.delete(cc.IS_BLANK_CONTINUOUS_RECORDING)
 
     def turn_cameras(self, required_state):
         """Turn on cameras if needed, and load the experiment predictors"""
@@ -422,6 +429,7 @@ class Block:
             'in_block_trial_id': trial_id})
         if self.block_type == 'psycho':
             self.run_psycho()
+
         if not self.is_blank_block:
             if self.is_media_block:
                 command, options = 'init_media', self.media_options
@@ -453,6 +461,9 @@ class Block:
             yaml.dump(self.info, f)
         with open(f'{self.block_path}/config.yaml', 'w') as f:
             yaml.dump(config_log(), f)
+        if self.notes:
+            with open(f'{self.block_path}/notes.txt', 'w') as f:
+                f.write(self.notes)
 
     def wait(self, duration, check_visual_app_on=False, label=''):
         """Sleep while checking for experiment end"""
@@ -484,7 +495,7 @@ class Block:
             time.sleep(config.HOLD_TRIGGERS_TIME)
             self.periphery.cam_trigger(1)
             time.sleep(1)
-            self.cache.set(cc.CAM_TRIGGER_DISABLE, False)
+            self.cache.delete(cc.CAM_TRIGGER_DISABLE)
         except Exception as exc:
             self.logger.error(f'Error holding triggers: {exc}')
 
@@ -578,6 +589,10 @@ class Block:
         return self.block_type == 'blank'
 
     @property
+    def is_continuous_blank(self):
+        return self.blank_rec_type == 'continuous'
+
+    @property
     def is_random_low_horizontal(self):
         return self.movement_type == 'random_low_horizontal'
 
@@ -587,7 +602,10 @@ class Block:
 
     @property
     def overall_block_duration(self):
-        return self.block_duration + 2 * self.extra_time_recording
+        if not self.is_blank_block:
+            return self.block_duration + 2 * self.extra_time_recording
+        else:
+            return config.MAX_DURATION_CONT_BLANK
 
     @property
     def block_duration(self):

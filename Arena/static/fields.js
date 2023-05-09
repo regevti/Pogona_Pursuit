@@ -231,7 +231,8 @@ const blockFields = {
     num_trials: new FieldObject('experimentNumTrials', NumericalField),
     trial_duration: new FieldObject('experimentTrialDuration', NumericalField),
     iti: new FieldObject('experimentITI', NumericalField),
-    block_type: new FieldObject('blockTypeSelect', Field)
+    block_type: new FieldObject('blockTypeSelect', Field),
+    notes: new FieldObject('block-notes', Field)
   },
   bugs: {
     reward_type: new FieldObject('rewardTypeSelect', Field),
@@ -245,6 +246,9 @@ const blockFields = {
   },
   psycho: {
     psycho_file: new FieldObject('psycho-file', Field)
+  },
+  blank: {
+    blank_rec_type: new FieldObject('blankRecSelect', Field)
   }
 }
 

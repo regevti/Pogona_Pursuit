@@ -354,26 +354,6 @@
         // Inside block listeners
         for (let i = 1; i <= maxBlocks; i++) {
             // media or bugs experiment block
-            $(`#blockTypeSelect${i}`).change(function () {
-                if (isMediaExperiment(i)) {
-                    $(`.media-options${i}`).show()
-                    $(`.bugs-options${i}`).hide()
-                    $(`.psycho-options${i}`).hide()
-                } else if (isBlankExperiment(i)) {
-                    $(`.media-options${i}`).hide()
-                    $(`.bugs-options${i}`).hide()
-                    $(`.psycho-options${i}`).hide()
-                } else if (isPsychoExperiment(i)) {
-                    $(`.media-options${i}`).hide()
-                    $(`.bugs-options${i}`).hide()
-                    $(`.psycho-options${i}`).show()
-                } else {
-                    $(`.bugs-options${i}`).show()
-                    $(`#rewardBugDiv${i}`).hide()
-                    $(`.media-options${i}`).hide()
-                    $(`.psycho-options${i}`).hide()
-                }
-            }).trigger('change')
             $(`#isDefaultBugSize${i}`).change(function () {
                 if (this.checked) {
                     $(`#bugSizeDiv${i}`).hide()
@@ -390,6 +370,45 @@
                 }
             }
             ).trigger('change')
+
+            $(`#blankRecSelect${i}`).change(() => {
+                if ($(`#blankRecSelect${i}`).val() === 'continuous') {
+                    $(`.trial-options${i}`).hide()
+                } else {
+                    $(`.trial-options${i}`).show()
+                }
+            }).trigger('change')
+
+            $(`#blockTypeSelect${i}`).change(function () {
+                if (isMediaExperiment(i)) {
+                    $(`.trial-options${i}`).show()
+                    $(`.media-options${i}`).show()
+                    $(`.bugs-options${i}`).hide()
+                    $(`.psycho-options${i}`).hide()
+                    $(`.blank-options${i}`).hide()
+                } else if (isBlankExperiment(i)) {
+                    $(`.media-options${i}`).hide()
+                    $(`.bugs-options${i}`).hide()
+                    $(`.psycho-options${i}`).hide()
+                    $(`.blank-options${i}`).show()
+                    $(`#blankRecSelect${i}`).trigger('change')
+                } else if (isPsychoExperiment(i)) {
+                    $(`.trial-options${i}`).show()
+                    $(`.media-options${i}`).hide()
+                    $(`.bugs-options${i}`).hide()
+                    $(`.psycho-options${i}`).show()
+                    $(`.blank-options${i}`).hide()
+                } else {
+                    $(`.trial-options${i}`).show()
+                    $(`.bugs-options${i}`).show()
+                    $(`#isDefaultBugSize${i}`).trigger('change')
+                    $movementType.trigger('change')
+                    $(`#rewardBugDiv${i}`).hide()
+                    $(`.media-options${i}`).hide()
+                    $(`.psycho-options${i}`).hide()
+                    $(`.blank-options${i}`).hide()
+                }
+            }).trigger('change')
         }
 
         function stopStreaming() {

@@ -33,6 +33,7 @@ class CacheColumns:
     IS_EXPERIMENT_CONTROL_CAMERAS = Column('IS_EXPERIMENT_CONTROL_CAMERAS', bool, config.experiments_timeout)
     CAM_TRIGGER_STATE = Column('CAM_TRIGGER_STATE', int, None)
     CAM_TRIGGER_DISABLE = Column('CAM_TRIGGER_DISABLE', bool, config.experiments_timeout)
+    IS_BLANK_CONTINUOUS_RECORDING = Column('IS_BLANK_CONTINUOUS_RECORDING', bool, config.MAX_DURATION_CONT_BLANK)
 
 
 class RedisCache:

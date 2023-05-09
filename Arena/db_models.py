@@ -365,7 +365,8 @@ class ORM:
     def commit_video(self, path, fps, cam_name, start_time, animal_id=None, block_id=None):
         animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         vid = Video(path=path, fps=fps, cam_name=cam_name, start_time=start_time,
-                    block_id=block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX), animal_id=animal_id)
+                    block_id=block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX), animal_id=animal_id,
+                    compression_status=0 if not self.cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) else 1)
         with self.session() as s:
             s.add(vid)
             s.commit()

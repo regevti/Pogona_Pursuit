@@ -140,8 +140,8 @@ DISABLE_SCHEDULER = env.bool('DISABLE_SCHEDULER', False)
 schedule_date_format = env('schedule_date_format', "%d/%m/%Y %H:%M")
 IS_RUN_NIGHTLY_POSE_ESTIMATION = env.bool('IS_RUN_NIGHTLY_POSE_ESTIMATION', True)
 MAX_COMPRESSION_THREADS = env.int('MAX_COMPRESSION_THREADS', 2)
-CAMERAS_ON_TIME = env('CAMERAS_ON_TIME', '07:00')
-CAMERAS_OFF_TIME = env('CAMERAS_OFF_TIME', '19:00')
+IR_LIGHT_NAME = env('IR_LIGHT_NAME')
+DAY_LIGHT_NAME = env('DAY_LIGHT_NAME')
 SCHEDULE_EXPERIMENTS_END_TIME = env('SCHEDULE_EXPERIMENTS_END_TIME', CAMERAS_OFF_TIME)
 
 # Experiments
@@ -153,13 +153,18 @@ time_between_blocks = env.int('time_between_blocks', 300)
 experiments_timeout = env.int('EXPERIMENTS_TIMEOUT', 60 * 60)
 reward_timeout = env.int('reward_timeout', 10)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
+MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
              'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
     'media': ['media_url'],
-    'blank': [],
+    'blank': ['blank_rec_type'],
     'psycho': ['psycho_file']
 }
+blank_rec_types = [
+    'trials',
+    'continuous'
+]
 reward_types = [
     'always',
     'end_trial'
