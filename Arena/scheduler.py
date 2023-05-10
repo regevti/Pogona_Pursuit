@@ -35,6 +35,7 @@ class Scheduler(threading.Thread):
     def __init__(self, arena_mgr):
         super().__init__()
         self.logger = get_logger('Scheduler')
+        self.logger.debug('Scheduler started...')
         self.arena_mgr = arena_mgr
         self.periphery = PeripheryIntegrator()
         self.next_experiment_time = None

@@ -296,10 +296,12 @@ class Block:
     bug_height: int = None
     time_between_bugs: int = None
     background_color: str = ''
-    periphery: PeripheryIntegrator = PeripheryIntegrator()
+    periphery: PeripheryIntegrator = None
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
+        if self.periphery is None:
+            self.periphery = PeripheryIntegrator()
         if isinstance(self.bug_types, str):
             self.bug_types = self.bug_types.split(',')
         if isinstance(self.reward_bugs, str):

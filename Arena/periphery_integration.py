@@ -13,6 +13,7 @@ class PeripheryIntegrator:
     """class for communicating with reptilearn's arena.py"""
     def __init__(self):
         self.logger = get_logger('Periphery')
+        self.logger.debug('periphery integration created')
         self.cache = RedisCache()
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
