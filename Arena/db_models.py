@@ -1,4 +1,5 @@
 import json
+import sys
 from types import FunctionType
 from functools import wraps
 import numpy as np
@@ -29,6 +30,7 @@ class Animal(Base):
     reward_any_touch_prob = Column(Float, default=0)
     exit_hole = Column(String, nullable=True)
     audit = relationship('AnimalSettingsHistory')
+    dwh_key = Column(Integer, nullable=True)
 
 
 class AnimalSettingsHistory(Base):
@@ -45,6 +47,7 @@ class AnimalSettingsHistory(Base):
     reward_any_touch_prob = Column(Float, default=0)
     exit_hole = Column(String, nullable=True)
     animal_id_key = Column(Integer, ForeignKey('animals.id'))
+    dwh_key = Column(Integer, nullable=True)
 
 
 class Schedule(Base):
@@ -91,6 +94,7 @@ class Experiment(Base):
     experiment_path = Column(String)
     arena = Column(String)
     blocks = relationship('Block')
+    dwh_key = Column(Integer, nullable=True)
 
 
 class Block(Base):
@@ -123,6 +127,7 @@ class Block(Base):
     strikes = relationship('Strike')
     trials = relationship('Trial')
     videos = relationship('Video')
+    dwh_key = Column(Integer, nullable=True)
 
 
 class Trial(Base):
@@ -137,6 +142,7 @@ class Trial(Base):
     duration = Column(Float, nullable=True, default=None)
     bug_trajectory = Column(JSON, nullable=True)
     strikes = relationship('Strike')
+    dwh_key = Column(Integer, nullable=True)
 
 
 class Temperature(Base):
@@ -176,6 +182,7 @@ class Strike(Base):
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
+    dwh_key = Column(Integer, nullable=True)
 
 
 class Video(Base):
@@ -509,12 +516,36 @@ class ORM:
 
 
 class DWH:
-    commit_models = [Animal, AnimalSettingsHistory]
+    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike]
 
     def __init__(self):
         self.local_session = sessionmaker(bind=get_engine())
-        self.dwh_session = sessionmaker(bind=create_engine(config.sqlalchemy_url))
+        self.dwh_session = sessionmaker(bind=create_engine(config.DWH_URL))
+        self.keys_table = {}
 
+    def commit(self):
+        with self.local_session() as local_s:
+            with self.dwh_session() as dwh_s:
+                for model in self.commit_models:
+                    recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
+                    for rec in recs:
+                        kwargs = {}
+                        for c in model.__table__.columns:
+                            if c.name in ['id']:
+                                continue
+                            value = getattr(rec, c.name)
+                            if c.foreign_keys:
+                                fk = list(c.foreign_keys)[0]
+                                kwargs[c.name] = self.keys_table.get(fk.column.table.name, {})[value] if value else None
+                            else:
+                                kwargs[c.name] = value
+
+                        r = model(**kwargs)
+                        dwh_s.add(r)
+                        dwh_s.commit()
+                        self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
+                        rec.dwh_key = r.id
+                        local_s.commit()
 
 
 def get_engine():
@@ -522,6 +553,9 @@ def get_engine():
 
 
 if __name__ == '__main__':
+    DWH().commit()
+    sys.exit(0)
+
     # create all models
     engine = get_engine()
     if not database_exists(engine.url):

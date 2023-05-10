@@ -179,6 +179,8 @@ db_engine = env('DB_ENGINE', 'postgresql+psycopg2')
 db_user = env('DB_USER', 'postgres')
 db_password = env('DB_PASSWORD', 'password')
 sqlalchemy_url = f'{db_engine}://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
+DWH_HOST = env('DWH_HOST', '132.66.212.143')
+DWH_URL = f'{db_engine}://{db_user}:{db_password}@{DWH_HOST}:{db_port}/{db_name}'
 
 # Telegram
 TELEGRAM_CHAT_ID = env('TELEGRAM_CHAT_ID', '725002866')
