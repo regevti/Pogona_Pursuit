@@ -16,6 +16,7 @@ TIME_TABLE = {
     'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
     'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
     'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
+    'dwh_commit_time': env('DWH_COMMIT_TIME', '00:00')
 }
 ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()

@@ -182,7 +182,7 @@ sqlalchemy_url = f'{db_engine}://{db_user}:{db_password}@{db_host}:{db_port}/{db
 
 # Telegram
 TELEGRAM_CHAT_ID = env('TELEGRAM_CHAT_ID', '725002866')
-TELEGRAM_TOKEN = env('TELEGRAM_TOKEN')
+TELEGRAM_TOKEN = env('TELEGRAM_TOKEN', None)
 
 # Predictors
 DLC_FOLDER = env('DLC_FOLDER', f'{OUTPUT_DIR}/models/deeplabcut')

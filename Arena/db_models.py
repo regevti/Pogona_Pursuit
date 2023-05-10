@@ -508,6 +508,15 @@ class ORM:
         return len(strikes), len(rewards)
 
 
+class DWH:
+    commit_models = [Animal, AnimalSettingsHistory]
+
+    def __init__(self):
+        self.local_session = sessionmaker(bind=get_engine())
+        self.dwh_session = sessionmaker(bind=create_engine(config.sqlalchemy_url))
+
+
+
 def get_engine():
     return create_engine(config.sqlalchemy_url)
 
