@@ -262,7 +262,7 @@ class ORM:
     def commit_experiment(self, exp):
         with self.session() as s:
             kwargs = {c.name: getattr(exp, c.name)
-                      for c in Experiment.__table__.columns if c.name not in ['id', 'end_time', 'cameras', 'arena']}
+                      for c in Experiment.__table__.columns if c.name not in ['id', 'end_time', 'cameras', 'arena', 'dwh_key']}
             kwargs['arena'] = config.ARENA_NAME
             exp_model = Experiment(**kwargs)
             exp_model.cameras = ','.join(list(exp.cameras.keys()))
@@ -274,7 +274,7 @@ class ORM:
     def commit_block(self, blk, is_cache_set=True):
         with self.session() as s:
             kwargs = {c.name: getattr(blk, c.name)
-                      for c in Block.__table__.columns if c.name not in ['id', 'end_time']
+                      for c in Block.__table__.columns if c.name not in ['id', 'end_time', 'dwh_key']
                       and not c.foreign_keys}
             kwargs['experiment_id'] = self.current_experiment_id
             for k in ['reward_bugs', 'bug_types']:  # convert lists to strings
@@ -285,13 +285,13 @@ class ORM:
             s.commit()
             block_id = b.id
             if is_cache_set:
-                self.cache.set(cc.CURRENT_BLOCK_DB_INDEX, block_id)
+                self.cache.set(cc.CURRENT_BLOCK_DB_INDEX, block_id, timeout=blk.overall_block_duration)
         return block_id
 
     @commit_func
     def commit_trial(self, trial_dict):
         kwargs = {c.name: trial_dict.get(c.name)
-                  for c in Trial.__table__.columns if c.name not in ['id'] and not c.foreign_keys}
+                  for c in Trial.__table__.columns if c.name not in ['id', 'dwh_key'] and not c.foreign_keys}
         kwargs['block_id'] = trial_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         with self.session() as s:
             trial = Trial(**kwargs)
@@ -310,7 +310,7 @@ class ORM:
                 return
             model_cols = [c.name for c in Trial.__table__.columns]
             for k, v in trial_dict.items():
-                if k in model_cols and k not in ['id', 'trial_db_id']:
+                if k in model_cols and k not in ['id', 'trial_db_id', 'dwh_key']:
                     setattr(trial_model, k, v)
             s.commit()
 
@@ -319,6 +319,9 @@ class ORM:
         block_id = block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         with self.session() as s:
             block_model = s.query(Block).filter_by(id=block_id).first()
+            if block_model is None:
+                self.logger.warning(f'No block ID found for end_time update')
+                return
             block_model.end_time = end_time or datetime.now()
             s.commit()
             self.cache.delete(cc.CURRENT_BLOCK_DB_INDEX)
@@ -358,7 +361,7 @@ class ORM:
     @commit_func
     def commit_strike(self, strike_dict):
         kwargs = {c.name: strike_dict.get(c.name)
-                  for c in Strike.__table__.columns if c.name not in ['id', 'arena'] and not c.foreign_keys}
+                  for c in Strike.__table__.columns if c.name not in ['id', 'arena', 'dwh_key'] and not c.foreign_keys}
         kwargs['arena'] = config.ARENA_NAME
         kwargs['block_id'] = strike_dict.get('block_id') or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         kwargs['trial_id'] = strike_dict.get('trial_id')
