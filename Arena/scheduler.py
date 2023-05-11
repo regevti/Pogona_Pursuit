@@ -10,13 +10,16 @@ from cache import RedisCache, CacheColumns as cc
 from compress_videos import get_videos_ids_for_compression, compress
 from periphery_integration import PeripheryIntegrator
 from analysis.pose import convert_all_videos
+from analysis.strikes.strikes import analyze_strikes
+from db_models import DWH
 
 env = config.env
 TIME_TABLE = {
     'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
     'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
     'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
-    'dwh_commit_time': env('DWH_COMMIT_TIME', '00:00')
+    'dwh_commit_time': env('DWH_COMMIT_TIME', '07:00'),
+    'strike_analysis_time': env('STRIKE_ANALYSIS_TIME', '06:30')
 }
 ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()
@@ -55,12 +58,13 @@ class Scheduler(threading.Thread):
                 self.check_camera_status()
                 self.check_scheduled_experiments()
                 self.arena_mgr.update_upcoming_schedules()
+                self.analyze_strikes()
+                self.dwh_commit()
 
             if not t1 or time.time() - t1 >= 60 * 5:  # every 5 minutes
                 t1 = time.time()
                 self.compress_videos()
-                if config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
-                    self.run_pose()
+                self.run_pose()
 
     @schedule_method
     def check_lights(self):
@@ -87,6 +91,16 @@ class Scheduler(threading.Thread):
                 schedule_date = datetime.strptime(m.group('date'), config.schedule_date_format)
                 if (schedule_date - datetime.now()).total_seconds() <= 0:
                     self.arena_mgr.start_cached_experiment(m.group('name'))
+
+    @schedule_method
+    def dwh_commit(self):
+        if self.is_in_range('dwh_commit_time') and config.IS_COMMIT_TO_DWH:
+            DWH().commit()
+
+    @schedule_method
+    def analyze_strikes(self):
+        if self.is_in_range('strike_analysis_time') and config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
+            analyze_strikes()
 
     @staticmethod
     def is_in_range(label):
@@ -172,7 +186,8 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def run_pose(self):
-        if self.is_in_range('cameras_on') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set():
+        if self.is_in_range('cameras_on') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
+                not config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
             return
 
         multiprocessing.Process(target=_run_pose_callback, args=(self.dlc_on,)).start()

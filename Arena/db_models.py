@@ -1,6 +1,6 @@
 import json
 import sys
-from types import FunctionType
+from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date
@@ -519,11 +519,13 @@ class DWH:
     commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike]
 
     def __init__(self):
+        self.logger = get_logger('dwh')
         self.local_session = sessionmaker(bind=get_engine())
         self.dwh_session = sessionmaker(bind=create_engine(config.DWH_URL))
         self.keys_table = {}
 
     def commit(self):
+        self.logger.info('start DWH commit')
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
                 for model in self.commit_models:
@@ -546,6 +548,20 @@ class DWH:
                         self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
                         rec.dwh_key = r.id
                         local_s.commit()
+        self.logger.info('Finished DWH commit')
+
+    def update_model(self, model, columns=()):
+        assert isinstance(columns, (list, tuple)), 'columns must be list or tuple'
+        with self.local_session() as local_s:
+            with self.dwh_session() as dwh_s:
+                recs = local_s.query(model).filter(model.dwh_key.is_not(None)).all()
+                columns = columns or [c.name for c in model.__table__.columns if c.name in ['id', 'dwh_key'] or c.foreign_keys]
+                for rec in tqdm(recs):
+                    dwh_rec = dwh_s.query(model).filter_by(id=rec.dwh_key).first()
+                    for c in columns:
+                        setattr(dwh_rec, c, getattr(rec, c))
+                    dwh_s.commit()
+                print(f'Finished updating columns={columns} for {model.__name__}; Total rows updated: {len(recs)}')
 
 
 def get_engine():
@@ -553,7 +569,7 @@ def get_engine():
 
 
 if __name__ == '__main__':
-    DWH().commit()
+    DWH().update_model(Strike, ['prediction_distance', 'calc_speed'])
     sys.exit(0)
 
     # create all models

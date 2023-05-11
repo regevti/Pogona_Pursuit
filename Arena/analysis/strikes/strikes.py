@@ -9,7 +9,7 @@ from tqdm.autonotebook import tqdm
 from functools import cached_property
 from scipy.signal import find_peaks, savgol_filter
 if __name__ == '__main__':
-    os.chdir('../../..')
+    os.chdir('../..')
 
 import config
 from analysis.pose_utils import closest_index, pixels2cm, distance, fit_circle
@@ -158,6 +158,8 @@ class StrikeAnalyzer:
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
             # frame = self.loader.dlc_pose.predictor.plot_single_part(self.loader.frames_df, frame_id, frame)
             frame = self.loader.dlc_pose.predictor.plot_predictions(frame, frame_id, self.loader.frames_df)
+            if frame is None:
+                continue
             h, w = frame.shape[:2]
             frame = frame[h//2:, 350:w-350]
             labels = []
@@ -506,11 +508,13 @@ def delete_duplicate_strikes(animal_id):
         s.commit()
 
 
-def load_strikes(animal_id, start_time=None, movement_type=None):
+def load_strikes(animal_id, start_time=None, movement_type=None, is_skip_committed=False):
     orm = ORM()
     strikes_ids = []
     with orm.session() as s:
-        exps = s.query(Experiment).filter_by(animal_id=animal_id)
+        exps = s.query(Experiment)
+        if animal_id:
+            exps = exps.filter_by(animal_id=animal_id)
         if start_time:
             exps = exps.filter(Experiment.start_time >= start_time)
         for exp in exps.all():
@@ -518,7 +522,7 @@ def load_strikes(animal_id, start_time=None, movement_type=None):
                 if movement_type and blk.movement_type != movement_type:
                     continue
                 for strk in blk.strikes:
-                    if strk.is_climbing:
+                    if strk.is_climbing or (is_skip_committed and strk.calc_speed):
                         continue
                     strikes_ids.append(strk.id)
     return strikes_ids
@@ -535,30 +539,27 @@ def play_strikes(animal_id, start_time=None, cam_name='front', is_load_pose=True
             print(f'ERROR strike_id={sid}: {exc}')
 
 
-def analyze_strikes(animal_id, cam_name='front', start_time=None, strike_id=None, movement_type=None):
+def analyze_strikes(animal_id=None, cam_name='front', start_time=None, strike_id=None, movement_type=None,
+                    is_plot_summary=True, is_skip_committed=True, logger=None):
+    print_func = print if logger is None else logger.info
     if strike_id:
         strikes_ids = [strike_id]
     else:
-        strikes_ids = load_strikes(animal_id, start_time=start_time, movement_type=movement_type)
+        strikes_ids = load_strikes(animal_id, start_time=start_time, movement_type=movement_type,
+                                   is_skip_committed=is_skip_committed)
         strikes_ids = sorted(strikes_ids)
 
     output_dir = Path(f'{config.OUTPUT_DIR}/strike_analysis/{animal_id}')
     output_dir.mkdir(exist_ok=True, parents=True)
     orm = ORM()
+    n_committed = 0
     for sid in tqdm(strikes_ids, desc='loading strikes'):
         try:
             ld = Loader(sid, cam_name, is_debug=False, orm=orm)
-            # root_dir = Path('/data/Pogona_Pursuit/output/strike_analysis/PV80')
-            # strk_dir = root_dir / str(sid)
-            # strk_dir.mkdir(exist_ok=True)
-            # for frame_id, frame in ld.gen_frames_around_strike(n_frames_back=180):
-            #     cv2.imwrite((strk_dir / f'{frame_id}.jpg').as_posix(), frame)
-            # ld.play_strike()
-            # ld.plot_strike_events()
             sa = StrikeAnalyzer(ld)
-            # df.append({'speed': sa.bug_speed, 'prediction_distance': sa.prediction_distance})
+            if is_plot_summary:
+                sa.plot_strike_analysis(only_save_to=output_dir.as_posix())
 
-            sa.plot_strike_analysis(only_save_to=output_dir.as_posix())
             with orm.session() as s:
                 strk = s.query(Strike).filter_by(id=sid).first()
                 strk.prediction_distance = sa.prediction_distance
@@ -569,14 +570,14 @@ def analyze_strikes(animal_id, cam_name='front', start_time=None, strike_id=None
                     strk.projected_leap_coords = sa.proj_leap_pos.tolist()
                 strk.max_acceleration = sa.max_acceleration
                 s.commit()
-        except MissingStrikeData as exc:
-            print(f'Strike-{sid}: No timestamps for frames; {exc}')
-        except Exception as exc:
-            print(f'Strike-{sid}: {exc}\n{traceback.format_exc()}\n')
+                n_committed += 1
 
-    # df = pd.DataFrame(df)
-    # sns.scatterplot(data=df, x='speed', y='prediction_distance')
-    # plt.show()
+        except MissingStrikeData as exc:
+            print_func(f'Strike-{sid}: Missing strike data; {exc}')
+        except Exception as exc:
+            print_func(f'Strike-{sid}: {exc}\n{traceback.format_exc()}\n')
+
+    print_func(f'Finished analyze_strikes; analyzed and committed {n_committed} strikes')
 
 
 def extract_bad_annotated_strike_frames(animal_id, cam_name='front', strike_id=None, n=6, extra=30, **kwargs):
@@ -611,8 +612,8 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    # analyze_strikes('PV85')#, movement_type='random')
-    extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
+    analyze_strikes()
+    # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
     # foo()
     # calibrate()

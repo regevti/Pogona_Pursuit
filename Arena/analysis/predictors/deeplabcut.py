@@ -74,6 +74,8 @@ class DLCPose(Predictor):
         """scatter the body parts prediction dots"""
         x_legend, y_legend = 30, 30
         parts2plot = parts2plot or self.bodyparts
+        if frame_id not in df.index:
+            return
         for i, part in enumerate(df.columns.get_level_values(0).unique()):
             if not part or (parts2plot and part not in parts2plot):
                 continue
