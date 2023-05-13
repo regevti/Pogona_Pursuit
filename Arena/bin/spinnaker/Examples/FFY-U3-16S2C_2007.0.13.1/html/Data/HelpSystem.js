@@ -1,8 +1,0 @@
-var xmlHelpSystemData = "";
-xmlHelpSystemData += '<?xml version=\"1.0\" encoding=\"utf-8\"?>';
-xmlHelpSystemData += '<WebHelpSystem DefaultUrl=\"Model/readme.html\" Toc=\"Data/Toc.js\" Index=\"Data/Index.js\" Concepts=\"Data/Concepts.js\" BrowseSequence=\"Data/BrowseSequence.js\" Glossary=\"Data/Glossary.js\" SearchDatabase=\"Data/Search.js\" Alias=\"Data/Alias.xml\" Synonyms=\"Data/Synonyms.xml\" SearchFilterSet=\"Data/Filters.js\" SearchUrl=\"Search.htm\" SkinName=\"Reference\" SkinID=\"Reference\" Multilingual=\"false\" Skins=\"Reference\" BuildTime=\"7/17/2020 3:32:57 PM\" BuildVersion=\"12.0.0.0\" TargetType=\"WebHelp2\" SkinTemplateFolder=\"Skin/\" InPreviewMode=\"false\" MoveOutputContentToRoot=\"true\" MakeFileLowerCase=\"false\" UseCustomTopicFileExtension=\"false\" PreventExternalUrls=\"false\" EnableResponsiveOutput=\"true\" IncludeGlossarySearchResults=\"true\" ResultsPerPage=\"20\" xml:lang=\"en-us\" LanguageName=\"English\">';
-xmlHelpSystemData += '    <CatapultSkin Version=\"3\" SkinType=\"WebHelp2\" ComponentType=\"MasterPage\" TemplateName=\"Fluid\" Comment=\"HTML5 Top Navigation skin\" EnableResponsiveOutput=\"True\" CommentsInTopic=\"false\" DisplayCommunitySearchResults=\"false\" conditions=\"\" LogoUrl=\"https://www.flir.com/mv\" Name=\"Reference\" SkinID=\"Reference\" SkinClass=\"_Skins_Reference\" HideNavOnStartup=\"False\">';
-xmlHelpSystemData += '        <WebHelpOptions NavigationPanePosition=\"Right\" TopMenuDepth=\"4\" />';
-xmlHelpSystemData += '    </CatapultSkin>';
-xmlHelpSystemData += '</WebHelpSystem>';
-MadCap.Utilities.Xhr._FilePathToXmlStringMap.Add('HelpSystem', xmlHelpSystemData);

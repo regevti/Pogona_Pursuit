@@ -1,1 +1,0 @@
-define({r:0.5,st:'Stem',n:1,t:[0],u:['../10-Front/Contacting.htm'],s:['+120°c','fileoperationresult','serialportdatabit'],p:[['+120°c',38],['applications',70],['cleared',67],['electrical',70],['genicam',70],['isplocklutenable',68],['of',48],['recommended',5],['storage',54],['to',48],['when',48]]});
