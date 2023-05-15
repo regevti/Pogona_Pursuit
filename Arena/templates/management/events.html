@@ -48,6 +48,9 @@
     <div class="row mb-2">
         <button id="reloadApp" type="button" class="btn btn-sm btn-primary mx-auto">Reload App</button>
     </div>
+    <div class="row mb-2">
+        <button id="restartArena" type="button" class="btn btn-sm btn-primary mx-auto">Restart Arena</button>
+    </div>
 
 </div>
 
@@ -130,6 +133,10 @@
     $("#reloadApp").click(function (e) {
         $.get('/reload_app')
         console.log('>> App reload command sent manually')
+    })
+
+    $("#restartArena").click(() => {
+        $.get('/restart')
     })
 
     $("#reward").click(function (e) {

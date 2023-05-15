@@ -123,7 +123,6 @@ APP_SCREEN = env('APP_SCREEN', ':0.0')
 TEST_SCREEN = env('TEST_SCREEN', ':1.0')
 SCREEN_RESOLUTION = env('SCREEN_RESOLUTION', '1920,1080')  # must be written with comma
 SCREEN_DISPLACEMENT = env('SCREEN_DISPLACEMENT', '2025')  # used for displacing the screen contents in multi screen setup
-HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
 
 # temperature sensor
 SERIAL_PORT_TEMP = env('SERIAL_PORT_TEMP', '/dev/ttyACM0')
@@ -155,6 +154,8 @@ experiments_timeout = env.int('EXPERIMENTS_TIMEOUT', 60 * 60)
 reward_timeout = env.int('reward_timeout', 10)
 experiment_cache_path = env('experiment_cache_path', 'cached_experiments')
 MAX_DURATION_CONT_BLANK = env.int('MAX_DURATION_CONT_BLANK', 48*3600)
+IS_HOLD_TRIGGERS = env.bool('IS_HOLD_TRIGGERS', True)
+HOLD_TRIGGERS_TIME = env.int('HOLD_TRIGGERS_TIME', 2)
 experiment_types = {
     'bugs': ['reward_type', 'bug_types', 'reward_bugs', 'bug_speed', 'movement_type', 'time_between_bugs',
              'is_anticlockwise' 'target_drift', 'background_color', 'exit_hole_position'],
