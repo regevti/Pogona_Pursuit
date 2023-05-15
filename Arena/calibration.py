@@ -179,7 +179,8 @@ class CharucoEstimator:
                 plt.imshow(img)
                 plt.show()
         except Exception as exc:
-            self.logger.error(f'Error in pose-estimator init; {exc}')
+            if self.is_debug:
+                self.logger.error(f'Error in pose-estimator init; {exc}')
             self.state = 1
         return self
 
