@@ -9,8 +9,8 @@ import config
 from cache import RedisCache, CacheColumns as cc
 from compress_videos import get_videos_ids_for_compression, compress
 from periphery_integration import PeripheryIntegrator
-from analysis.pose import convert_all_videos
-from analysis.strikes.strikes import analyze_strikes
+from analysis.pose import predict_all_videos
+from analysis.strikes.strikes import StrikeScanner
 from db_models import DWH
 
 env = config.env
@@ -100,7 +100,7 @@ class Scheduler(threading.Thread):
     @schedule_method
     def analyze_strikes(self):
         if self.is_in_range('strike_analysis_time') and config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
-            analyze_strikes()
+            StrikeScanner().scan()
 
     @staticmethod
     def is_in_range(label):
@@ -196,7 +196,7 @@ class Scheduler(threading.Thread):
 
 def _run_pose_callback(dlc_on):
     try:
-        convert_all_videos(max_videos=20)
+        predict_all_videos(max_videos=20)
     finally:
         dlc_on.clear()
 

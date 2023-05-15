@@ -34,13 +34,13 @@ MIN_DISTANCE = 5  # cm
 COMMIT_INTERVAL = 2  # seconds
 VELOCITY_SAMPLING_DURATION = 2  # seconds
 MODEL_NAME = 'front_head_only_resnet_50'
-BAD_VIDEOS = [
-    'front_20221130T095549', 'front_20221127T140019', 'front_20221202T163955', 'front_20221122T114015',
-    'front_20230314T161544'
-]
 
 
 class MissingFile(Exception):
+    """"""
+
+
+class NoFramesVideo(Exception):
     """"""
 
 
@@ -83,7 +83,7 @@ class ArenaPose:
             if not only_load:
                 pose_df = self.predict_video(video_path=video_path, prefix=prefix)
             else:
-                raise MissingFile(f'Cache file does not exist and only_load=True')
+                raise MissingFile(f'Pose cache file does not exist')
         return pose_df
 
     def start_new_session(self, fps):
@@ -113,6 +113,9 @@ class ArenaPose:
         pose_df = []
         cap = cv2.VideoCapture(video_path)
         n_frames = min(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), len(frames_times))
+        if n_frames == 0:
+            self.tag_error_video(video_path, 'video has 0 frames')
+            return
         fps = cap.get(cv2.CAP_PROP_FPS)
         self.start_new_session(fps)
         for frame_id in tqdm(range(n_frames), desc=f'{prefix}{Path(video_path).stem}'):
@@ -135,6 +138,10 @@ class ArenaPose:
             self.save_predicted_video(pose_df, video_path)
         self.close_example_writer()
         return pose_df
+
+    def tag_error_video(self, vid_path, msg):
+        with self.get_predicted_cache_path(vid_path).with_suffix('.txt').open('w') as f:
+            f.write(msg)
 
     def predict_frame(self, frame, frame_id) -> pd.DataFrame:
         raise NotImplemented('method predict_frame is not implemented')
@@ -230,6 +237,8 @@ class ArenaPose:
         """read frame from video and use it to initiate the caliber"""
         cap = cv2.VideoCapture(video_path.as_posix())
         ret, frame = cap.read()
+        if frame is None:
+            raise Exception('Video has 0 frames')
         self.init(frame, caliber_only=True)
         cap.release()
 
@@ -476,17 +485,27 @@ def foo():
     return
 
 
-def convert_all_videos(animal_id=None, max_videos=None):
+def get_videos_to_predict(animal_id=None):
     p = Path(config.EXPERIMENTS_DIR)
     if animal_id:
         p = p / animal_id
     all_videos = list(p.rglob('*front*.mp4'))
-    ap = DLCArenaPose('front', is_commit_db=False)
-    ap.initiate_from_video(all_videos[0])
-    videos = [v for v in all_videos if not ap.get_predicted_cache_path(v).exists() and v.stem not in BAD_VIDEOS]
+    videos = []
+    for vid_path in all_videos:
+        pred_path = ArenaPose.get_predicted_cache_path(vid_path)
+        if pred_path.exists() or \
+                pred_path.with_suffix('.txt').exists() or \
+                (len(pred_path.parts) >= 6 and pred_path.parts[-6] == 'test'):
+            continue
+        videos.append(vid_path)
+    return videos
+
+
+def predict_all_videos(animal_id=None, max_videos=None):
+    videos = get_videos_to_predict(animal_id)
     if not videos:
         return
-    print(f'found {len(videos)}/{len(all_videos)} to predict')
+    print(f'found {len(videos)}/{len(videos)} to predict')
     success_count = 0
     for i, video_path in enumerate(videos):
         try:
@@ -505,7 +524,7 @@ def convert_all_videos(animal_id=None, max_videos=None):
 
 if __name__ == '__main__':
     # foo()
-    convert_all_videos()
+    predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()

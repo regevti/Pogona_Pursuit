@@ -183,6 +183,7 @@ class Strike(Base):
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
     dwh_key = Column(Integer, nullable=True)
+    analysis_error = Column(String, nullable=True)
 
 
 class Video(Base):
@@ -533,7 +534,7 @@ class DWH:
             with self.dwh_session() as dwh_s:
                 for model in self.commit_models:
                     recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
-                    for rec in recs:
+                    for rec in tqdm(recs, desc=model.__name__):
                         kwargs = {}
                         for c in model.__table__.columns:
                             if c.name in ['id']:
@@ -572,7 +573,8 @@ def get_engine():
 
 
 if __name__ == '__main__':
-    DWH().update_model(Strike, ['prediction_distance', 'calc_speed'])
+    DWH().commit()
+    # DWH().update_model(Strike, ['prediction_distance', 'calc_speed'])
     sys.exit(0)
 
     # create all models

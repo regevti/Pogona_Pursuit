@@ -11,10 +11,6 @@ from db_models import ORM, Block, Strike, Trial, Temperature
 DEFAULT_OUTPUT_DIR = '/data/Pogona_Pursuit/output'
 
 
-class StrikeException(Exception):
-    """"""
-
-
 class MissingStrikeData(Exception):
     """Could not find timestamps for video frames"""
 
@@ -58,12 +54,12 @@ class Loader:
                     if i >= n_tries - 1:
                         raise exc
             if strk is None:
-                raise StrikeException(f'could not find strike id: {self.strike_db_id}')
+                raise MissingStrikeData(f'could not find strike id: {self.strike_db_id}')
 
             self.info = {k: v for k, v in strk.__dict__.items() if not k.startswith('_')}
             trial = s.query(Trial).filter_by(id=strk.trial_id).first()
             if trial is None:
-                raise StrikeException('No trial found in DB')
+                raise MissingStrikeData('No trial found in DB')
 
             self.load_bug_trajectory_data(trial, strk)
             self.load_frames_data(s, trial, strk)
@@ -71,6 +67,8 @@ class Loader:
 
     def load_bug_trajectory_data(self, trial, strk):
         self.traj_df = pd.DataFrame(trial.bug_trajectory)
+        if self.traj_df.empty:
+            raise MissingStrikeData('traj_df is empty')
         self.traj_df['time'] = pd.to_datetime(self.traj_df.time).dt.tz_localize(None)
         self.bug_traj_strike_id = (strk.time - self.traj_df.time).dt.total_seconds().abs().idxmin()
 
@@ -88,7 +86,8 @@ class Loader:
             if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
                 video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
             if not video_path.exists():
-                print(f'Video path does not exist: {video_path}')
+                if self.is_debug:
+                    print(f'Video path does not exist: {video_path}')
                 continue
             frames_times = self.load_frames_times(vid)
             # check whether strike's time is in the loaded frames_times
@@ -112,7 +111,7 @@ class Loader:
                 continue
 
         if self.frames_df.empty:
-            raise MissingStrikeData()
+            raise MissingStrikeData('frames_df is empty after loading')
 
     def update_info_with_block_data(self, blk: Block):
         fields = ['movement_type', 'exit_hole', 'bug_speed']
