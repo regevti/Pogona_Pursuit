@@ -3,6 +3,9 @@
 */.idea/*
 __pycache__/
 .ipynb_checkpoints/
+output/*
+Arena/alembic/versions
+.env*
 *.weights
 *.avi
 *.mp4
