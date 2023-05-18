@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 if Path('.').resolve().name != 'Arena':
     import os
     os.chdir('../..')
+from utils import run_in_thread
 from analysis.image_embedding import ResNetPretrained
 from analysis.predictors.base import Predictor
 from db_models import ORM, Block, Video
@@ -25,20 +26,17 @@ from analysis.trainer import ClassificationTrainer
 from analysis.strikes.loader import Loader
 from analysis.pose_utils import put_text
 
-DATASET_PATH = Path('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset')
-TONGUE_PREDICTED_DIR = '/data/Pogona_Pursuit/output/datasets/pogona_tongue/predicted/tongues'
-CROPPED_SHAPE = (550, 1000)
 TONGUE_CLASS = 'tongues'
-PREDICTION_STACK_DURATION = 0.25  # sec
-TONGUE_ACTION_TIMEOUT = 1  # sec
-NUM_TONGUES_IN_STACK = 6  # number of predicted tongues in the prediction stack to trigger action
 
 
 class TongueOutAnalyzer(Predictor):
     def __init__(self, td=None, action_callback=None, identifier=None, is_write_detected_image=False,
                  is_debug=True):
         super(TongueOutAnalyzer, self).__init__()
-        self.tr = TongueTrainer(model_path=self.model_path, is_debug=is_debug) if td is None else td
+        self.check_pred_config()
+        self.tr = TongueTrainer(model_path=self.model_path, is_debug=is_debug,
+                                cropped_shape=self.pred_config['image_size'],
+                                dataset_path=self.pred_config['dataset_path']) if td is None else td
         self.identifier = identifier
         self.action_callback = action_callback
         self.is_debug = is_debug
@@ -54,15 +52,10 @@ class TongueOutAnalyzer(Predictor):
         self.push_to_predictions_stack(label, timestamp)
         is_tongue = label == TONGUE_CLASS and prob >= self.pred_config.get('threshold')
         is_action = self.tongue_detected(orig_frame, timestamp) if is_tongue else False
-
-        if self.pred_config.get('resize_image'):
-            frame = cv2.resize(frame, self.pred_config['resize_image'][::-1])
-        frame = put_text(f'P={prob:.2f}', frame, frame.shape[1] - 120, 30, color=(255, 0, 0))
-
-        return is_action, frame, label
+        return is_action, frame, prob
 
     def predict_strike(self, strike_db_id, n_before=30, n_after=10, cols=8, save_frames_above=None):
-        ld = Loader(strike_db_id, 'front', is_debug=False)
+        ld = Loader(strike_db_id, 'front', is_debug=False, is_load_pose=False)
         frame_ids = []
         n = n_before + n_after - 1
         rows = int(np.ceil(n/cols))
@@ -72,7 +65,7 @@ class TongueOutAnalyzer(Predictor):
             label, prob = self.tr.predict(frame)
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
             if save_frames_above and prob > save_frames_above:
-                cv2.imwrite(f'{TONGUE_PREDICTED_DIR}/{strike_db_id}_{frame_id}.jpg', frame)
+                cv2.imwrite(f'{self.pred_config["save_predicted_path"]}/{strike_db_id}_{frame_id}.jpg', frame)
 
             h, w = frame.shape[:2]
             frame = frame[h // 2:, 350:w - 350]
@@ -81,9 +74,9 @@ class TongueOutAnalyzer(Predictor):
             axes[i].set_title(frame_id)
             curr_y = 60
             if label == TONGUE_CLASS:
-                axes[i].text(30, curr_y, f'tongue (P={prob:.2f})', color='green')
+                axes[i].text(30, curr_y, f'tongue (P={prob:.2f})', color='green', fontsize=14)
             else:
-                axes[i].text(30, curr_y, f'P={prob:.7f}', color='orange')
+                axes[i].text(30, curr_y, f'P={prob:.3f}', color='orange')
             curr_y += 70
             if frame_id == ld.strike_frame_id:
                 axes[i].text(30, curr_y, 'Strike Frame', color='red')
@@ -93,27 +86,48 @@ class TongueOutAnalyzer(Predictor):
     def push_to_predictions_stack(self, label, timestamp):
         self.predictions_stack.append((label, timestamp))
         for lbl, ts in self.predictions_stack.copy():
-            if timestamp - ts > PREDICTION_STACK_DURATION:
+            if timestamp - ts > self.pred_config['prediction_stack_duration']:
                 self.predictions_stack.remove((lbl, ts))
 
     def tongue_detected(self, frame: np.ndarray, timestamp: float):
         self.last_tongue_detect_timestamp = timestamp
         is_action = False
         # detect only if are enough tongue predictions in predictions stack and action timeout reached
-        if (sum([x[0] == TONGUE_CLASS for x in self.predictions_stack]) >= NUM_TONGUES_IN_STACK) and \
-                (not self.last_action_timestamp or timestamp - self.last_action_timestamp > TONGUE_ACTION_TIMEOUT):
+        if (sum([x[0] == TONGUE_CLASS for x in self.predictions_stack]) >= self.pred_config['num_tongues_in_stack']) \
+                and (not self.last_action_timestamp or
+                     timestamp - self.last_action_timestamp > self.pred_config['tongue_action_timeout']):
             is_action = True
             self.last_action_timestamp = timestamp
             self.write_detected_frame(frame, timestamp)
         return is_action
 
+    @run_in_thread
     def write_detected_frame(self, frame, timestamp):
         if not self.is_write_detected_image:
             return
         if self.last_predicted_frame is None or np.mean(np.abs(frame - self.last_predicted_frame)) > 15:
             self.last_predicted_frame = frame.copy()
             filename = f'{self.identifier}_{round(timestamp)}' if self.identifier else f'{round(timestamp)}'
-            cv2.imwrite(f'{TONGUE_PREDICTED_DIR}/{filename}.jpg', frame)
+            cv2.imwrite(f'{self.pred_config["save_predicted_path"]}/{filename}.jpg', frame)
+
+    def check_pred_config(self):
+        checks = {
+            'model_path': 'path',
+            'dataset_path': 'path',
+            'save_predicted_path': 'path',
+            'threshold': float,
+            'image_size': list,
+            'prediction_stack_duration': float,
+            'tongue_action_timeout': int,
+            'num_tongues_in_stack': int
+        }
+        for name, chk in checks.items():
+            assert name in self.pred_config, f'you must add "{name}" to tongue_out predict_config'
+            if chk == 'path':
+                assert isinstance(self.pred_config[name], str), f'{name} in tongue_out predict_config must be string'
+                assert Path(self.pred_config[name]).exists(), f'path of {name} in tongue_out predict_config does not exist'
+            else:
+                assert isinstance(self.pred_config[name], chk), f'{name} in tongue_out predict_config must be {chk}'
 
 
 class TongueModel(nn.Module):
@@ -139,20 +153,10 @@ class TongueModel(nn.Module):
         return x
 
 
-def crop_transform(img):
-    if isinstance(img, np.ndarray):
-        h, w = img.shape[:2]
-    elif isinstance(img, torch.Tensor):
-        h, w = img.shape[1:]
-    else:
-        w, h = img.size[:2]
-    w0 = (w // 2) - (CROPPED_SHAPE[1] // 2)
-    return crop(img, h - CROPPED_SHAPE[0], w0, CROPPED_SHAPE[0], CROPPED_SHAPE[1])
-
-
 @dataclass
 class TongueTrainer(ClassificationTrainer):
-    cropped_shape: tuple = CROPPED_SHAPE
+    cropped_shape: tuple = (550, 1000)
+    dataset_path: str = '/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset'
     batch_size = 16
     num_epochs = 30
     targets = ['no_tongues', 'tongues']
@@ -161,11 +165,11 @@ class TongueTrainer(ClassificationTrainer):
     def get_dataset(self):
         transforms = [
             Grayscale(),
-            Lambda(crop_transform),
+            Lambda(self.crop_transform),
             ToTensor(),
             Normalize((0.5,), (0.5,))
         ]
-        dataset = ImageFolder(DATASET_PATH.as_posix(), transform=Compose(transforms))
+        dataset = ImageFolder(self.dataset_path, transform=Compose(transforms))
         info = pd.Series(dataset.targets).value_counts().rename({i: v for i, v in enumerate(self.targets)}).to_dict()
         print(f'Loaded tongue dataset with: {info}')
         return dataset
@@ -178,7 +182,7 @@ class TongueTrainer(ClassificationTrainer):
         self.model.eval()
         img_tensor = Compose([
             ToPILImage(),
-            Lambda(crop_transform),
+            Lambda(self.crop_transform),
             Grayscale(),
             ToTensor(),
         ])(frame).to(self.device)
@@ -194,8 +198,18 @@ class TongueTrainer(ClassificationTrainer):
         prob = y_score.item()
         return label, prob
 
+    def crop_transform(self, img):
+        if isinstance(img, np.ndarray):
+            h, w = img.shape[:2]
+        elif isinstance(img, torch.Tensor):
+            h, w = img.shape[1:]
+        else:
+            w, h = img.size[:2]
+        w0 = (w // 2) - (self.cropped_shape[1] // 2)
+        return crop(img, h - self.cropped_shape[0], w0, self.cropped_shape[0], self.cropped_shape[1])
 
-def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, min_dist=15, is_delete=False):
+
+def check_dataset(input_dir, is_load=True, min_dist=15, is_delete=False):
     images = []
     input_dir = Path(input_dir)
     img_files = list(input_dir.glob('*.jpg'))
@@ -260,8 +274,8 @@ def check_dataset(input_dir=TONGUE_PREDICTED_DIR, is_load=True, min_dist=15, is_
         groups.append(g)
 
 
-def clean_wrong_size_images():
-    input_dir = Path(DATASET_PATH)
+def clean_wrong_size_images(dataset_path):
+    input_dir = Path(dataset_path)
     img_files = list(input_dir.rglob('*.jpg'))
     for p in img_files:
         img = cv2.imread(p.as_posix(), 0)
@@ -282,15 +296,8 @@ if __name__ == '__main__':
 
     # TongueTrainer().train(is_plot=True, is_save=True)
 
-    # toa = TongueOutAnalyzer()
-    # for p in Path('/media/sil2/Data/regev/tongue_out/examples/').glob('*.jpg'):
-    #     img = cv2.imread(p.as_posix())
-    #     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #     print(toa.tr.predict(img))
-    # print(f'CUDA version: {torch.version.cuda}')
     toa = TongueOutAnalyzer()
-    for i in np.random.choice(np.arange(20, 160), 20):
-        toa.predict_strike(int(i), save_frames_above=0.6)
+    toa.predict_strike(8432, save_frames_above=0.5)
 
     # tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
     # tr.all_data_evaluation()

@@ -386,12 +386,12 @@ class Block:
 
     def end_block(self):
         self.cache.delete(cc.EXPERIMENT_BLOCK_ID)
-        self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         for cam_name in self.cameras.keys():
             self.cache.set_cam_output_dir(cam_name, '')
         self.hold_triggers()
         time.sleep(8)
         self.turn_cameras('off')
+        self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         if self.is_continuous_blank:
             self.cache.delete(cc.IS_BLANK_CONTINUOUS_RECORDING)
 
