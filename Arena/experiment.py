@@ -490,6 +490,8 @@ class Block:
         next(run_command(cmd))
 
     def hold_triggers(self):
+        if not config.IS_HOLD_TRIGGERS:
+            return
         try:
             self.logger.info(f'holding triggers for {config.HOLD_TRIGGERS_TIME} sec')
             self.cache.set(cc.CAM_TRIGGER_DISABLE, True, timeout=self.block_duration)

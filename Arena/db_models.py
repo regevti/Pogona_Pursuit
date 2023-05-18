@@ -1,5 +1,7 @@
 import json
 import sys
+import time
+
 from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
@@ -183,6 +185,7 @@ class Strike(Base):
     trial_id = Column(Integer, ForeignKey('trials.id'), nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
     dwh_key = Column(Integer, nullable=True)
+    analysis_error = Column(String, nullable=True)
 
 
 class Video(Base):
@@ -527,13 +530,13 @@ class DWH:
         self.dwh_session = sessionmaker(bind=create_engine(config.DWH_URL))
         self.keys_table = {}
 
-    def commit(self):
+    def commit(self, n_retries_dwh=3):
         self.logger.info('start DWH commit')
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
                 for model in self.commit_models:
                     recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
-                    for rec in recs:
+                    for rec in tqdm(recs, desc=model.__name__):
                         kwargs = {}
                         for c in model.__table__.columns:
                             if c.name in ['id']:
@@ -541,13 +544,24 @@ class DWH:
                             value = getattr(rec, c.name)
                             if c.foreign_keys:
                                 fk = list(c.foreign_keys)[0]
-                                kwargs[c.name] = self.keys_table.get(fk.column.table.name, {})[value] if value else None
+                                dwh_fk = self.keys_table.get(fk.column.table.name, {}).get(value)
+                                if value and not dwh_fk:
+                                    # this happened probably due to previously failed runs of DWH commit
+                                    dwh_fk = self.get_prev_committed_dwh_fk(local_s, value, fk.column.table)
+                                kwargs[c.name] = dwh_fk if value else None
                             else:
                                 kwargs[c.name] = value
 
                         r = model(**kwargs)
                         dwh_s.add(r)
-                        dwh_s.commit()
+                        for i in range(n_retries_dwh):
+                            try:
+                                dwh_s.commit()
+                            except Exception:
+                                self.logger.info(f'Failed committing data to DWH; retry {i+1}/{n_retries_dwh}')
+                                time.sleep(2)
+                            else:
+                                break
                         self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
                         rec.dwh_key = r.id
                         local_s.commit()
@@ -566,13 +580,21 @@ class DWH:
                     dwh_s.commit()
                 print(f'Finished updating columns={columns} for {model.__name__}; Total rows updated: {len(recs)}')
 
+    @staticmethod
+    def get_prev_committed_dwh_fk(s, local_fk, table):
+        try:
+            return s.query(table).filter_by(id=local_fk).first().dwh_key
+        except Exception:
+            return
+
 
 def get_engine():
     return create_engine(config.sqlalchemy_url)
 
 
 if __name__ == '__main__':
-    DWH().update_model(Strike, ['prediction_distance', 'calc_speed'])
+    DWH().commit()
+    # DWH().update_model(Strike, ['prediction_distance', 'calc_speed'])
     sys.exit(0)
 
     # create all models

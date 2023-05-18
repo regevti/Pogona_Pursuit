@@ -257,8 +257,9 @@ class StrikeAnalyzer:
 
     @cached_property
     def relevant_frames(self):
-        return np.arange(self.time_zero_frame - self.loader.n_frames_back,
+        frames_ids = np.arange(self.time_zero_frame - self.loader.n_frames_back,
                          self.time_zero_frame + self.loader.n_frames_forward + 1)
+        return [i for i in frames_ids if i in self.pose_df.index]
 
     @cached_property
     def proj_strike_pos(self):
@@ -284,7 +285,10 @@ class StrikeAnalyzer:
 
     def project_strike_coordinates(self, leap_pos):
         """Project bug trajectory space to the vector spanned from bug position at leap to bug position at strike"""
-        bug_pos = self.get_bug_pos_at_frame(self.calc_strike_frame).flatten()
+        bug_pos = self.get_bug_pos_at_frame(self.calc_strike_frame)
+        if bug_pos is None:
+            return None, None
+        bug_pos = bug_pos.flatten()
         strike_pos = np.array([self.payload['x'], self.payload['y']])
         u = bug_pos - leap_pos
         xr = np.array([1, 0])
@@ -508,26 +512,6 @@ def delete_duplicate_strikes(animal_id):
         s.commit()
 
 
-def load_strikes(animal_id, start_time=None, movement_type=None, is_skip_committed=False):
-    orm = ORM()
-    strikes_ids = []
-    with orm.session() as s:
-        exps = s.query(Experiment)
-        if animal_id:
-            exps = exps.filter_by(animal_id=animal_id)
-        if start_time:
-            exps = exps.filter(Experiment.start_time >= start_time)
-        for exp in exps.all():
-            for blk in exp.blocks:
-                if movement_type and blk.movement_type != movement_type:
-                    continue
-                for strk in blk.strikes:
-                    if strk.is_climbing or (is_skip_committed and strk.calc_speed):
-                        continue
-                    strikes_ids.append(strk.id)
-    return strikes_ids
-
-
 def play_strikes(animal_id, start_time=None, cam_name='front', is_load_pose=True, strikes_ids=None):
     if not strikes_ids:
         strikes_ids = load_strikes(animal_id, start_time)
@@ -539,45 +523,102 @@ def play_strikes(animal_id, start_time=None, cam_name='front', is_load_pose=True
             print(f'ERROR strike_id={sid}: {exc}')
 
 
-def analyze_strikes(animal_id=None, cam_name='front', start_time=None, strike_id=None, movement_type=None,
-                    is_plot_summary=True, is_skip_committed=True, logger=None):
-    print_func = print if logger is None else logger.info
-    if strike_id:
-        strikes_ids = [strike_id]
-    else:
-        strikes_ids = load_strikes(animal_id, start_time=start_time, movement_type=movement_type,
-                                   is_skip_committed=is_skip_committed)
-        strikes_ids = sorted(strikes_ids)
+class StrikeScanner:
+    def __init__(self, logger=None, animal_id=None, cam_name='front', is_skip_committed=True,
+                 start_time=None, strike_id=None, movement_type=None, is_plot_summary=False):
+        """ Scan and analyze strikes.
+        @param logger: external logger to be used. If none this class uses the print function
+        @param animal_id: scan only for specified animal_id. If none, scan all animals.
+        @param cam_name: cam to use for analysis. Default is front
+        @param is_skip_committed: skip already analyzed strikes.
+        @param start_time: The start time for the strikes scan. If none, scan all.
+        @param strike_id: Limit the scan to specified strikes IDs.
+        @param movement_type: Use only strikes from blocks with a specific movement type. If none, use all.
+        @param is_plot_summary: Plot a pdf summary of the analysis to output_dir
+        """
+        self.animal_id = animal_id
+        self.cam_name = cam_name
+        self.logger = logger
+        self.start_time = start_time
+        self.strike_id = strike_id
+        self.movement_type = movement_type
+        self.is_plot_summary = is_plot_summary
+        self.is_skip_committed = is_skip_committed
+        self.orm = ORM()
+        self.output_dir.mkdir(exist_ok=True, parents=True)
 
-    output_dir = Path(f'{config.OUTPUT_DIR}/strike_analysis/{animal_id}')
-    output_dir.mkdir(exist_ok=True, parents=True)
-    orm = ORM()
-    n_committed = 0
-    for sid in tqdm(strikes_ids, desc='loading strikes'):
-        try:
-            ld = Loader(sid, cam_name, is_debug=False, orm=orm)
-            sa = StrikeAnalyzer(ld)
-            if is_plot_summary:
-                sa.plot_strike_analysis(only_save_to=output_dir.as_posix())
-
-            with orm.session() as s:
-                strk = s.query(Strike).filter_by(id=sid).first()
-                strk.prediction_distance = sa.prediction_distance
-                strk.calc_speed = sa.bug_speed
-                if sa.proj_strike_pos is not None:
-                    strk.projected_strike_coords = sa.proj_strike_pos.tolist()
-                if sa.proj_leap_pos is not None:
-                    strk.projected_leap_coords = sa.proj_leap_pos.tolist()
-                strk.max_acceleration = sa.max_acceleration
-                s.commit()
+    def scan(self):
+        strikes_ids = self.load_strikes_ids()
+        if not strikes_ids:
+            return
+        n_committed = 0
+        errors = []
+        for sid in tqdm(strikes_ids, desc='Strikes Scan'):
+            try:
+                ld = Loader(sid, self.cam_name, is_debug=False, orm=self.orm)
+                sa = StrikeAnalyzer(ld)
+                if self.is_plot_summary:
+                    sa.plot_strike_analysis(only_save_to=self.output_dir.as_posix())
+                self.commit_strike_analysis(sid, sa)
                 n_committed += 1
 
-        except MissingStrikeData as exc:
-            print_func(f'Strike-{sid}: Missing strike data; {exc}')
-        except Exception as exc:
-            print_func(f'Strike-{sid}: {exc}\n{traceback.format_exc()}\n')
+            except MissingStrikeData as exc:
+                self.commit_analysis_error(sid, str(exc))
+                errors.append(f'Strike-{sid}: Missing strike data; {exc}')
+            except Exception as exc:
+                self.commit_analysis_error(sid, str(exc))
+                errors.append(f'Strike-{sid}: {exc}\n{traceback.format_exc()}\n')
 
-    print_func(f'Finished analyze_strikes; analyzed and committed {n_committed} strikes')
+        if errors:
+            errors = "\n".join(errors)
+            self.print(f'Errors in the analysis:\n{errors}')
+        if n_committed:
+            self.print(f'Finished analyze_strikes; analyzed and committed {n_committed} strikes')
+
+    def load_strikes_ids(self):
+        strikes_ids = []
+        with self.orm.session() as s:
+            exps = s.query(Experiment)
+            if self.animal_id:
+                exps = exps.filter_by(animal_id=self.animal_id)
+            if self.start_time:
+                exps = exps.filter(Experiment.start_time >= self.start_time)
+            for exp in exps.all():
+                for blk in exp.blocks:
+                    if self.movement_type and blk.movement_type != self.movement_type:
+                        continue
+                    for strk in blk.strikes:
+                        if strk.is_climbing or (self.is_skip_committed and (strk.calc_speed or strk.analysis_error)):
+                            continue
+                        strikes_ids.append(strk.id)
+        return sorted(strikes_ids)
+
+    def commit_strike_analysis(self, sid: int, sa: StrikeAnalyzer):
+        """commit strike analysis to Strike table in the DB"""
+        with self.orm.session() as s:
+            strk = s.query(Strike).filter_by(id=sid).first()
+            strk.prediction_distance = sa.prediction_distance
+            strk.calc_speed = sa.bug_speed
+            if sa.proj_strike_pos is not None:
+                strk.projected_strike_coords = sa.proj_strike_pos.tolist()
+            if sa.proj_leap_pos is not None:
+                strk.projected_leap_coords = sa.proj_leap_pos.tolist()
+            strk.max_acceleration = sa.max_acceleration
+            s.commit()
+
+    def commit_analysis_error(self, sid, error_msg):
+        with self.orm.session() as s:
+            strk = s.query(Strike).filter_by(id=sid).first()
+            strk.analysis_error = error_msg
+            s.commit()
+
+    def print(self, msg):
+        print_func = print if self.logger is None else self.logger.info
+        print_func(msg)
+
+    @property
+    def output_dir(self):
+        return Path(f'{config.OUTPUT_DIR}/strike_analysis/{self.animal_id}')
 
 
 def extract_bad_annotated_strike_frames(animal_id, cam_name='front', strike_id=None, n=6, extra=30, **kwargs):
@@ -612,7 +653,7 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    analyze_strikes()
+    StrikeScanner().scan()
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
     # foo()
