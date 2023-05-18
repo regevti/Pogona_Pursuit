@@ -194,7 +194,8 @@ def scan_cameras(is_print=True) -> pd.DataFrame:
             print(f'Unable to load camera; {exc}')
 
     df = pd.DataFrame(df, index=cam_names)
-    del cam, sc
+    if len(cam_list) > 0:
+        del cam, sc
     if is_print:
         output = f'\nCameras Info:\n\n{df.to_string()}\n'
         print(output)
