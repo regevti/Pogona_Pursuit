@@ -1,5 +1,7 @@
 import json
 import sys
+import time
+
 from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
@@ -528,7 +530,7 @@ class DWH:
         self.dwh_session = sessionmaker(bind=create_engine(config.DWH_URL))
         self.keys_table = {}
 
-    def commit(self):
+    def commit(self, n_retries_dwh=3):
         self.logger.info('start DWH commit')
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
@@ -542,13 +544,24 @@ class DWH:
                             value = getattr(rec, c.name)
                             if c.foreign_keys:
                                 fk = list(c.foreign_keys)[0]
-                                kwargs[c.name] = self.keys_table.get(fk.column.table.name, {})[value] if value else None
+                                dwh_fk = self.keys_table.get(fk.column.table.name, {}).get(value)
+                                if value and not dwh_fk:
+                                    # this happened probably due to previously failed runs of DWH commit
+                                    dwh_fk = self.get_prev_committed_dwh_fk(local_s, value, fk.column.table)
+                                kwargs[c.name] = dwh_fk if value else None
                             else:
                                 kwargs[c.name] = value
 
                         r = model(**kwargs)
                         dwh_s.add(r)
-                        dwh_s.commit()
+                        for i in range(n_retries_dwh):
+                            try:
+                                dwh_s.commit()
+                            except Exception:
+                                self.logger.info(f'Failed committing data to DWH; retry {i+1}/{n_retries_dwh}')
+                                time.sleep(2)
+                            else:
+                                break
                         self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
                         rec.dwh_key = r.id
                         local_s.commit()
@@ -566,6 +579,13 @@ class DWH:
                         setattr(dwh_rec, c, getattr(rec, c))
                     dwh_s.commit()
                 print(f'Finished updating columns={columns} for {model.__name__}; Total rows updated: {len(recs)}')
+
+    @staticmethod
+    def get_prev_committed_dwh_fk(s, local_fk, table):
+        try:
+            return s.query(table).filter_by(id=local_fk).first().dwh_key
+        except Exception:
+            return
 
 
 def get_engine():

@@ -2,8 +2,8 @@ import cv2
 import shutil
 import numpy as np
 import pandas as pd
-from datetime import datetime
-
+import matplotlib
+matplotlib.use('TkAgg')
 import torch
 from tqdm.auto import tqdm
 from dataclasses import dataclass
@@ -27,7 +27,7 @@ from analysis.pose_utils import put_text
 
 DATASET_PATH = Path('/data/Pogona_Pursuit/output/datasets/pogona_tongue/dataset')
 TONGUE_PREDICTED_DIR = '/data/Pogona_Pursuit/output/datasets/pogona_tongue/predicted/tongues'
-CROPPED_SHAPE = (480, 850)
+CROPPED_SHAPE = (550, 1000)
 TONGUE_CLASS = 'tongues'
 PREDICTION_STACK_DURATION = 0.25  # sec
 TONGUE_ACTION_TIMEOUT = 1  # sec
@@ -83,7 +83,7 @@ class TongueOutAnalyzer(Predictor):
             if label == TONGUE_CLASS:
                 axes[i].text(30, curr_y, f'tongue (P={prob:.2f})', color='green')
             else:
-                axes[i].text(30, curr_y, f'P={prob:.3f}', color='orange')
+                axes[i].text(30, curr_y, f'P={prob:.7f}', color='orange')
             curr_y += 70
             if frame_id == ld.strike_frame_id:
                 axes[i].text(30, curr_y, 'Strike Frame', color='red')
@@ -282,8 +282,15 @@ if __name__ == '__main__':
 
     # TongueTrainer().train(is_plot=True, is_save=True)
 
+    # toa = TongueOutAnalyzer()
+    # for p in Path('/media/sil2/Data/regev/tongue_out/examples/').glob('*.jpg'):
+    #     img = cv2.imread(p.as_posix())
+    #     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    #     print(toa.tr.predict(img))
+    # print(f'CUDA version: {torch.version.cuda}')
     toa = TongueOutAnalyzer()
-    toa.predict_strike(8432, save_frames_above=0.5)
+    for i in np.random.choice(np.arange(20, 160), 20):
+        toa.predict_strike(int(i), save_frames_above=0.6)
 
     # tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
     # tr.all_data_evaluation()
