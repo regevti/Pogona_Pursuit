@@ -204,7 +204,7 @@ export default {
       this.y += this.dy
     },
     jump() {
-      if (!this.isJumpUpMovement) {
+      if (!this.isJumpUpMovement || this.isDead) {
         return
       }
       this.y -= this.jump_distance

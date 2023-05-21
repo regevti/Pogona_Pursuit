@@ -8,7 +8,7 @@ from pathlib import Path
 from arena import ImageHandler, QueueException
 from cache import RedisCache, CacheColumns as cc
 from utils import run_in_thread
-from analysis.predictors.tongue_out import TongueOutAnalyzer, TONGUE_CLASS, TONGUE_PREDICTED_DIR
+from analysis.predictors.tongue_out import TongueOutAnalyzer, TONGUE_CLASS
 from analysis.pose import ArenaPose
 
 
