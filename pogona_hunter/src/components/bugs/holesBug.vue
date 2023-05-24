@@ -85,11 +85,8 @@ export default {
       this.frameCounter++
       this.edgeDetection()
       this.checkHoleRetreat()
-      // half-circle
-      if (this.isHalfCircleMovement) {
-        this.circularMove()
       // circle
-      } else if (this.isMoveInCircles && !this.isHoleRetreatStarted) {
+      if (this.isHalfCircleMovement || (this.isMoveInCircles && !this.isHoleRetreatStarted)) {
         this.circularMove()
       // low horizontal noise
       } else if (this.isNoisyLowHorizontalMovement) {
@@ -100,7 +97,11 @@ export default {
           this.straightMove(0)
         }
       // low horizontal
-      } else if (this.isLowHorizontalMovement || this.isJumpUpMovement) {
+      } else if (this.isLowHorizontalMovement) {
+        this.straightMove(0)
+      // jump up
+      } else if (this.isJumpUpMovement) {
+        this.checkJumpTrack()
         this.straightMove(0)
       // random
       } else {
@@ -160,6 +161,7 @@ export default {
       this.isCircleTrackReached = true
       this.lowHorizontalNoiseStart = (this.x + this.xTarget) / 2
       this.isNoisyPartReached = false
+      this.isJumped = false
       this.frameCounter = 0
       switch (this.bugsSettings.movementType) {
         case 'circle':
@@ -207,7 +209,13 @@ export default {
       if (!this.isJumpUpMovement || this.isDead) {
         return
       }
-      this.y -= this.jump_distance
+      let newY = this.y - this.jump_distance
+      if (newY < this.upper_edge) {
+        newY = this.upper_edge + 1
+      }
+      this.y = newY
+      this.isJumped = true
+      this.setNextAngle(Math.PI / 2) // set direction towards the bottom
     },
     isInsideHoleBoundaries() {
       return this.isInsideEntranceHoleBoundaries() || this.isInsideExitHoleBoundaries()
@@ -252,6 +260,12 @@ export default {
          ((this.exitHolePos[0] < this.lowHorizontalNoiseStart) && (this.x < this.exitHolePos[0] + 10))) {
         this.isNoisyPartReached = false
         this.startRetreat()
+      }
+    },
+    checkJumpTrack() {
+      if (this.isJumped && this.y >= this.exitHolePos[1] + (this.currentBugSize / 2)) {
+        this.isJumped = false
+        this.setNextAngle(this.directionAngle)
       }
     }
   }

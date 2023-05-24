@@ -96,7 +96,9 @@ export default {
     this.ctx = this.canvas.getContext('2d')
     this.initBoard()
     window.addEventListener('keypress', e => {
-      this.startBugsEscape(e.code)
+      if (e.code === 'KeyJ') {
+        this.jumpBugs()
+      }
     })
   },
   computed: {
