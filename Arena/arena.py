@@ -173,6 +173,8 @@ class ImageSink(ArenaProcess):
                 self.stop_signal.set()
                 break
 
+        if self.video_out is not None:
+            self.close_video_out()
         self.logger.debug('sink stopped')
 
     def write_to_shm(self, frame, timestamp):
@@ -212,7 +214,7 @@ class ImageSink(ArenaProcess):
                (self.cam_config.get('rec_time') and rec_time >= int(self.cam_config['rec_time'])):
             cache.set_cam_output_dir(self.cam_name, '')
         # check if video exceeds maximum video duration
-        if config.max_video_time_sec and rec_time > config.max_video_time_sec:
+        if config.MAX_VIDEO_TIME_SEC and rec_time > config.MAX_VIDEO_TIME_SEC:
             self.close_video_out()
 
     def start_writing_thread(self):
@@ -233,10 +235,10 @@ class ImageSink(ArenaProcess):
     def init_video_out(self, frame):
         self.write_output_dir = self.cam_config[config.output_dir_key]
         is_color = self.cam_config.get('is_color', False)
-        if not cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING):
-            self.video_out = OpenCVWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
-        else:
+        if cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.cam_config.get('mode') == 'tracking':
             self.video_out = ImageIOWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
+        else:
+            self.video_out = OpenCVWriter(frame, self.writing_fps, self.write_output_dir, self.cam_name, is_color)
         self.video_path = self.video_out.video_path
         self.logger.info(f'start video writing to {self.video_path} frame size: {frame.shape}')
         self.db_video_id = self.orm.commit_video(path=self.video_path, fps=self.writing_fps,
@@ -307,6 +309,9 @@ class ImageHandler(ArenaProcess):
         finally:
             self.logger.info('Process is down')
 
+    def is_on(self):
+        return self.mp_metadata['is_pred_on'].is_set()
+
 
 class CameraUnit:
 
@@ -331,6 +336,7 @@ class CameraUnit:
             'cam_fps': mp.Value('d', 0.0),
             'sink_fps': mp.Value('d', 0.0),
             'pred_fps': mp.Value('d', 0.0),
+            'is_pred_on': mp.Event(),
             'shm_frame_timestamp': mp.Value('d', 0.0),
             'db_video_id': mp.Value('i', 0),
             'pred_delay': mp.Value('d', 0.0),

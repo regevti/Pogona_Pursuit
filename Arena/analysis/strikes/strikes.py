@@ -653,7 +653,7 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    StrikeScanner().scan()
+    StrikeScanner(is_skip_committed=False).scan()
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
     # foo()

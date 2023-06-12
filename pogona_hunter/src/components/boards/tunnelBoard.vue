@@ -32,13 +32,13 @@ export default {
       return 500
     },
     tunnelWidth() {
-      return 200
+      return 400
     }
   },
   methods: {
     initDrawing() {
       let canvas = document.getElementById('tunnelCanvas')
-      canvas.style.left = `${(this.canvas.width / 2) - this.tunnelWidth}px`
+      canvas.style.left = `${(this.canvas.width / 2) - (this.tunnelWidth / 2)}px`
       canvas.style.top = `${this.canvas.height / 2 - this.tunnelHeight / 2}px`
       let ctx = canvas.getContext('2d')
       ctx.fillStyle = this.bugsSettings.backgroundColor

@@ -236,7 +236,7 @@ class Experiment:
 
     @property
     def experiment_path(self):
-        return f'{config.EXPERIMENTS_DIR}/{self.animal_id}/{self.day}'
+        return utils.get_todays_experiment_dir(self.animal_id)
 
     @property
     def experiment_duration(self):
@@ -416,14 +416,32 @@ class Block:
                     cu.start(is_experiment=True, movement_type=self.movement_type)
                 else:
                     cu.reload_predictors(is_experiment=True, movement_type=self.movement_type)
-            else:
+            else:  # required_state == 'off'
                 cu.reload_predictors(is_experiment=False, movement_type=self.movement_type)
 
         t0 = time.time()
-        # wait maximum 30 seconds for cameras to finish start / stop
+        # wait maximum 30 seconds for cameras to finish start / stop and predictors to initiate
         while any(cu.is_starting or cu.is_stopping for cu in self.cam_units.values()) and \
                 (time.time() - t0 < 30):
             time.sleep(0.1)
+
+        if required_state == 'on':  # check predictors are up
+            for cam_name, cu in self.cam_units.items():
+                exp_predictors = [pr_name for pr_name, pr_dict in cu.get_conf_predictors().items()
+                                  if pr_dict.get('mode') == 'experiment' and self.movement_type in pr_dict.get('movement_type', [])]
+                for ep in exp_predictors:
+                    is_on = False
+                    t0 = time.time()
+                    while time.time() - t0 < 30:
+                        if ep in cu.processes and cu.processes[ep].is_on():
+                            is_on = True
+                            break
+                    if not is_on:
+                        msg = f'Aborting experiment since predictor {ep} is not alive and is configured for camera {cam_name}'
+                        utils.send_telegram_message(msg)
+                        self.logger.error(msg)
+                        raise EndExperimentException()
+            self.logger.info('finished cameras initialization for experiment')
 
     def start_trial(self, trial_id):
         trial_db_id = self.orm.commit_trial({

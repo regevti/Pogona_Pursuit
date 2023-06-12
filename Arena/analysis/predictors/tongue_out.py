@@ -118,7 +118,7 @@ class TongueOutAnalyzer(Predictor):
             'threshold': float,
             'image_size': list,
             'prediction_stack_duration': float,
-            'tongue_action_timeout': int,
+            'tongue_action_timeout': float,
             'num_tongues_in_stack': int
         }
         for name, chk in checks.items():
@@ -297,7 +297,7 @@ if __name__ == '__main__':
     # TongueTrainer().train(is_plot=True, is_save=True)
 
     toa = TongueOutAnalyzer()
-    toa.predict_strike(8432, save_frames_above=0.5)
+    # toa.predict_strike(150, save_frames_above=0.5)
 
     # tr = TongueTrainer(model_path=MODEL_PATH, threshold=0.5)
     # tr.all_data_evaluation()

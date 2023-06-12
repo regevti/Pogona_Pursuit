@@ -38,7 +38,8 @@ experiment_metrics = {
     'trial_data': {
         'is_write_csv': True,
         'is_write_db': True,
-        'csv_file': {'bug_trajectory': 'bug_trajectory.csv', 'video_frames': 'video_frames.csv'},
+        'csv_file': {'bug_trajectory': 'bug_trajectory.csv', 'video_frames': 'video_frames.csv',
+                     'app_events': 'app_events.csv'},
         'is_overall_experiment': False
     }
 }
@@ -95,15 +96,18 @@ QUEUE_WAIT_TIME = env.int('QUEUE_WAIT_TIME', 2)
 SINK_QUEUE_TIMEOUT = env.int('SINK_QUEUE_TIMEOUT', 2)
 VIDEO_WRITER_FORMAT = env('VIDEO_WRITER_FORMAT', 'MJPG')
 DEFAULT_EXPOSURE = env.int('DEFAULT_EXPOSURE', 5000)
-camera_on_min_duration = env('camera_on_min_duration', 10*60)
 ARENA_DISPLAY = env('ARENA_DISPLAY', ':0')
 output_dir_key = 'output_dir'  # used for cam_config
 pixels2cm = 0.01833304668870419
 temperature_logging_delay_sec = env.int('temperature_logging_delay_sec', 5)
-max_video_time_sec = env.int('max_video_time_sec', 60*10)
+MAX_VIDEO_TIME_SEC = env.int('MAX_VIDEO_TIME_SEC', 60 * 10)
+# the following is used by the scheduler and set the duration (seconds) in which 'manual' mode cameras would stay on.
+# or for any type of camera this would set the duration it stays on outside of camera_on time.
+camera_on_min_duration = env.float('camera_on_min_duration', 10*60)
 OUTPUT_DIR = env('OUTPUT_DIR', '/data/Pogona_Pursuit/output')
 recordings_output_dir = env('recordings_output_dir', f'{OUTPUT_DIR}/recordings')
 capture_images_dir = env('capture_images_dir', f'{OUTPUT_DIR}/captures')
+IS_TRACKING_CAMERAS_ALLOWED = env.bool('IS_TRACKING_CAMERAS_ALLOWED', False)
 
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False)
@@ -143,6 +147,7 @@ IR_LIGHT_NAME = env('IR_LIGHT_NAME', '')
 DAY_LIGHT_NAME = env('DAY_LIGHT_NAME', '')
 SCHEDULE_EXPERIMENTS_END_TIME = env('SCHEDULE_EXPERIMENTS_END_TIME', '19:00')
 IS_COMMIT_TO_DWH = env.bool('IS_COMMIT_TO_DWH', True)
+DWH_N_TRIES = env.int('DWH_N_TRIES', 5)
 
 # Experiments
 EXPERIMENTS_DIR = env('EXPERIMENTS_DIR', f"{OUTPUT_DIR}/experiments")

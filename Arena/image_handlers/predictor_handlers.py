@@ -59,6 +59,8 @@ class PredictHandler(ImageHandler):
                 self.last_timestamp = timestamp
         finally:
             self.on_stop()
+            if self.mp_metadata['is_pred_on'].is_set():
+                self.mp_metadata['is_pred_on'].clear()
             self.mp_metadata[self.calc_fps_name].value = 0.0
             self.mp_metadata['pred_delay'].value = 0.0
             self.logger.info('predict loop is closed')
@@ -99,13 +101,14 @@ class TongueOutHandler(PredictHandler):
         self.analyzer = TongueOutAnalyzer(action_callback=self.publish_tongue_out)
         self.last_detected_ts = None
         self.frames_probas = []
+        self.mp_metadata['is_pred_on'].set()
 
     def __str__(self):
         return f'tongue-out-{self.cam_name}'
 
     def publish_tongue_out(self):
         self.cache.publish_command('strike_predicted')
-        self.logger.info('Tongue detected!')
+        # self.logger.info('Tongue detected!')
 
     def predict_frame(self, img, timestamp):
         is_tongue, resized_img, prob = self.analyzer.predict(img, timestamp)

@@ -104,6 +104,11 @@ def to_integer(x):
         return x
 
 
+def get_todays_experiment_dir(animal_id):
+    day = datetime.now().strftime('%Y%m%d')
+    return f'{config.EXPERIMENTS_DIR}/{animal_id}/{day}'
+
+
 class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super(AttrDict, self).__init__(*args, **kwargs)
@@ -307,7 +312,7 @@ def send_telegram_message(message: str):
         return
     headers = {'Content-Type': 'application/json'}
     data_dict = {'chat_id': config.TELEGRAM_CHAT_ID,
-                 'text': message,
+                 'text': f'({config.ARENA_NAME}): {message}',
                  'parse_mode': 'HTML',
                  'disable_notification': True}
     data = json.dumps(data_dict)

@@ -211,10 +211,10 @@ class TouchLogger(ExperimentLogger):
 
 class TrialDataLogger(ExperimentLogger):
     def save_to_csv(self, payload, filename=None):
-        for key in ['bug_trajectory', 'video_frames']:
+        for key, csv_path in self.config["csv_file"].items():
             payload_ = payload.get(key)
             if payload_:
-                super().save_to_csv(payload_, filename=self.config["csv_file"][key])
+                super().save_to_csv(payload_, filename=csv_path)
 
     def commit_to_db(self, payload):
         self.orm.update_trial_data(payload)

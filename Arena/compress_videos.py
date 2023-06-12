@@ -9,6 +9,8 @@ def get_videos_ids_for_compression(sort_by_size=False):
     videos = {}
     with orm.session() as s:
         for v in s.query(Video).filter(Video.compression_status < 1).all():
+            if 'tracking' in v.path:
+                continue
             videos[v.id] = v.path
     # get videos sizes
     if not sort_by_size:
@@ -95,8 +97,9 @@ def clear_missing_videos():
 
 
 if __name__ == "__main__":
-    vids, sizes_ = get_videos_ids_for_compression(return_sizes=True)
-    compress(vids[0])
+    vids = get_videos_ids_for_compression()
+    for vid in vids:
+        compress(vid)
     # main()
     # foo()
     # clear_missing_videos()

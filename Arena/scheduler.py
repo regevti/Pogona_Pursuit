@@ -12,10 +12,12 @@ from periphery_integration import PeripheryIntegrator
 from analysis.pose import predict_all_videos
 from analysis.strikes.strikes import StrikeScanner
 from db_models import DWH
+import utils
 
 env = config.env
 TIME_TABLE = {
     'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
+    'run_pose': (env('POSE_ON_TIME', '19:30'), env('POSE_OFF_TIME', '06:00')),
     'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
     'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
     'dwh_commit_time': env('DWH_COMMIT_TIME', '07:00'),
@@ -46,6 +48,7 @@ class Scheduler(threading.Thread):
         self.dlc_on = multiprocessing.Event()
         self.compress_threads = {}
         self.lights_state = 0  # 0 - off, 1 - on
+        self.dwh_commit_tries = 0
 
     def run(self):
         time.sleep(10)  # let all other arena processes and threads to start
@@ -56,6 +59,7 @@ class Scheduler(threading.Thread):
                 t0 = time.time()
                 self.check_lights()
                 self.check_camera_status()
+                self.set_tracking_cameras()
                 self.check_scheduled_experiments()
                 self.arena_mgr.update_upcoming_schedules()
                 self.analyze_strikes()
@@ -94,8 +98,18 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def dwh_commit(self):
-        if self.is_in_range('dwh_commit_time') and config.IS_COMMIT_TO_DWH:
-            DWH().commit()
+        if (self.is_in_range('dwh_commit_time') and config.IS_COMMIT_TO_DWH) or self.dwh_commit_tries > 0:
+            if self.dwh_commit_tries >= config.DWH_N_TRIES:
+                self.dwh_commit_tries = 0
+                utils.send_telegram_message(f'Commit to DWH failed after {config.DWH_N_TRIES} times')
+                return
+            try:
+                DWH().commit()
+            except Exception as exc:
+                self.dwh_commit_tries += 1
+                self.logger.error(f'Failed committing to DWH ({self.dwh_commit_tries}/{config.DWH_N_TRIES}): {exc}')
+            else:
+                self.dwh_commit_tries = 0
 
     @schedule_method
     def analyze_strikes(self):
@@ -114,7 +128,10 @@ class Scheduler(threading.Thread):
         else:
             raise Exception(f'bad value for {label}: {val}')
 
-        return ((now - start).total_seconds() >= 0) and ((now - end).total_seconds() <= 0)
+        if start > end:
+            return ((now - start).total_seconds() >= 0) or ((now - end).total_seconds() <= 0)
+        else:
+            return ((now - start).total_seconds() >= 0) and ((now - end).total_seconds() <= 0)
 
     @schedule_method
     def check_camera_status(self):
@@ -132,7 +149,7 @@ class Scheduler(threading.Thread):
                 self.stop_camera(cu)
             else:
                 # in active hours
-                if cu.cam_config.get('is_manual'):
+                if cu.cam_config.get('mode') == 'manual':
                     # camera will be stopped only if min_duration was reached
                     self.stop_camera(cu)
                 else:
@@ -157,6 +174,21 @@ class Scheduler(threading.Thread):
             self.logger.debug(f'starting CU {cu.cam_name}')
             cu.start()
             time.sleep(5)
+
+    @schedule_method
+    def set_tracking_cameras(self):
+        if not self.is_in_range('cameras_on') or not config.IS_TRACKING_CAMERAS_ALLOWED or \
+                cache.get(cc.IS_EXPERIMENT_CONTROL_CAMERAS):
+            return
+
+        for cam_name, cu in self.arena_mgr.units.copy().items():
+            if cu.is_starting or cu.is_stopping:
+                continue
+
+            if cu.cam_config.get('mode') == 'tracking':
+                tracking_output_path = utils.get_todays_experiment_dir(cache.get(cc.CURRENT_ANIMAL_ID)) + '/tracking'
+                utils.mkdir(tracking_output_path)
+                cache.set_cam_output_dir(cam_name, tracking_output_path)
 
     @schedule_method
     def compress_videos(self):
@@ -186,7 +218,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def run_pose(self):
-        if self.is_in_range('cameras_on') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
+        if not self.is_in_range('run_pose') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
             return
 

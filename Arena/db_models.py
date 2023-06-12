@@ -554,14 +554,7 @@ class DWH:
 
                         r = model(**kwargs)
                         dwh_s.add(r)
-                        for i in range(n_retries_dwh):
-                            try:
-                                dwh_s.commit()
-                            except Exception:
-                                self.logger.info(f'Failed committing data to DWH; retry {i+1}/{n_retries_dwh}')
-                                time.sleep(2)
-                            else:
-                                break
+                        dwh_s.commit()
                         self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
                         rec.dwh_key = r.id
                         local_s.commit()
@@ -594,7 +587,7 @@ def get_engine():
 
 if __name__ == '__main__':
     DWH().commit()
-    # DWH().update_model(Strike, ['prediction_distance', 'calc_speed'])
+    # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
     sys.exit(0)
 
     # create all models

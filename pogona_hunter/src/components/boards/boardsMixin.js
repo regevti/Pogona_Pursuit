@@ -34,6 +34,7 @@ export default {
         height: window.innerHeight
       },
       bugTrajectoryLog: [],
+      eventsLog: [],
       identifier: uuidv4()
     }
   },
@@ -72,6 +73,10 @@ export default {
       'cmd/visual_app/strike_predicted': (payload) => {
         console.log('received strike_predicted command')
         this.jumpBugs()
+        this.eventsLog.push({
+            time: Date.now(),
+            event: 'bug_jump'
+        })
       },
       'cmd/visual_app/reload_app': (payload) => {
         location.reload()
@@ -176,6 +181,10 @@ export default {
       this.touchesCounter++
       if (this.touchesCounter > 5 && !this.isClimbing) {
         console.log('climbing!')
+        this.eventsLog.push({
+            time: Date.now(),
+            event: 'climbing'
+        })
         this.isClimbing = true
         let climbingTimout = setTimeout(() => {
           this.isClimbing = false
@@ -252,7 +261,8 @@ export default {
         duration: (endTime - this.bugsSettings.trialStartTime) / 1000,
         end_time: endTime,
         bug_trajectory: this.bugTrajectoryLog,
-        video_frames: null
+        video_frames: null,
+        app_events: this.eventsLog
       }
       this.$socketClient.set('IS_VISUAL_APP_ON', 0)
       this.clearBoard()
