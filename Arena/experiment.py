@@ -60,6 +60,7 @@ class Experiment:
                              extra_time_recording=self.extra_time_recording, **kwargs)
                        for i, kwargs in zip(blocks_ids, self.blocks)]
         self.logger = get_logger('Experiment')
+        self.exp_validation = ExperimentValidation(logger=self.logger, cache=self.cache, orm=self.orm)
         self.threads = {}
         self.experiment_stop_flag = threading.Event()
         self.init_experiment_cache()
@@ -93,7 +94,7 @@ class Experiment:
             self.turn_screen('on', board=self.get_board())
             if not config.IS_CHECK_SCREEN_MAPPING:
                 # if you don't check the screen's mapping, map it again in each experiment
-                self.map_touchscreen_to_hdmi(is_display_on=True)
+                self.exp_validation.map_touchscreen_to_hdmi(is_display_on=True)
 
             try:
                 for i, block in enumerate(self.blocks):
@@ -108,7 +109,7 @@ class Experiment:
             self.orm.update_experiment_end_time()
             self.cache.publish_command('end_experiment')
 
-        if not self.is_ready_for_experiment():
+        if not self.exp_validation.is_ready():
             self.stop_experiment()
             return
         self.threads['experiment_stop'] = Subscriber(self.experiment_stop_flag,
@@ -118,78 +119,6 @@ class Experiment:
         self.threads['main'] = threading.Thread(target=_start)
         [t.start() for t in self.threads.values()]
         return str(self)
-
-    def is_ready_for_experiment(self):
-        checks = {
-            'websocket_server_on': self.is_websocket_server_on(),
-            'pogona_hunter_app_up': self.is_pogona_hunter_up(),
-            'reward_left': is_reward_left(self.cache),
-            'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi()
-        }
-        if all(checks.values()):
-            return True
-        else:
-            msg = f'Aborting experiment due to violation of {", ".join([k for k, v in checks.items() if not v])}.'
-            utils.send_telegram_message(msg)
-            self.logger.error(msg)
-
-    def is_websocket_server_on(self):
-        try:
-            ws = websocket.WebSocket()
-            ws.connect(config.websocket_url)
-            return True
-        except Exception:
-            self.logger.error(f'Websocket server on {config.websocket_url} is dead')
-
-    def is_pogona_hunter_up(self):
-        try:
-            res = requests.get(f'http://0.0.0.0:{config.POGONA_HUNTER_PORT}')
-            return res.ok
-        except Exception:
-            self.logger.error('pogona hunter app is down')
-
-    @staticmethod
-    def get_touchscreen_device_id():
-        touchscreen_device_id = get_hdmi_xinput_id()
-        if not touchscreen_device_id:
-            raise Exception('unable to find touch USB')
-        return touchscreen_device_id
-
-    def map_touchscreen_to_hdmi(self, is_display_on=False):
-        touchscreen_device_id = self.get_touchscreen_device_id()
-        cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
-        if not is_display_on:
-            turn_display_on()
-            time.sleep(5)
-        next(run_command(cmd))
-
-    def is_touchscreen_mapped_to_hdmi(self):
-        if not config.IS_CHECK_SCREEN_MAPPING:
-            return True
-
-        touchscreen_device_id = self.get_touchscreen_device_id()
-
-        def _check_mapped():
-            # if the matrix under "Coordinate Transformation Matrix" has values different from 0,1 - that means
-            # that the mapping is working
-            cmd = f'DISPLAY=":0"  xinput list-props {touchscreen_device_id} | grep "Coordinate Transformation Matrix"'
-            res = next(run_command(cmd)).decode()
-            return any(z not in [0.0, 1.0] for z in [float(x) for x in re.findall(r'\d\.\d+', res)])
-
-        try:
-            is_mapped = _check_mapped()
-            if not is_mapped:
-                self.logger.info('Fixing mapping of touchscreen output')
-                cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
-                self.map_touchscreen_to_hdmi()
-                time.sleep(1)
-                is_mapped = _check_mapped()
-                if not is_mapped:
-                    self.logger.error(
-                        f'Touch detection is not mapped to HDMI screen\nFix by running: {cmd}')
-            return is_mapped
-        except Exception:
-            self.logger.exception('Error in is_touchscreen_mapped_to_hdmi')
 
     def stop_experiment(self, *args):
         self.logger.debug('closing experiment...')
@@ -277,7 +206,7 @@ class Block:
     iti: int = 10
     notes: str = ''
     block_type: str = 'bugs'
-    bug_speed: int = None
+    bug_speed: [int, list] = None
     bug_size: int = None
     is_default_bug_size: bool = True
     exit_hole: str = None
@@ -300,6 +229,9 @@ class Block:
 
     def __post_init__(self):
         self.logger = get_logger(f'{self.experiment_name}-Block {self.block_id}')
+        self.exp_validation = ExperimentValidation(logger=self.logger, cache=self.cache, orm=self.orm)
+        if isinstance(self.bug_speed, list):
+            self.bug_speed = random.choice(self.bug_speed)
         if self.periphery is None:
             self.periphery = PeripheryIntegrator()
         if isinstance(self.bug_types, str):
@@ -357,7 +289,7 @@ class Block:
         self.wait(self.extra_time_recording, label='Extra Time Rec')
 
         for trial_id in range(1, self.num_trials + 1):
-            if not is_reward_left(self.cache):
+            if not self.exp_validation.is_reward_left():
                 utils.send_telegram_message('No reward left in feeder; stopping experiment')
                 raise EndExperimentException('No reward left; stopping experiment')
             self.start_trial(trial_id)
@@ -542,12 +474,12 @@ class Block:
                     speed_strikes_count[b.bug_speed] = speed_strikes_count.get(b.bug_speed, 0) + len(b.strikes)
         available_speeds = [s for s in speeds if speed_strikes_count[s] < max_strikes]
         self.bug_speed = random.choice(available_speeds)
+        self.exit_hole = 'random'
         self.logger.info(f'random_low_horizontal starts with bug_speed={self.bug_speed}; '
                          f'speeds strikes: {speed_strikes_count}')
 
     @staticmethod
     def set_random_low_horizontal_trial(options):
-        options['exitHole'] = random.choice(['bottomLeft', 'bottomRight'])
         options['movementType'] = 'low_horizontal'
         return options
 
@@ -576,7 +508,7 @@ class Block:
             'isLogTrajectory': True,
             'bugSize': self.bug_size,
             'backgroundColor': self.background_color,
-            'exitHole': self.exit_hole,
+            'exitHole': random.choice(['bottomLeft', 'bottomRight']) if self.exit_hole == 'random' else self.exit_hole,
             'rewardAnyTouchProb': self.reward_any_touch_prob
         }
 
@@ -642,6 +574,109 @@ class Block:
         return f'{self.block_path}/videos'
 
 
+class ExperimentValidation:
+    def __init__(self, logger=None, cache=None, orm=None, is_silent=False):
+        self.logger = logger if logger is not None else get_logger('Experiment-Validation')
+        self.cache = cache if cache is not None else RedisCache()
+        self.orm = orm if orm is not None else ORM()
+        self.animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
+        self.is_silent = is_silent
+        self.failed_checks = []
+
+    def is_ready(self):
+        self.failed_checks = []
+        checks = {
+            'websocket_server_on': self.is_websocket_server_on(),
+            'pogona_hunter_app_up': self.is_pogona_hunter_up(),
+            'reward_left': self.is_reward_left(),
+            'max_reward_reached': self.is_max_reward_reached(),
+            'touchscreen_mapped': self.is_touchscreen_mapped_to_hdmi()
+        }
+        if all(checks.values()):
+            return True
+        else:
+            errs = [k for k, v in checks.items() if not v]
+            msg = f'Aborting experiment due to violation of {", ".join(errs)}.'
+            if not self.is_silent:
+                utils.send_telegram_message(msg)
+                self.logger.error(msg)
+            self.failed_checks.extend(errs)
+            return False
+
+    def is_websocket_server_on(self):
+        try:
+            ws = websocket.WebSocket()
+            ws.connect(config.websocket_url)
+            return True
+        except Exception:
+            if not self.is_silent:
+                self.logger.error(f'Websocket server on {config.websocket_url} is dead')
+
+    def is_pogona_hunter_up(self):
+        try:
+            res = requests.get(f'http://0.0.0.0:{config.POGONA_HUNTER_PORT}')
+            return res.ok
+        except Exception:
+            if not self.is_silent:
+                self.logger.error('pogona hunter app is down')
+
+    def is_touchscreen_mapped_to_hdmi(self):
+        if not config.IS_CHECK_SCREEN_MAPPING:
+            return True
+
+        touchscreen_device_id = self.get_touchscreen_device_id()
+
+        def _check_mapped():
+            # if the matrix under "Coordinate Transformation Matrix" has values different from 0,1 - that means
+            # that the mapping is working
+            cmd = f'DISPLAY=":0"  xinput list-props {touchscreen_device_id} | grep "Coordinate Transformation Matrix"'
+            res = next(run_command(cmd)).decode()
+            return any(z not in [0.0, 1.0] for z in [float(x) for x in re.findall(r'\d\.\d+', res)])
+
+        try:
+            is_mapped = _check_mapped()
+            if not is_mapped:
+                self.logger.info('Fixing mapping of touchscreen output')
+                cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+                self.map_touchscreen_to_hdmi()
+                time.sleep(1)
+                is_mapped = _check_mapped()
+                if not is_mapped and not self.is_silent:
+                    self.logger.error(
+                        f'Touch detection is not mapped to HDMI screen\nFix by running: {cmd}')
+            return is_mapped
+        except Exception:
+            if not self.is_silent:
+                self.logger.exception('Error in is_touchscreen_mapped_to_hdmi')
+
+    def map_touchscreen_to_hdmi(self, is_display_on=False):
+        touchscreen_device_id = self.get_touchscreen_device_id()
+        cmd = f'DISPLAY="{config.ARENA_DISPLAY}" xinput map-to-output {touchscreen_device_id} HDMI-0'
+        if not is_display_on:
+            turn_display_on()
+            time.sleep(5)
+        next(run_command(cmd))
+
+    def is_reward_left(self):
+        return self.get_reward_left() > 0
+
+    def is_max_reward_reached(self):
+        return self.orm.get_animal_reward_amount_of_today(self.animal_id) < config.MAX_DAILY_REWARD
+
+    def get_reward_left(self):
+        try:
+            return sum([int(x) for x in self.cache.get(cc.REWARD_LEFT)])
+        except Exception:
+            return 0
+
+    @staticmethod
+    def get_touchscreen_device_id():
+        touchscreen_device_id = get_hdmi_xinput_id()
+        if not touchscreen_device_id:
+            raise Exception('unable to find touch USB')
+        return touchscreen_device_id
+
+
 class ExperimentCache:
     def __init__(self, cache_dir=None):
         self.cache_dir = cache_dir or config.experiment_cache_path
@@ -669,15 +704,6 @@ class ExperimentCache:
 
 class EndExperimentException(Exception):
     """End Experiment"""
-
-
-def is_reward_left(cache):
-    is_left = False
-    try:
-        is_left = sum([int(x) for x in cache.get(cc.REWARD_LEFT)]) > 0
-    except Exception:
-        pass
-    return is_left
 
 
 def config_log():

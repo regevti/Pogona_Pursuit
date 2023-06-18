@@ -512,6 +512,13 @@ class ORM:
             s.add(rwd)
             s.commit()
 
+    def get_animal_reward_amount_of_today(self, animal_id):
+        with self.session() as s:
+            rewards = s.query(Reward).filter(and_(cast(Reward.time, Date) == date.today(),
+                                                  Reward.arena == config.ARENA_NAME,
+                                                  Reward.animal_id == animal_id)).all()
+        return len(rewards)
+
     def get_todays_amount_strikes_rewards(self):
         with self.session() as s:
             strikes = s.query(Strike).filter(and_(cast(Strike.time, Date) == date.today(),
@@ -519,6 +526,27 @@ class ORM:
             rewards = s.query(Reward).filter(and_(cast(Reward.time, Date) == date.today(),
                                                   Reward.arena == config.ARENA_NAME)).all()
         return len(strikes), len(rewards)
+
+    def today_summary(self):
+        summary = {}
+        with self.session() as s:
+            exps = s.query(Experiment).filter(and_(cast(Experiment.start_time, Date) == date.today(),
+                                                   Experiment.arena == config.ARENA_NAME)).all()
+            for exp in exps:
+                summary.setdefault(exp.animal_id, {'total_trials': 0, 'total_strikes': 0, 'blocks': {}})
+                for blk in exp.blocks:
+                    block_dict = summary[exp.animal_id]['blocks'].setdefault(blk.movement_type, {'hits': 0, 'misses': 0})
+                    for tr in blk.trials:
+                        summary[exp.animal_id]['total_trials'] += 1
+                    for strk in blk.strikes:
+                        summary[exp.animal_id]['total_strikes'] += 1
+                        if strk.is_hit:
+                            block_dict['hits'] += 1
+                        else:
+                            block_dict['misses'] += 1
+        for animal_id, d in summary.items():
+            d['total_rewards'] = self.get_animal_reward_amount_of_today(animal_id)
+        return summary
 
 
 class DWH:

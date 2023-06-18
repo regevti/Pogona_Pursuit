@@ -1,5 +1,6 @@
 import re
 import time
+import json
 from functools import wraps
 from datetime import datetime, timedelta
 import threading
@@ -12,6 +13,7 @@ from periphery_integration import PeripheryIntegrator
 from analysis.pose import predict_all_videos
 from analysis.strikes.strikes import StrikeScanner
 from db_models import DWH
+from agent import Agent
 import utils
 
 env = config.env
@@ -21,7 +23,8 @@ TIME_TABLE = {
     'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
     'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
     'dwh_commit_time': env('DWH_COMMIT_TIME', '07:00'),
-    'strike_analysis_time': env('STRIKE_ANALYSIS_TIME', '06:30')
+    'strike_analysis_time': env('STRIKE_ANALYSIS_TIME', '06:30'),
+    'daily_summary': env('DAILY_SUMMARY_TIME', '20:00')
 }
 ALWAYS_ON_CAMERAS_RESTART_DURATION = 30 * 60  # seconds
 cache = RedisCache()
@@ -44,6 +47,7 @@ class Scheduler(threading.Thread):
         self.logger.debug('Scheduler started...')
         self.arena_mgr = arena_mgr
         self.periphery = PeripheryIntegrator()
+        self.agent = Agent()
         self.next_experiment_time = None
         self.dlc_on = multiprocessing.Event()
         self.compress_threads = {}
@@ -53,7 +57,8 @@ class Scheduler(threading.Thread):
     def run(self):
         time.sleep(10)  # let all other arena processes and threads to start
         t0 = None  # every minute
-        t1 = None  # every 10 minutes
+        t1 = None  # every 5 minutes
+        t2 = None  # every 15 minutes
         while not self.arena_mgr.arena_shutdown_event.is_set():
             if not t0 or time.time() - t0 >= 60:  # every minute
                 t0 = time.time()
@@ -69,6 +74,10 @@ class Scheduler(threading.Thread):
                 t1 = time.time()
                 self.compress_videos()
                 self.run_pose()
+
+            if not t2 or time.time() - t2 >= 60 * 15:  # every 5 minutes
+                t2 = time.time()
+                self.agent_update()
 
     @schedule_method
     def check_lights(self):
@@ -110,6 +119,11 @@ class Scheduler(threading.Thread):
                 self.logger.error(f'Failed committing to DWH ({self.dwh_commit_tries}/{config.DWH_N_TRIES}): {exc}')
             else:
                 self.dwh_commit_tries = 0
+
+    @schedule_method
+    def agent_update(self):
+        if config.IS_AGENT_ENABLED and self.is_in_range('cameras_on'):
+            self.agent.update()
 
     @schedule_method
     def analyze_strikes(self):
@@ -191,6 +205,13 @@ class Scheduler(threading.Thread):
                 cache.set_cam_output_dir(cam_name, tracking_output_path)
 
     @schedule_method
+    def daily_summary(self):
+        if self.is_in_range('daily_summary'):
+            struct = self.arena_mgr.orm.today_summary()
+            msg = json.dumps(struct, indent=4)
+            utils.send_telegram_message(f'Daily Summary:\n{msg}')
+
+    @schedule_method
     def compress_videos(self):
         if self.is_in_range('cameras_on') or not self.is_compression_thread_available():
             return
@@ -231,4 +252,3 @@ def _run_pose_callback(dlc_on):
         predict_all_videos(max_videos=20)
     finally:
         dlc_on.clear()
-

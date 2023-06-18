@@ -519,7 +519,7 @@
             $.post('/commit_schedule', {
                     start_date: $("#datetimepicker1").data().date,
                     experiment_name: $("#cachedExperimentsSelectSchedule").val(),
-                    every: Number($("#scheduleEveryMinutes").val()),
+                    every: $("#isRepeatSchedule").is(":checked") ? Number($("#scheduleEveryMinutes").val()) : 0,
                     end_date: $("#datetimepicker2").data().date
             })
             $("#scheduleModal").modal('toggle');

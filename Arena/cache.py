@@ -32,6 +32,7 @@ class CacheColumns:
     REWARD_LEFT = Column('REWARD_LEFT', list, 'static')
     IS_EXPERIMENT_CONTROL_CAMERAS = Column('IS_EXPERIMENT_CONTROL_CAMERAS', bool, config.experiments_timeout)
     CAM_TRIGGER_STATE = Column('CAM_TRIGGER_STATE', int, None)
+    LAST_TIME_AGENT_MESSAGE = Column('LAST_TIME_AGENT_MESSAGE', float, None)
     CAM_TRIGGER_DISABLE = Column('CAM_TRIGGER_DISABLE', bool, config.experiments_timeout)
     IS_BLANK_CONTINUOUS_RECORDING = Column('IS_BLANK_CONTINUOUS_RECORDING', bool, config.MAX_DURATION_CONT_BLANK)
 
