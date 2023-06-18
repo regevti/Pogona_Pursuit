@@ -35,6 +35,7 @@ class Agent:
         self.init_history()
         self.load_history()
         self.next_trial_name = self.get_next_trial_name()
+        self.create_cached_experiment()
         if not self.next_trial_name:
             # all experiments are over
             return

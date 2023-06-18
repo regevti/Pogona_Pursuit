@@ -6,7 +6,7 @@ from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date, and_
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, create_engine, cast, Date, and_, desc
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.dialects.postgresql import JSON
@@ -460,7 +460,8 @@ class ORM:
 
     def get_animal_settings(self, animal_id):
         with self.session() as s:
-            animal = s.query(Animal).filter_by(animal_id=animal_id, arena=config.ARENA_NAME).first()
+            animal = s.query(Animal).filter_by(animal_id=animal_id, arena=config.ARENA_NAME).order_by(
+                desc(Animal.start_time)).first()
             if animal is not None:
                 animal_dict = {k: v for k, v in animal.__dict__.items() if not k.startswith('_')}
                 for k, v in animal_dict.copy().items():
