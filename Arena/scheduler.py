@@ -69,6 +69,7 @@ class Scheduler(threading.Thread):
                 self.arena_mgr.update_upcoming_schedules()
                 self.analyze_strikes()
                 self.dwh_commit()
+                self.daily_summary()
 
             if not t1 or time.time() - t1 >= 60 * 5:  # every 5 minutes
                 t1 = time.time()
