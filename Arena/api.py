@@ -23,6 +23,7 @@ from arena import ArenaManager
 from loggers import init_logger_config, create_arena_handler
 from calibration import CharucoEstimator
 from periphery_integration import PeripheryIntegrator
+from agent import Agent
 import matplotlib
 matplotlib.use('Agg')
 
@@ -378,6 +379,13 @@ def stop_stream_camera():
     if request.method == 'POST':
         arena_mgr.stop_stream()
         return Response('ok')
+
+
+@app.route('/animal_summary', methods=['GET'])
+def animal_summary():
+    ag = Agent()
+    ag.update()
+    return Response(ag.get_animal_history())
 
 
 @app.route('/video_feed')

@@ -584,6 +584,12 @@
             $("#record-output").empty()
         })
 
+        $("#animalSummary").click(function (e) {
+            $.get('/animal_summary', function (data) {
+                appendOutput(data)
+            })
+        })
+
         function isMediaExperiment(i) {
             return $(`#blockTypeSelect${i}`).val() === 'media'
         }

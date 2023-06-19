@@ -114,12 +114,12 @@ class Agent:
             utils.send_telegram_message(f'Agent Message:\n{msg}')
             self.cache.set(cc.LAST_TIME_AGENT_MESSAGE, time.time())
 
-    def print_history(self):
-        print(f'Animal ID: {self.animal_id}')
+    def get_animal_history(self):
+        txt = f'Animal ID: {self.animal_id}\n'
         for trial_name in self.history:
             self.history[trial_name]['is_finished'] = self.is_trial_type_finished(trial_name)
-
-        print(json.dumps(self.history, indent=4))
+        txt += json.dumps(self.history, indent=4)
+        return txt
 
     def create_cached_experiment(self):
         # load the agent config
@@ -188,4 +188,4 @@ class Agent:
 if __name__ == '__main__':
     ag = Agent()
     ag.update()
-    ag.print_history()
+    print(ag.get_animal_history())
