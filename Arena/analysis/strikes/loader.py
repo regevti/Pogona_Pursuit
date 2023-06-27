@@ -33,7 +33,8 @@ class Loader:
         self.strike_frame_id = None
         self.video_path = None
         self.avg_temperature = None
-        self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_commit_db=False, orm=orm)
+        if self.is_load_pose:
+            self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_commit_db=False, orm=orm)
         self.frames_df: pd.DataFrame = pd.DataFrame()
         self.traj_df: pd.DataFrame = pd.DataFrame(columns=['time', 'x', 'y'])
         self.info = {}
@@ -62,7 +63,8 @@ class Loader:
                 raise MissingStrikeData('No trial found in DB')
 
             self.load_bug_trajectory_data(trial, strk)
-            self.load_frames_data(s, trial, strk)
+            if self.is_load_pose:
+                self.load_frames_data(s, trial, strk)
             self.load_temperature(s, trial.block_id)
 
     def load_bug_trajectory_data(self, trial, strk):
@@ -127,7 +129,10 @@ class Loader:
 
     def load_temperature(self, s, block_id):
         temps = s.query(Temperature).filter_by(block_id=block_id).all()
-        self.avg_temperature = np.mean([t.value for t in temps if isinstance(t.value, (int, float))])
+        if not temps:
+            self.avg_temperature = np.nan
+        else:
+            self.avg_temperature = np.mean([t.value for t in temps if isinstance(t.value, (int, float))])
 
     def get_strike_frame(self) -> np.ndarray:
         for _, frame in self.gen_frames_around_strike(0, 1):
