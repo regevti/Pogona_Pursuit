@@ -301,8 +301,8 @@ class DLCArenaPose(ArenaPose):
 
     @staticmethod
     def calc_head_angle(row):
-        x_nose, y_nose = row.nose.y, row.nose.y
-        x_ears = (row.right_ear.y + row.left_ear.y) / 2
+        x_nose, y_nose = row.nose.x, row.nose.y
+        x_ears = (row.right_ear.x + row.left_ear.x) / 2
         y_ears = (row.right_ear.y + row.left_ear.y) / 2
         dy = y_ears - y_nose
         dx = x_ears - x_nose

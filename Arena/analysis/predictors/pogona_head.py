@@ -1,9 +1,14 @@
+import time
 from dataclasses import dataclass
 import bbox
 import cv2
+import pandas as pd
 import torch
 import logging
 import numpy as np
+from pathlib import Path
+from tqdm.auto import tqdm
+import config
 from analysis.predictors.base import Predictor
 from analysis.predictors.yolov5.models.common import DetectMultiBackend
 from analysis.predictors.yolov5.utils.torch_utils import select_device
@@ -34,7 +39,7 @@ class PogonaHead(Predictor):
         if det is None:
             return None, None
 
-        if return_centroid:
+        if return_centroid and not is_draw_pred:
             return self.to_centroid(det)
         else:
             if is_draw_pred:
@@ -69,6 +74,7 @@ class YOLOv5Detector:
 
     def __post_init__(self):
         self.device = select_device(self.device)
+        self.load()
 
     def load(self):
         # due to issue of pytorch model load in fork-multiprocessing, the model must be loaded in CPU
@@ -83,7 +89,7 @@ class YOLOv5Detector:
     def detect_image(self, image):
         """
         Bounding box inference on input image
-        :param img: numpy array image
+        :param image: numpy array image
         :return: list of detections. Each row is x1, y1, x2, y2, confidence  (top-left and bottom-right corners).
         """
         img = letterbox(image, self.imgsz, stride=self.stride, auto=True)[0]
@@ -93,16 +99,49 @@ class YOLOv5Detector:
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
-        im = torch.from_numpy(img).to(self.device).float()
-        im /= 255  # 0 - 255 to 0.0 - 1.0
+        img = torch.from_numpy(img).to(self.device).float()
+        img /= 255  # 0 - 255 to 0.0 - 1.0
 
-        if len(im.shape) == 3:
-            im = im[None]  # expand for batch dim
+        if len(img.shape) == 3:
+            img = img[None]  # expand for batch dim
         with torch.no_grad():
-            pred = self.model(im, augment=False, visualize=False)
+            pred = self.model(img, augment=False, visualize=False)
             pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, classes=None, agnostic=False, max_det=1000)
 
         pred = pred[0]
         if len(pred) == 0:
             return None, image
         return pred.cpu().numpy().flatten()[:5], image
+
+
+def predict_tracking(max_videos=None):
+    ph = PogonaHead('top')
+    ph.init(None)
+
+    vids = []
+    for p in Path(config.EXPERIMENTS_DIR).rglob('*/tracking/*.mp4'):
+        output_dir = p.parent / 'predictions'
+        output_dir.mkdir(exist_ok=True)
+        out_path = output_dir / p.with_suffix('.csv').name
+        if out_path.exists():
+            continue
+        vids.append((p, out_path))
+        if max_videos and len(vids) >= max_videos:
+            break
+
+    for i, (p, out_path) in enumerate(vids):
+        cap = cv2.VideoCapture(p.as_posix())
+        n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        res = []
+        for frame_id in tqdm(range(n_frames), desc=f'({i+1}/{len(vids)}) {p.name}'):
+            ret, frame = cap.read()
+            x, y = ph.predict(frame, is_draw_pred=False)
+            res.append({'frame_id': frame_id, 'x': x, 'y': y})
+
+        res = pd.DataFrame(res)
+        res.to_csv(out_path)
+        cap.release()
+
+
+if __name__ == '__main__':
+    predict_tracking()

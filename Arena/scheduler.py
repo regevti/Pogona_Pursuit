@@ -12,6 +12,7 @@ from compress_videos import get_videos_ids_for_compression, compress
 from periphery_integration import PeripheryIntegrator
 from analysis.pose import predict_all_videos
 from analysis.strikes.strikes import StrikeScanner
+from analysis.predictors.pogona_head import predict_tracking
 from db_models import DWH
 from agent import Agent
 import utils
@@ -20,6 +21,7 @@ env = config.env
 TIME_TABLE = {
     'cameras_on': (env('CAMERAS_ON_TIME', '07:00'), env('CAMERAS_OFF_TIME', '19:00')),
     'run_pose': (env('POSE_ON_TIME', '19:30'), env('POSE_OFF_TIME', '06:00')),
+    'tracking_pose': (env('TRACKING_POSE_ON_TIME', '02:00'), env('TRACKING_POSE_OFF_TIME', '07:00')),
     'lights_sunrise': env('LIGHTS_SUNRISE', '07:00'),
     'lights_sunset': env('LIGHTS_SUNSET', '19:00'),
     'dwh_commit_time': env('DWH_COMMIT_TIME', '07:00'),
@@ -50,6 +52,7 @@ class Scheduler(threading.Thread):
         self.agent = Agent()
         self.next_experiment_time = None
         self.dlc_on = multiprocessing.Event()
+        self.tracking_pose_on = multiprocessing.Event()
         self.compress_threads = {}
         self.lights_state = 0  # 0 - off, 1 - on
         self.dwh_commit_tries = 0
@@ -75,6 +78,7 @@ class Scheduler(threading.Thread):
                 t1 = time.time()
                 self.compress_videos()
                 self.run_pose()
+                self.tracking_pose()
 
             if not t2 or time.time() - t2 >= 60 * 15:  # every 5 minutes
                 t2 = time.time()
@@ -247,9 +251,25 @@ class Scheduler(threading.Thread):
         multiprocessing.Process(target=_run_pose_callback, args=(self.dlc_on,)).start()
         self.dlc_on.set()
 
+    @schedule_method
+    def tracking_pose(self):
+        if not self.is_in_range('tracking_pose') or cache.get(cc.IS_BLANK_CONTINUOUS_RECORDING) or self.dlc_on.is_set() or \
+                not config.IS_RUN_NIGHTLY_POSE_ESTIMATION or self.tracking_pose_on.is_set():
+            return
+
+        multiprocessing.Process(target=_run_tracking_pose, args=(self.tracking_pose_on,)).start()
+        self.tracking_pose_on.set()
+
 
 def _run_pose_callback(dlc_on):
     try:
         predict_all_videos(max_videos=20)
     finally:
         dlc_on.clear()
+
+
+def _run_tracking_pose(tracking_pose_on):
+    try:
+        predict_tracking(max_videos=120)
+    finally:
+        tracking_pose_on.clear()
