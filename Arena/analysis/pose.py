@@ -1,20 +1,20 @@
 import datetime
 import math
-
 import yaml
 import cv2
-import time
 import traceback
 import importlib
-import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sns
 import matplotlib.patches as patches
+import seaborn as sns
+import pandas as pd
 import numpy as np
 from tqdm.auto import tqdm
 from pathlib import Path
 from scipy.spatial import distance
 from scipy.signal import savgol_filter
+from scipy.stats import ttest_ind
 from multiprocessing.pool import ThreadPool
 import os
 if Path('.').resolve().name != 'Arena':
@@ -27,7 +27,7 @@ from utils import run_in_thread, Kalman
 from sqlalchemy import cast, Date
 from db_models import ORM, Experiment, Block, Video, VideoPrediction, Strike, PoseEstimation
 from image_handlers.video_writers import OpenCVWriter
-from analysis.pose_utils import put_text
+from analysis.pose_utils import put_text, flatten
 
 
 MIN_DISTANCE = 5  # cm
@@ -74,6 +74,8 @@ class ArenaPose:
             raise Exception('Could not initiate caliber; closing ArenaPose')
 
     def load(self, video_path: Path, only_load=False, prefix=''):
+        if isinstance(video_path, str):
+            video_path = Path(video_path)
         if not self.is_initialized:
             self.initiate_from_video(video_path)
         cache_path = self.get_predicted_cache_path(video_path)
@@ -325,50 +327,90 @@ class DLCArenaPose(ArenaPose):
 
 
 class SpatialAnalyzer:
-    def __init__(self, animal_id, day=None, cam_name=None):
+    def __init__(self, animal_id, day=None, cam_name='front', bodypart='mid_ears', split_by=None, **block_kwargs):
+        """
+        Spatial analysis and visualization
+        @param animal_id:
+        @param day: limit results to a certain day
+        @param movement_type:
+        @param cam_name:
+        @param bodypart: The body part from which the pose coordinates will be taken
+        """
         self.animal_id = animal_id
         self.day = day
         self.cam_name = cam_name
+        self.bodypart = bodypart
+        assert split_by is None or isinstance(split_by, list), 'split_by must be a list of strings'
+        self.split_by = split_by
+        self.block_kwargs = block_kwargs
+        self.orm = ORM()
+        self.dlc = DLCArenaPose('front', is_commit_db=False, orm=self.orm)
         self.coords = {
             'arena': np.array([(-3, -2), (55, 78)]),
             'screen': np.array([(-1, -3), (52, -1)])
         }
 
-    def query_pose(self):
-        orm = ORM()
-        with orm.session() as s:
-            q = s.query(PoseEstimation).filter_by(animal_id=self.animal_id)
-            if self.cam_name:
-                q = q.filter_by(cam_name=self.cam_name)
-            q = q.filter(cast(PoseEstimation.start_time, Date) == self.day)
-            res = q.all()
+    def get_pose(self):
+        res = {}
+        for group_name, vids in self.get_videos_paths().items():
+            for video_path in vids:
+                pose_df = self._load_pose(video_path)
+                res.setdefault(group_name, []).append(pose_df)
+
+        for group_name in res.copy().keys():
+            res[group_name] = pd.concat(res[group_name])
         return res
 
-    def get_pose(self):
-        res = self.query_pose()
-        if not res:
-            raise Exception('No pose recordings found')
-        pose = pd.DataFrame([(r.y, r.y, r.start_time) for r in res], columns=['x', 'y', 'time'])
-        pose = self.drop_out_of_arena_coords(pose)
-        return pose
+    def _load_pose(self, video_path):
+        pose_df = self.dlc.load(video_path, only_load=True)
+        return pd.concat([pd.to_datetime(pose_df['time'], unit='s'), pose_df[self.bodypart]], axis=1)
+
+    def get_videos_paths(self) -> dict:
+        """return list of lists of groups of video paths that are split using 'split_by'"""
+        video_paths = {}
+        with self.orm.session() as s:
+            exps = s.query(Experiment).filter_by(animal_id=self.animal_id)
+            if self.day:
+                exps = exps.filter(cast(Experiment.start_time, Date) == self.day)
+            for exp in exps.all():
+                for blk in exp.blocks:
+                    if self.block_kwargs and any(getattr(blk, k) != v for k, v in self.block_kwargs.items()):
+                        continue
+
+                    if self.split_by:
+                        group_name = ','.join([f"{c}={getattr(blk, c, None)}" for c in self.split_by])
+                    else:
+                        group_name = ''
+
+                    for vid in blk.videos:
+                        if self.cam_name and vid.cam_name != self.cam_name:
+                            continue
+                        video_paths.setdefault(group_name, []).append(vid.path)
+        return video_paths
 
     def drop_out_of_arena_coords(self, df):
         xmin, xmax = self.coords['arena'][:, 0].flatten().tolist()
         idx = df[(df.y < xmin) | (df.y > xmax)].index
         return df.drop(idx)
 
-    def plot_spatial(self, pose=None, ax=None):
-        if pose is None:
-            pose = self.get_pose()
-        if ax is None:
-            fig, ax_ = plt.subplots(1, 1, figsize=(10, 20))
-        else:
-            ax_ = ax
-        self.plot_hist2d(pose, ax_)
-        self.plot_arena(ax_)
-        ax.set_title(f'{self.day} - {",".join(get_bug_exit_hole(self.day))}')
-        if ax is None:
+    def plot_spatial(self, pose_dict=None, cols=4, axes=None):
+        if pose_dict is None:
+            pose_dict = self.get_pose()
+
+        axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
+        for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+            self.plot_hist2d(pose_df, axes_[i])
+            self.plot_arena(axes_[i])
+            axes_[i].set_title(group_name)
+        if axes is None:
+            plt.tight_layout()
             plt.show()
+
+    @staticmethod
+    def plot_hist2d(df, ax):
+        sns.histplot(data=df, x='x', y='y', ax=ax,
+                     bins=(30, 30), cmap='Greens', stat='probability', pthresh=.0,
+                     cbar=True, cbar_kws=dict(shrink=.75, label='Probability'))
 
     def plot_arena(self, ax):
         for name, c in self.coords.items():
@@ -376,45 +418,151 @@ class SpatialAnalyzer:
                                      facecolor='k' if name == 'screen' else 'none')
             ax.add_patch(rect)
         ax.invert_xaxis()
+        ax.set_xlim(self.coords['arena'][:, 0])
+        ax.set_ylim(self.coords['arena'][:, 1])
 
-    def plot_hist2d(self, df, ax):
-        sns.histplot(data=df, x='x', y='y', ax=ax,
-                     bins=(30, 30), cmap='Greens', stat='probability', pthresh=.0,
-                     cbar=True, cbar_kws=dict(shrink=.75, label='Probability'))
+    def plot_trajectories(self, cols=4, axes=None):
+        pose_dict = self.get_pose()
+        axes = self.get_axes(cols, len(pose_dict), axes)
 
-    def plot_trajectories(self, ax=None):
-        pose = self.get_pose()
-        if ax is None:
-            fig, ax = plt.subplots(1, 1, figsize=(10, 20))
-        trajs = self.cluster_trajectories(pose)
-        for i, traj in trajs.items():
-            traj = np.array(traj)
-            total_distance = np.sum(np.sqrt(np.sum(np.diff(traj, axis=0) ** 2, axis=1)))
-            if traj[0, 1] < 20 or traj[-1, 1] > 20 or total_distance < 5:
-                continue
+        for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+            trajs = self.cluster_trajectories(pose_df)
+            for j, traj in trajs.items():
+                traj = np.array(traj)
+                # remove NaNs
+                traj = traj[~np.isnan(traj).any(axis=1), :]
+                total_distance = np.sum(np.sqrt(np.sum(np.diff(traj, axis=0) ** 2, axis=1)))
+                if total_distance < 5:
+                    continue
 
-            ax.plot(traj[:, 0], traj[:, 1], label=f'traj{i}')
-            ax.scatter(traj[-1, 0], traj[-1, 1], marker='*')
-        self.plot_arena(ax)
-        plt.legend()
+                axes[i].plot(traj[:, 0], traj[:, 1], label=f'traj{j}')
+                axes[i].scatter(traj[-1, 0], traj[-1, 1], marker='*')
+                axes[i].set_title(group_name)
+            self.plot_arena(axes[i])
+            axes[i].legend()
+
         plt.show()
 
-    def cluster_trajectories(self, pose: pd.DataFrame, dist_thresh=20, time_thresh=5):
+    def play_trajectories(self, video_path: str):
+        pose_df = self._load_pose(video_path)
+        cap = cv2.VideoCapture(video_path)
+        trajs = self.cluster_trajectories(pose_df)
+
+        for start_frame, traj in trajs.items():
+            total_distance = self.calc_traj_distance(traj)
+            self.play_segment(cap, start_frame, len(traj), f'Traj{start_frame} ({total_distance:.1f})')
+
+        cap.release()
+
+    @staticmethod
+    def play_segment(cap, start_frame, n_frames, frames_text=None):
+        assert frames_text is None or isinstance(frames_text, str) or len(frames_text) == n_frames, \
+            'frames_text must be a string or a list in the length of n_frames'
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        for i in range(n_frames):
+            ret, frame = cap.read()
+            frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
+            if frames_text:
+                put_text(frames_text[i] if isinstance(frames_text, list) else frames_text, frame, 30, 20)
+            cv2.imshow('Pogona Pose', frame)
+            if cv2.waitKey(25) & 0xFF == ord('q'):
+                break
+        cv2.waitKey(1000)
+        cv2.destroyAllWindows()
+
+    def cluster_trajectories(self, pose: pd.DataFrame, max_nan_seq=180):
         trajs = {}
         last_pos, last_ts, current_group = None, None, None
-        v = np.sqrt(pose.x.diff() ** 2 + pose.y.diff() ** 2) / pose.time.diff().dt.total_seconds()
-        v = v.values
-        vs = savgol_filter(v, window_length=5, polyorder=1, mode='nearest')
+        # v = np.sqrt(pose.cam_x.diff() ** 2 + pose.cam_y.diff() ** 2) / pose.time.diff().dt.total_seconds()
+        dists = np.sqrt(pose.cam_x.diff() ** 2 + pose.cam_y.diff() ** 2).dropna()
+        indices = dists.index.tolist()
+        vs = savgol_filter(dists.values, window_length=31, polyorder=0, mode='interp')
         current_group = None
-        for i, row in pose.iterrows():
-            pos = (row.x, row.y)
-            if vs[i] > 100:
+        nan_counter = 0
+        t = (pose.time - pose.time.iloc[0]).dt.total_seconds()
+        for i, pose_i in enumerate(indices):
+            pos = (pose.cam_x.loc[pose_i], pose.cam_y.loc[pose_i])
+            if vs[i] > 4:
                 if not current_group:
-                    current_group = i
+                    current_group = pose_i
                 trajs.setdefault(current_group, []).append(pos)
+                nan_counter = 0
+            elif np.isnan(vs[i]) and nan_counter <= max_nan_seq:
+                nan_counter += 1
+                continue
             else:
+                if current_group:
+                    if self.calc_traj_distance(trajs[current_group]) < 100:
+                        del trajs[current_group]
                 current_group = None
+                nan_counter = 0
+
+        ax = plt.subplot()
+        ax.plot(t[indices], vs)
+        for start_frame, traj in trajs.items():
+            traj = np.array(traj)
+            rect = patches.Rectangle((t[start_frame], 0), t[start_frame+len(traj)] - t[start_frame], 5, linewidth=1, facecolor='g', alpha=0.4)
+            ax.add_patch(rect)
+        plt.show()
+
         return trajs
+
+    def find_crosses(self, video_path=None, y_value=10, is_play=True, axes=None, cols=3):
+        if video_path is not None:
+            pose_dict = {'video_crosses': self._load_pose(video_path)}
+        else:
+            pose_dict = self.get_pose()
+
+        axes_ = self.get_axes(cols, len(pose_dict), axes)
+        x_values = {}
+        for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+            df_ = pose_df.query(f'{y_value-0.1} <= y <= {y_value+0.1}').copy()
+            m = df_.index.to_series().diff().ne(1).cumsum()
+            idx_ = df_.index.to_series().groupby(m).agg(list)
+            idx2drop = flatten([idx_[j][1:] for j in idx_[idx_.map(lambda x: len(x)) > 1].index])
+            df_.drop(index=idx2drop, inplace=True)
+
+            if is_play and video_path is not None:
+                cap = cv2.VideoCapture(video_path)
+                for cross_id in df_.index:
+                    self.play_segment(cap, cross_id-60, 120, f'cross index {cross_id}')
+                cap.release()
+
+            x_values[group_name] = df_.x.values
+            axes_[i].hist(df_.x.values, label=f'mean = {df_.x.values.mean():.2f}')
+            axes_[i].set_title(group_name)
+            axes_[i].legend()
+
+        if len(x_values) == 2:
+            groups = list(x_values.values())
+            t_stat, p_value = ttest_ind(groups[0], groups[1], equal_var=False)
+            p_text = f'p-value={p_value:.3f}' if p_value >= 0.001 else 'p-value<0.001'
+            plt.suptitle(f'T={t_stat:.1f}, {p_text}')
+
+        if axes is None:
+            plt.tight_layout()
+            plt.show()
+
+    @staticmethod
+    def calc_traj_distance(traj):
+        traj = np.array(traj)
+        traj_no_nan = traj[~np.isnan(traj).any(axis=1), :]
+        return distance.euclidean(traj_no_nan[0, :], traj_no_nan[-1, :])
+        # return np.sum(np.sqrt(np.sum(np.diff(traj_no_nan, axis=0) ** 2, axis=1)))
+
+    @staticmethod
+    def get_axes(cols, n, axes=None):
+        cols = min(cols, n)
+        rows = int(np.ceil(n / cols))
+        if axes is None:
+            fig, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 4))
+
+        if n > 1:
+            axes = axes.flatten()
+        else:
+            axes = [axes]
+        return axes
+
 
 ########################################################################################################################
 
@@ -523,12 +671,16 @@ def predict_all_videos(animal_id=None, max_videos=None):
 
 
 if __name__ == '__main__':
+    matplotlib.use('TkAgg')
     # foo()
-    predict_all_videos()
+    # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
-    # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')
-    # ps = SpatialAnalyzer('PV80', day='2022-12-15').get_pose()
+    # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')h
+    SpatialAnalyzer('PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(
+        # '/data/Pogona_Pursuit/output/experiments/PV91/20230619/block6/videos/front_20230619T133006.mp4'
+        # '/data/Pogona_Pursuit/output/experiments/PV91/20230619/block7/videos/front_20230619T143006.mp4'
+    )
     # compare_sides(animal_id='PV80')
 

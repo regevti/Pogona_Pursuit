@@ -164,6 +164,9 @@ class Loader:
         self.frames_df = pose_df.loc[first_frame:last_frame].copy()
         self.frames_df['time'] = pd.to_datetime(self.frames_df.time, unit='s')
 
+    def get_bodypart_pose(self, bodypart):
+        return pd.concat([pd.to_datetime(self.frames_df['time'], unit='s'), self.frames_df[bodypart]], axis=1)
+
     # def load_tongues_out(self):
     #     if not self.is_load_tongue:
     #         return
