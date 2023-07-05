@@ -228,6 +228,7 @@ class PoseEstimation(Base):
     engagement = Column(Float, nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
+    dwh_key = Column(Integer, nullable=True)
 
 
 class Reward(Base):
@@ -551,7 +552,7 @@ class ORM:
 
 
 class DWH:
-    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike]
+    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, PoseEstimation]
 
     def __init__(self):
         self.logger = get_logger('dwh')
