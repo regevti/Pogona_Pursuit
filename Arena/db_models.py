@@ -403,11 +403,12 @@ class ORM:
             s.commit()
 
     @commit_func
-    def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model, animal_id=None):
+    def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model,
+                               animal_id=None, block_id=None):
         animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle, animal_id=animal_id,
                             engagement=engagement, video_id=video_id, model=model,
-                            block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
+                            block_id=block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         )
         with self.session() as s:
             s.add(pe)

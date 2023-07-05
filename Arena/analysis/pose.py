@@ -327,7 +327,7 @@ class DLCArenaPose(ArenaPose):
 
 
 class SpatialAnalyzer:
-    def __init__(self, animal_id, day=None, cam_name='front', bodypart='mid_ears', split_by=None, **block_kwargs):
+    def __init__(self, animal_id, day=None, cam_name='front', bodypart='mid_ears', split_by=None, orm=None, **block_kwargs):
         """
         Spatial analysis and visualization
         @param animal_id:
@@ -343,7 +343,7 @@ class SpatialAnalyzer:
         assert split_by is None or isinstance(split_by, list), 'split_by must be a list of strings'
         self.split_by = split_by
         self.block_kwargs = block_kwargs
-        self.orm = ORM()
+        self.orm = orm if orm is not None else ORM()
         self.dlc = DLCArenaPose('front', is_commit_db=False, orm=self.orm)
         self.coords = {
             'arena': np.array([(-3, -2), (55, 78)]),
@@ -365,7 +365,7 @@ class SpatialAnalyzer:
         pose_df = self.dlc.load(video_path, only_load=True)
         return pd.concat([pd.to_datetime(pose_df['time'], unit='s'), pose_df[self.bodypart]], axis=1)
 
-    def get_videos_paths(self) -> dict:
+    def get_videos_paths(self, is_add_block_video_id=False) -> dict:
         """return list of lists of groups of video paths that are split using 'split_by'"""
         video_paths = {}
         with self.orm.session() as s:
@@ -385,7 +385,12 @@ class SpatialAnalyzer:
                     for vid in blk.videos:
                         if self.cam_name and vid.cam_name != self.cam_name:
                             continue
-                        video_paths.setdefault(group_name, []).append(vid.path)
+                        if not is_add_block_video_id:
+                            v = vid.path
+                        else:
+                            v = (vid.path, blk.id, vid.id)
+                        video_paths.setdefault(group_name, []).append(v)
+
         return video_paths
 
     def drop_out_of_arena_coords(self, df):
@@ -670,17 +675,36 @@ def predict_all_videos(animal_id=None, max_videos=None):
             print(f'\n\n{traceback.format_exc()}\n')
 
 
+def commit_pose_estimation_to_db(animal_id, cam_name='front', bodypart='nose', min_dist=0.5):
+    orm = ORM()
+    sa = SpatialAnalyzer(animal_id=animal_id, bodypart=bodypart, orm=orm, cam_name=cam_name)
+    vids = sa.get_videos_paths(is_add_block_video_id=True)
+    for video_path, block_id, video_id in tqdm(vids['']):
+        try:
+            pose_df = sa.dlc.load(video_path, only_load=True).dropna(subset=[('nose', 'x')])
+            pose_df['distance'] = np.sqrt((pose_df['nose'][['x', 'y']].diff() ** 2).sum(axis=1))
+            pose_df = pose_df[pose_df[('distance', '')] >= min_dist]
+            for i, row in pose_df.iterrows():
+                if np.isnan(row[bodypart, 'x']):
+                    continue
+                angle = sa.dlc.calc_head_angle(row)
+                start_time = pd.to_datetime(row[('time', '')], unit='s')
+                orm.commit_pose_estimation(cam_name, start_time, row[(bodypart, 'x')], row[(bodypart, 'y')], angle,
+                                           None, video_id, MODEL_NAME, animal_id=animal_id, block_id=block_id)
+        except Exception as exc:
+            print(f'Error: {exc}; {video_path}')
+
+
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
-    # foo()
+    commit_pose_estimation_to_db('PV91')
     # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
     # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')h
-    SpatialAnalyzer('PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(
-        # '/data/Pogona_Pursuit/output/experiments/PV91/20230619/block6/videos/front_20230619T133006.mp4'
-        # '/data/Pogona_Pursuit/output/experiments/PV91/20230619/block7/videos/front_20230619T143006.mp4'
-    )
+    # SpatialAnalyzer('PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(
+    #     # '/data/Pogona_Pursuit/output/experiments/PV91/20230619/block6/videos/front_20230619T133006.mp4'
+    # )
     # compare_sides(animal_id='PV80')
 
