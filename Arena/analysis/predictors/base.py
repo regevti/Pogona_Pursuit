@@ -8,6 +8,7 @@ class Predictor:
         self.load_pred_config()
         self.threshold = self.pred_config['threshold']
         self.model_path = self.pred_config['model_path']
+        self.model_name = Path(self.model_path).name
 
     def predict(self, frame, timestamp):
         raise NotImplemented('No predict method')

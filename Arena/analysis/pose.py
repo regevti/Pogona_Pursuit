@@ -33,7 +33,6 @@ from analysis.pose_utils import put_text, flatten
 MIN_DISTANCE = 5  # cm
 COMMIT_INTERVAL = 2  # seconds
 VELOCITY_SAMPLING_DURATION = 2  # seconds
-MODEL_NAME = 'front_head_only_resnet_50'
 
 
 class MissingFile(Exception):
@@ -274,12 +273,11 @@ class ArenaPose:
             self.example_writer.close()
             self.example_writer = None
 
-    @staticmethod
-    def get_predicted_cache_path(video_path) -> Path:
+    def get_predicted_cache_path(self, video_path) -> Path:
         preds_dir = Path(video_path).parent / 'predictions'
         preds_dir.mkdir(exist_ok=True)
         vid_name = Path(video_path).with_suffix('.parquet').name
-        return preds_dir / f'{MODEL_NAME}__{vid_name}'
+        return preds_dir / f'{self.predictor.model_name}__{vid_name}'
 
     def is_moved(self, x, y):
         return not self.last_commit or distance.euclidean(self.last_commit[1:], (x, y)) < MIN_DISTANCE
@@ -638,14 +636,16 @@ def foo():
     return
 
 
-def get_videos_to_predict(animal_id=None):
-    p = Path(config.EXPERIMENTS_DIR)
+def get_videos_to_predict(animal_id=None, experiments_dir=None):
+    experiments_dir = experiments_dir or config.EXPERIMENTS_DIR
+    p = Path(experiments_dir)
     if animal_id:
         p = p / animal_id
     all_videos = list(p.rglob('*front*.mp4'))
     videos = []
+    ap = DLCArenaPose('front', is_commit_db=False)
     for vid_path in all_videos:
-        pred_path = ArenaPose.get_predicted_cache_path(vid_path)
+        pred_path = ap.get_predicted_cache_path(vid_path)
         if pred_path.exists() or \
                 pred_path.with_suffix('.txt').exists() or \
                 (len(pred_path.parts) >= 6 and pred_path.parts[-6] == 'test'):
@@ -654,8 +654,8 @@ def get_videos_to_predict(animal_id=None):
     return videos
 
 
-def predict_all_videos(animal_id=None, max_videos=None):
-    videos = get_videos_to_predict(animal_id)
+def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None):
+    videos = get_videos_to_predict(animal_id, experiments_dir)
     if not videos:
         return
     print(f'found {len(videos)}/{len(videos)} to predict')
@@ -690,14 +690,15 @@ def commit_pose_estimation_to_db(animal_id, cam_name='front', bodypart='nose', m
                 angle = sa.dlc.calc_head_angle(row)
                 start_time = pd.to_datetime(row[('time', '')], unit='s')
                 orm.commit_pose_estimation(cam_name, start_time, row[(bodypart, 'x')], row[(bodypart, 'y')], angle,
-                                           None, video_id, MODEL_NAME, animal_id=animal_id, block_id=block_id)
+                                           None, video_id, sa.dlc.predictor.model_name, animal_id=animal_id, block_id=block_id)
         except Exception as exc:
             print(f'Error: {exc}; {video_path}')
 
 
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
-    commit_pose_estimation_to_db('PV91')
+    # print(get_videos_to_predict('PV148'))
+    # commit_pose_estimation_to_db('PV91')
     # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)

@@ -334,7 +334,6 @@ def timeit(func):
     return wrapper
 
 
-
 def get_psycho_files():
     files = {}
     for p in Path(config.PSYCHO_FOLDER).glob('*'):

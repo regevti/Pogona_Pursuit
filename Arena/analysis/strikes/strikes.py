@@ -525,7 +525,8 @@ def play_strikes(animal_id, start_time=None, cam_name='front', is_load_pose=True
 
 class StrikeScanner:
     def __init__(self, logger=None, animal_id=None, cam_name='front', is_skip_committed=True,
-                 start_time=None, strike_id=None, movement_type=None, is_plot_summary=False):
+                 start_time=None, strike_id=None, movement_type=None, is_plot_summary=False,
+                 is_hits_only=False):
         """ Scan and analyze strikes.
         @param logger: external logger to be used. If none this class uses the print function
         @param animal_id: scan only for specified animal_id. If none, scan all animals.
@@ -544,6 +545,7 @@ class StrikeScanner:
         self.movement_type = movement_type
         self.is_plot_summary = is_plot_summary
         self.is_skip_committed = is_skip_committed
+        self.is_hits_only = is_hits_only
         self.orm = ORM()
         self.output_dir.mkdir(exist_ok=True, parents=True)
 
@@ -589,6 +591,8 @@ class StrikeScanner:
                         continue
                     for strk in blk.strikes:
                         if strk.is_climbing or (self.is_skip_committed and (strk.calc_speed or strk.analysis_error)):
+                            continue
+                        if self.is_hits_only and not strk.is_hit:
                             continue
                         strikes_ids.append(strk.id)
         return sorted(strikes_ids)
@@ -646,6 +650,17 @@ def extract_bad_annotated_strike_frames(animal_id, cam_name='front', strike_id=N
             print(f'Strike-{sid}: {exc}\n{traceback.format_exc()}\n')
 
 
+def time2feeder():
+    strikes_ids = StrikeScanner(animal_id='PV91', cam_name='front', is_hits_only=True,
+                                is_skip_committed=False).load_strikes_ids()
+    orm = ORM()
+    sid = strikes_ids[0]
+    ld = Loader(sid, 'front', is_debug=False, orm=orm, sec_before=0, sec_after=10)
+    ld.play_strike(n_frames_back=0, n_frames_forward=ld.n_frames_forward)
+    # sa = StrikeAnalyzer(ld)
+    #
+
+
 if __name__ == '__main__':
     # CircleMultiTrialAnalysis().plot_circle_strikes()
     # ld = Loader(5968, 'front')
@@ -653,7 +668,8 @@ if __name__ == '__main__':
     # sa.plot_strike_analysis()
     # delete_duplicate_strikes('PV80')
     # play_strikes('PV80', start_time='2022-12-01', cam_name='front', is_load_pose=False, strikes_ids=[6365])
-    StrikeScanner(is_skip_committed=False).scan()
+    # StrikeScanner(is_skip_committed=False).scan()
+    time2feeder()
     # extract_bad_annotated_strike_frames('PV85')#, movement_type='random')
     # short_predict('PV80')
     # foo()

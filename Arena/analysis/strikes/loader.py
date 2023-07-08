@@ -201,6 +201,7 @@ class Loader:
     #     plt.show()
 
     def play_strike(self, n_frames_back=100, n_frames_forward=20, annotations=None):
+        nose_df = self.frames_df['nose']
         for i, frame in self.gen_frames_around_strike(n_frames_back, n_frames_forward):
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
             if i == self.strike_frame_id:
@@ -209,6 +210,11 @@ class Loader:
                 put_text(annotations[i], frame, 30, frame.shape[0]-30)
             if self.is_load_pose:
                 self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
+
+            if i in nose_df.index and not np.isnan(nose_df['cam_x'][i]):
+                put_text(f'({nose_df["cam_x"][i]:.0f}, {nose_df["cam_y"][i]:.0f})', frame, 1000, 30)
+                put_text(f'({nose_df["x"][i]:.0f}, {nose_df["y"][i]:.0f})', frame, 1000, 70)
+
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             cv2.imshow(str(self), frame)
             if cv2.waitKey(25) & 0xFF == ord('q'):
