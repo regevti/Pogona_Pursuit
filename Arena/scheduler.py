@@ -54,6 +54,7 @@ class Scheduler(threading.Thread):
         self.dlc_on = multiprocessing.Event()
         self.tracking_pose_on = multiprocessing.Event()
         self.compress_threads = {}
+        self.current_animal_id = None
         self.lights_state = 0  # 0 - off, 1 - on
         self.dwh_commit_tries = 0
 
@@ -65,6 +66,7 @@ class Scheduler(threading.Thread):
         while not self.arena_mgr.arena_shutdown_event.is_set():
             if not t0 or time.time() - t0 >= 60:  # every minute
                 t0 = time.time()
+                self.current_animal_id = cache.get(cc.CURRENT_ANIMAL_ID)
                 self.check_lights()
                 self.check_camera_status()
                 self.set_tracking_cameras()
@@ -127,7 +129,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def agent_update(self):
-        if config.IS_AGENT_ENABLED and self.is_in_range('cameras_on'):
+        if config.IS_AGENT_ENABLED and self.is_in_range('cameras_on') and not self.is_test_animal():
             self.agent.update()
 
     @schedule_method
@@ -211,7 +213,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def daily_summary(self):
-        if self.is_in_range('daily_summary'):
+        if self.is_in_range('daily_summary') and not self.is_test_animal():
             struct = self.arena_mgr.orm.today_summary()
             msg = json.dumps(struct, indent=4)
             utils.send_telegram_message(f'Daily Summary:\n{msg}')
@@ -259,6 +261,9 @@ class Scheduler(threading.Thread):
 
         multiprocessing.Process(target=_run_tracking_pose, args=(self.tracking_pose_on,)).start()
         self.tracking_pose_on.set()
+
+    def is_test_animal(self):
+        return self.current_animal_id in ['test']
 
 
 def _run_pose_callback(dlc_on):
