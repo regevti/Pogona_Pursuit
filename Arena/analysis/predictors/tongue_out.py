@@ -2,8 +2,6 @@ import cv2
 import shutil
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use('TkAgg')
 import torch
 from tqdm.auto import tqdm
 from dataclasses import dataclass
@@ -285,6 +283,9 @@ def clean_wrong_size_images(dataset_path):
 
 
 if __name__ == '__main__':
+    import matplotlib
+
+    matplotlib.use('TkAgg')
     # vidpath = '/data/Pogona_Pursuit/output/experiments/PV80/20221213/block3/videos/front_20221213T101615.mp4'
     # vidpath = '/data/Pogona_Pursuit/output/experiments/PV80/20221216/block1/videos/front_20221216T155149.mp4'
     # vidpath = '/data/Pogona_Pursuit/output/experiments/PV80/20221215/block2/videos/front_20221215T183722.mp4'

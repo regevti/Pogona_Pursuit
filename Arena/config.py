@@ -1,9 +1,12 @@
+import os
 import yaml
 from environs import Env
 from pathlib import Path
 
 env = Env()
 env.read_env('configurations/.env')
+if env.bool('IS_PROD', 0):
+    env.read_env('configurations/.env.prod', override=True)
 
 # General
 version = '2.2'
