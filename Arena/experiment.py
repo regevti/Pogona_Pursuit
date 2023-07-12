@@ -661,7 +661,8 @@ class ExperimentValidation:
         return self.get_reward_left() > 0
 
     def is_max_reward_reached(self):
-        return self.orm.get_animal_reward_amount_of_today(self.animal_id) < config.MAX_DAILY_REWARD
+        rewards_dict = self.orm.get_today_rewards(self.animal_id)
+        return sum(rewards_dict.values()) < config.MAX_DAILY_REWARD
 
     def get_reward_left(self):
         try:

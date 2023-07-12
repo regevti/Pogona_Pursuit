@@ -160,7 +160,7 @@
                     $("#openAppHostDiv").text(openAppHost ? `pogona hunter run on: ${openAppHost}` : 'No APP is running')
 
                     $("#nStrikes").text(`Today Strikes Count: ${(data['n_strikes']).toFixed(0)}`)
-                    $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards']).toFixed(0)}`)
+                    $("#nRewards").text(`Today Rewards Count: ${(data['n_rewards'])}`)
 
                     for (let feederName in data['reward_left']) {
                         let feederCount = data['reward_left'][feederName]

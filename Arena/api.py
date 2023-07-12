@@ -61,7 +61,9 @@ def check():
     res['open_app_host'] = cache.get(cc.OPEN_APP_HOST)
     if not config.DISABLE_DB:
         res['temperature'] = arena_mgr.orm.get_temperature()
-        res['n_strikes'], res['n_rewards'] = arena_mgr.orm.get_todays_amount_strikes_rewards()
+        res['n_strikes'] = sum(arena_mgr.orm.get_today_strikes().values())
+        rewards_dict = arena_mgr.orm.get_today_rewards()
+        res['n_rewards'] = f'{rewards_dict["auto"]} ({rewards_dict["manual"]})'
     else:
         res.update({'temperature': None, 'n_strikes': 0, 'n_rewards': 0})
     res['reward_left'] = periphery_mgr.get_feeders_counts()
@@ -270,7 +272,7 @@ def calibrate():
 def reward():
     """Activate Feeder"""
     # cache.publish_command('reward')
-    periphery_mgr.feed()
+    periphery_mgr.feed(is_manual=True)
     return Response('ok')
 
 

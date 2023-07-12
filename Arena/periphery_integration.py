@@ -35,7 +35,7 @@ class PeripheryIntegrator:
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",{state}]')
         self.cache.set(cc.CAM_TRIGGER_STATE, state)
 
-    def feed(self):
+    def feed(self, is_manual=False):
         if self.cache.get(cc.IS_REWARD_TIMEOUT):
             return
         self.cache.set(cc.IS_REWARD_TIMEOUT, True)
@@ -52,7 +52,7 @@ class PeripheryIntegrator:
             self.mqtt_publish(config.mqtt['publish_topic'], f'["dispense","{feeder_name}"]')
             self.update_reward_count(feeder_name, count - 1)
             self.logger.info(f'Reward was given by {feeder_name}')
-            self.orm.commit_reward(datetime.now())
+            self.orm.commit_reward(datetime.now(), is_manual=is_manual)
             break
 
     def mqtt_publish(self, topic, payload):

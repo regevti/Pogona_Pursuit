@@ -238,6 +238,7 @@ class Reward(Base):
     time = Column(DateTime)
     animal_id = Column(String)
     arena = Column(String)
+    is_manual = Column(Boolean, default=False)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
 
 
@@ -505,29 +506,32 @@ class ORM:
             s.query(Schedule).filter_by(id=int(schedule_id)).delete()
             s.commit()
 
-    def commit_reward(self, time):
+    def commit_reward(self, time, is_manual=False):
         with self.session() as s:
             rwd = Reward(time=time,
                          animal_id=self.cache.get(cc.CURRENT_ANIMAL_ID),
                          block_id=self.cache.get(cc.CURRENT_BLOCK_DB_INDEX),
+                         is_manual=is_manual,
                          arena=config.ARENA_NAME)
             s.add(rwd)
             s.commit()
 
-    def get_animal_reward_amount_of_today(self, animal_id):
+    def get_today_rewards(self, animal_id=None) -> dict:
         with self.session() as s:
             rewards = s.query(Reward).filter(and_(cast(Reward.time, Date) == date.today(),
-                                                  Reward.arena == config.ARENA_NAME,
-                                                  Reward.animal_id == animal_id)).all()
-        return len(rewards)
+                                                  Reward.arena == config.ARENA_NAME))
+            if animal_id:
+                rewards = rewards.filter_by(animal_id=animal_id)
+        return {'manual': rewards.filter_by(is_manual=True).count(),
+                'auto': rewards.filter_by(is_manual=False).count()}
 
-    def get_todays_amount_strikes_rewards(self):
+    def get_today_strikes(self, animal_id=None) -> dict:
         with self.session() as s:
-            strikes = s.query(Strike).filter(and_(cast(Strike.time, Date) == date.today(),
-                                                  Strike.arena == config.ARENA_NAME)).all()
-            rewards = s.query(Reward).filter(and_(cast(Reward.time, Date) == date.today(),
-                                                  Reward.arena == config.ARENA_NAME)).all()
-        return len(strikes), len(rewards)
+            strks = s.query(Strike).filter(and_(cast(Strike.time, Date) == date.today(),
+                                                  Strike.arena == config.ARENA_NAME))
+            if animal_id:
+                strks = strks.filter_by(animal_id=animal_id)
+        return {'hit': strks.filter_by(is_hit=True).count(), 'miss': strks.filter_by(is_hit=False).count()}
 
     def today_summary(self):
         summary = {}
@@ -547,7 +551,8 @@ class ORM:
                         else:
                             block_dict['misses'] += 1
         for animal_id, d in summary.items():
-            d['total_rewards'] = self.get_animal_reward_amount_of_today(animal_id)
+            rewards_dict = self.get_today_rewards(animal_id)
+            d['total_rewards'] = f'{rewards_dict["auto"]} ({rewards_dict["manual"]})'
         return summary
 
 
