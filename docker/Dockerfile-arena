@@ -1,4 +1,4 @@
-FROM arena_base:v1.0
+FROM arena_base_flir:v1.0
 
 # Required for nvidia-docker v1
 RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf && \

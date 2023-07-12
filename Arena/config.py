@@ -115,7 +115,7 @@ IS_TRACKING_CAMERAS_ALLOWED = env.bool('IS_TRACKING_CAMERAS_ALLOWED', False)
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False)
 mqtt = {
-    'host': 'localhost',
+    'host': env('MQTT_HOST', 'localhost'),
     'port': env.int('MQTT_PORT', 1883),
     'publish_topic': 'arena_command',
     'temperature_sensors': env.list('TEMPERATURE_SENSORS', ['Temp'])

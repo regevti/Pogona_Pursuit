@@ -17,7 +17,7 @@ services:
       - ../pogona_hunter:${ROOT_DIR}/pogona_hunter
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - ${MEDIA_DIR-/tmp}:/arena/media
-    restart: "no"
+    restart: "unless-stopped"
     runtime: nvidia
     command: "python3 api.py"
     ports:
