@@ -12,6 +12,7 @@ services:
       - cache
       - db
       - mqtt
+      - periphery
     volumes:
       - ../Arena:${ROOT_DIR}/Arena
       - ../pogona_hunter:${ROOT_DIR}/pogona_hunter

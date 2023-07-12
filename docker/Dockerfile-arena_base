@@ -60,4 +60,4 @@ RUN echo 'alias python="python3.8"' >> ~/.bashrc
 #RUN cd Arena/bin && tar xvf Vimba64_v6.0_Linux.tgz && cd Vimba_6_0/VimbaUSBTL && ./Install.sh
 #RUN cd Arena/bin/Vimba_6_0/VimbaPython && ./Install.sh
 
-RUN apt-get update && apt-get install ffmpeg libsm6 libxext6 xinput -y
+RUN apt-get update && apt-get install ffmpeg libsm6 libxext6 -y
