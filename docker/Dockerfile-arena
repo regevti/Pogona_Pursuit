@@ -1,5 +1,7 @@
 FROM arena_base_flir:v1.0
 
+RUN apt-get update && apt-get install xinput -y
+
 # Required for nvidia-docker v1
 RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf && \
     echo "/usr/local/nvidia/lib64" >> /etc/ld.so.conf.d/nvidia.conf
