@@ -38,11 +38,11 @@ class DLCPose(Predictor):
         self.detector.init_inference(img)
         self.is_initialized = True
 
-    def predict(self, img, frame_id=0) -> pd.DataFrame:
+    def predict(self, img, frame_id=0, is_use_threshold=False) -> pd.DataFrame:
         pdf = self._predict(img, frame_id)
         for bodypart in self.bodyparts:
             df_ = pdf.loc[frame_id, bodypart]
-            if df_['prob'] < self.threshold:
+            if is_use_threshold and df_['prob'] < self.threshold:
                 pdf.iloc[0][(bodypart, 'cam_x')] = None
                 pdf.iloc[0][(bodypart, 'cam_y')] = None
         return pdf

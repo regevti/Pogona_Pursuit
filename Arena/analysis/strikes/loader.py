@@ -200,7 +200,9 @@ class Loader:
     #     plt.title(str(self))
     #     plt.show()
 
-    def play_strike(self, n_frames_back=100, n_frames_forward=20, annotations=None):
+    def play_strike(self, n_frames_back=None, n_frames_forward=None, annotations=None):
+        n_frames_back = n_frames_back or self.n_frames_back
+        n_frames_forward = n_frames_forward or self.n_frames_forward
         nose_df = self.frames_df['nose']
         for i, frame in self.gen_frames_around_strike(n_frames_back, n_frames_forward):
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
