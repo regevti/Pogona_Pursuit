@@ -1,6 +1,7 @@
 # Created by .ignore support plugin (hsz.mobi)
 .idea/*
-*/.idea/*
+#*/.idea/*
+!/.idea/runConfigurations
 __pycache__/
 .ipynb_checkpoints/
 output/*
