@@ -86,6 +86,8 @@ services:
   db:
     image: timescale/timescaledb-ha:pg14-latest
     restart: "unless-stopped"
+    volumes:
+      - db_data:/home/postgres/pgdata/data
     ports:
       - 5432:5432
     environment:
@@ -96,3 +98,6 @@ services:
     restart: "unless-stopped"
     ports:
       - 3000:3000
+
+volumes:
+  db_data:
