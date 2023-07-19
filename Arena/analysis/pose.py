@@ -44,10 +44,10 @@ class NoFramesVideo(Exception):
 
 
 class ArenaPose:
-    def __init__(self, cam_name, predictor, is_commit_db=True, orm=None):
+    def __init__(self, cam_name, predictor, is_use_db=True, orm=None):
         self.cam_name = cam_name
         self.predictor = predictor
-        self.is_commit_db = is_commit_db
+        self.is_use_db = is_use_db
         self.load_predictor()
         self.last_commit = None
         self.caliber = None
@@ -109,7 +109,7 @@ class ArenaPose:
         @return:
         """
         db_video_id, video_path = self.check_video_inputs(db_video_id, video_path)
-        frames_times = self.load_frames_times(db_video_id)
+        frames_times = self.load_frames_times(db_video_id, video_path)
 
         pose_df = []
         cap = cv2.VideoCapture(video_path)
@@ -184,9 +184,11 @@ class ArenaPose:
         return pred_row
 
     def check_video_inputs(self, db_video_id, video_path):
-        if not db_video_id and video_path:
+        if self.is_use_db and not db_video_id and video_path:
             db_video_id = self.get_video_db_id(video_path)
         elif not video_path and db_video_id:
+            if not self.is_use_db:
+                raise Exception('must use DB to get video path but is_use_db=False')
             video_path = self.get_video_path(db_video_id)
         video_path = Path(video_path).as_posix()
         return db_video_id, video_path
@@ -194,7 +196,7 @@ class ArenaPose:
     def aggregate_to_commit(self, predictions, db_video_id, timestamp):
         predictions = np.array(predictions)
         x, y = [round(z) for z in predictions[:, 1:3].mean(axis=0)]
-        if self.is_commit_db and self.is_moved(x, y):
+        if self.is_use_db and self.is_moved(x, y):
             self.commit_to_db(timestamp, x, y, db_video_id)
         self.predictions = []
 
@@ -208,17 +210,24 @@ class ArenaPose:
     def after_analysis_actions(self, pred_row):
         return pred_row
 
-    def load_frames_times(self, db_video_id: int) -> pd.DataFrame:
-        frames_df = pd.DataFrame()
-        with self.orm.session() as s:
-            vid = s.query(Video).filter_by(id=db_video_id).first()
-            if vid.frames is None:
-                return frames_df
-            frames_ts = pd.DataFrame(vid.frames.items(), columns=['frame_id', 'time']).set_index('frame_id')
-            frames_ts['time'] = pd.to_datetime(frames_ts.time, unit='s', utc=True).dt.tz_convert(
-                'Asia/Jerusalem').dt.tz_localize(None)
-            frames_ts.index = frames_ts.index.astype(int)
-            return frames_ts
+    def load_frames_times(self, db_video_id: int, video_path: str) -> pd.DataFrame:
+        if self.is_use_db:
+            with self.orm.session() as s:
+                vid = s.query(Video).filter_by(id=db_video_id).first()
+                if vid.frames is None:
+                    raise Exception(f'unable to find frames_timestamps in DB for video_id: {db_video_id}')
+                frames_ts = pd.DataFrame(vid.frames.items(), columns=['frame_id', 'time']).set_index('frame_id')
+        else:
+            frames_output_dir = Path(video_path).parent / config.frames_timestamps_dir
+            csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
+            if not csv_path.exists():
+                raise Exception(f'unable to find frames_timestamps in {csv_path}')
+            frames_ts = pd.read_csv(csv_path, names=['frame_id', 'time'], header=0).set_index('frame_id')
+
+        frames_ts['time'] = pd.to_datetime(frames_ts.time, unit='s', utc=True).dt.tz_convert(
+            'Asia/Jerusalem').dt.tz_localize(None)
+        frames_ts.index = frames_ts.index.astype(int)
+        return frames_ts
 
     def get_video_path(self, db_video_id: int) -> str:
         with self.orm.session() as s:
@@ -287,8 +296,8 @@ class ArenaPose:
 
 
 class DLCArenaPose(ArenaPose):
-    def __init__(self, cam_name, is_commit_db=True, orm=None, **kwargs):
-        super().__init__(cam_name, 'deeplabcut', is_commit_db, orm, **kwargs)
+    def __init__(self, cam_name, is_use_db=True, orm=None, **kwargs):
+        super().__init__(cam_name, 'deeplabcut', is_use_db, orm, **kwargs)
         self.kalman = {}
         self.commit_bodypart = 'mid_ears'
         self.pose_df = pd.DataFrame()
@@ -342,7 +351,7 @@ class SpatialAnalyzer:
         self.split_by = split_by
         self.block_kwargs = block_kwargs
         self.orm = orm if orm is not None else ORM()
-        self.dlc = DLCArenaPose('front', is_commit_db=False, orm=self.orm)
+        self.dlc = DLCArenaPose('front', is_use_db=False, orm=self.orm)
         self.coords = {
             'arena': np.array([(-3, -2), (55, 78)]),
             'screen': np.array([(-1, -3), (52, -1)])
@@ -590,7 +599,7 @@ def get_screen_coords(name):
 
 def load_pose_from_videos(animal_id, cam_name):
     orm = ORM()
-    dp = ArenaPose(cam_name, 'deeplabcut', is_commit_db=True)
+    dp = ArenaPose(cam_name, 'deeplabcut', is_use_db=True)
     with orm.session() as s:
         for exp in s.query(Experiment).filter_by(animal_id=animal_id).all():
             for blk in exp.blocks:
@@ -631,7 +640,7 @@ def compare_sides(animal_id='PV80'):
 
 def foo():
     video_path = Path(f'{config.OUTPUT_DIR}/experiments/PV80/20221211/block1/videos/front_20221211T113717.mp4')
-    ap = DLCArenaPose('front', is_commit_db=False)
+    ap = DLCArenaPose('front', is_use_db=False)
     pose_df = ap.predict_video(video_path=video_path, is_create_example_video=True)
     return
 
@@ -643,7 +652,7 @@ def get_videos_to_predict(animal_id=None, experiments_dir=None):
         p = p / animal_id
     all_videos = list(p.rglob('*front*.mp4'))
     videos = []
-    ap = DLCArenaPose('front', is_commit_db=False)
+    ap = DLCArenaPose('front', is_use_db=False)
     for vid_path in all_videos:
         pred_path = ap.get_predicted_cache_path(vid_path)
         if pred_path.exists() or \
@@ -662,7 +671,7 @@ def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None):
     success_count = 0
     for i, video_path in enumerate(videos):
         try:
-            ap = DLCArenaPose('front', is_commit_db=False)
+            ap = DLCArenaPose('front', is_use_db=False)
             if ap.get_predicted_cache_path(video_path).exists():
                 continue
             ap.predict_video(video_path=video_path, is_create_example_video=False, prefix=f'({i+1}/{len(videos)}) ')
@@ -699,7 +708,7 @@ if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # print(get_videos_to_predict('PV148'))
     # commit_pose_estimation_to_db('PV91')
-    predict_all_videos(max_videos=20)
+    predict_all_videos(max_videos=1)
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()

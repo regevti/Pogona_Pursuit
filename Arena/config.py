@@ -111,6 +111,7 @@ OUTPUT_DIR = env('OUTPUT_DIR', '/data/Pogona_Pursuit/output')
 recordings_output_dir = env('recordings_output_dir', f'{OUTPUT_DIR}/recordings')
 capture_images_dir = env('capture_images_dir', f'{OUTPUT_DIR}/captures')
 IS_TRACKING_CAMERAS_ALLOWED = env.bool('IS_TRACKING_CAMERAS_ALLOWED', False)
+frames_timestamps_dir = env('FRAMES_TIMESTAMPS_DIR', 'frames_timestamps')
 
 # Periphery
 DISABLE_PERIPHERY = env.bool('DISABLE_PERIPHERY', False)

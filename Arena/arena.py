@@ -273,7 +273,7 @@ class ImageSink(ArenaProcess):
     def commit_video_frames_to_db(self, video_path: str):
         self.orm.commit_video_frames(self.write_video_timestamps, self.db_video_id)
         # frames timestamp artifact
-        frames_output_dir = Path(video_path).parent / 'frames_timestamps'
+        frames_output_dir = Path(video_path).parent / config.frames_timestamps_dir
         frames_output_dir.mkdir(exist_ok=True)
         csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
         pd.DataFrame(self.write_video_timestamps).to_csv(csv_path)

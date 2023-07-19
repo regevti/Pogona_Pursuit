@@ -34,7 +34,7 @@ class Loader:
         self.video_path = None
         self.avg_temperature = None
         if self.is_load_pose:
-            self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_commit_db=False, orm=orm)
+            self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_use_db=False, orm=orm)
         self.frames_df: pd.DataFrame = pd.DataFrame()
         self.traj_df: pd.DataFrame = pd.DataFrame(columns=['time', 'x', 'y'])
         self.info = {}
@@ -120,7 +120,7 @@ class Loader:
         self.info.update({k: blk.__dict__.get(k) for k in fields})
 
     def load_frames_times(self, vid):
-        frames_times = self.dlc_pose.load_frames_times(vid.id)
+        frames_times = self.dlc_pose.load_frames_times(vid.id, vid.path)
         if not frames_times.empty:
             self.frames_delta = np.mean(frames_times.time.diff().dt.total_seconds())
             self.n_frames_back = round(self.sec_before / self.frames_delta)
