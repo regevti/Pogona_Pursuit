@@ -9,7 +9,7 @@ import signal
 import queue
 import threading
 import sentry_sdk
-
+from pathlib import Path
 import torch.multiprocessing as mp
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.managers import SharedMemoryManager, SyncManager
@@ -258,7 +258,7 @@ class ImageSink(ArenaProcess):
         self.logger.info(f'Video with {len(self.write_video_timestamps)} frames and calc_fps={calc_fps:.1f} '
                          f'saved into {self.video_path}')
         if self.write_video_timestamps:
-            self.commit_video_frames_to_db()
+            self.commit_video_frames_to_db(self.video_path)
         self.video_out = None
         self.video_path = None
         self.write_output_dir = None
@@ -270,8 +270,14 @@ class ImageSink(ArenaProcess):
                (timestamp - self.write_video_timestamps[-1]) >= (1 / float(self.cam_config['writing_fps'])) * 0.9
 
     @run_in_thread
-    def commit_video_frames_to_db(self):
+    def commit_video_frames_to_db(self, video_path: str):
         self.orm.commit_video_frames(self.write_video_timestamps, self.db_video_id)
+        # frames timestamp artifact
+        frames_output_dir = Path(video_path).parent / 'frames_timestamps'
+        frames_output_dir.mkdir(exist_ok=True)
+        csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
+        pd.DataFrame(self.write_video_timestamps).to_csv(csv_path)
+        self.logger.debug(f'Saved frames timestamps to: {csv_path}')
 
     @property
     def writing_fps(self):
