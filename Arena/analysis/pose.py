@@ -660,6 +660,7 @@ def get_videos_to_predict(animal_id=None, experiments_dir=None):
                 (len(pred_path.parts) >= 6 and pred_path.parts[-6] == 'test'):
             continue
         videos.append(vid_path)
+    videos = sorted(videos, key=lambda x: x.name, reverse=True)
     return videos
 
 
