@@ -23,8 +23,8 @@ MAX_DISTANCE = 15  # pixels
 
 
 class PogonaHead(Predictor):
-    def __init__(self, cam_name):
-        super(PogonaHead, self).__init__()
+    def __init__(self, cam_name, model_path=None):
+        super(PogonaHead, self).__init__(model_path)
         self.cam_name = cam_name
         self.bodyparts = ['head']
         self.detector = YOLOv5Detector()

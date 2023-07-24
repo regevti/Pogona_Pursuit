@@ -158,7 +158,7 @@ class Scheduler(threading.Thread):
     def check_camera_status(self):
         """turn off cameras outside working hours, and restart predictors. Does nothing during
         an active experiment"""
-        if cache.get(cc.IS_EXPERIMENT_CONTROL_CAMERAS):
+        if cache.get(cc.IS_EXPERIMENT_CONTROL_CAMERAS) or config.DISABLE_CAMERAS_CHECK:
             return
 
         for cam_name, cu in self.arena_mgr.units.copy().items():
@@ -199,7 +199,7 @@ class Scheduler(threading.Thread):
     @schedule_method
     def set_tracking_cameras(self):
         if not self.is_in_range('cameras_on') or not config.IS_TRACKING_CAMERAS_ALLOWED or \
-                cache.get(cc.IS_EXPERIMENT_CONTROL_CAMERAS):
+                cache.get(cc.IS_EXPERIMENT_CONTROL_CAMERAS) or self.is_test_animal():
             return
 
         for cam_name, cu in self.arena_mgr.units.copy().items():

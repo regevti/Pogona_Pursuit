@@ -30,8 +30,8 @@ class Agent:
         self.history = {}
         self.next_trial_name = None
 
-    def update(self):
-        self.animal_id = self.cache.get(cc.CURRENT_ANIMAL_ID)
+    def update(self, animal_id=None):
+        self.animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         self.init_history()
         self.load_history()
         self.next_trial_name = self.get_next_trial_name()
