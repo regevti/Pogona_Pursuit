@@ -44,9 +44,10 @@ class NoFramesVideo(Exception):
 
 
 class ArenaPose:
-    def __init__(self, cam_name, predictor, is_use_db=True, orm=None):
+    def __init__(self, cam_name, predictor, is_use_db=True, orm=None, model_path=None):
         self.cam_name = cam_name
         self.predictor = predictor
+        self.model_path = model_path
         self.is_use_db = is_use_db
         self.load_predictor()
         self.last_commit = None
@@ -95,7 +96,7 @@ class ArenaPose:
         if isinstance(self.predictor, str):
             prd_module, prd_class = config.arena_modules['predictors'][self.predictor]
             prd_module = importlib.import_module(prd_module)
-            self.predictor = getattr(prd_module, prd_class)(self.cam_name)
+            self.predictor = getattr(prd_module, prd_class)(self.cam_name, self.model_path)
 
     def predict_video(self, db_video_id=None, video_path=None, is_save_cache=True, is_create_example_video=False,
                       prefix=''):
@@ -645,14 +646,14 @@ def foo():
     return
 
 
-def get_videos_to_predict(animal_id=None, experiments_dir=None):
+def get_videos_to_predict(animal_id=None, experiments_dir=None, model_path=None):
     experiments_dir = experiments_dir or config.EXPERIMENTS_DIR
     p = Path(experiments_dir)
     if animal_id:
         p = p / animal_id
     all_videos = list(p.rglob('*front*.mp4'))
     videos = []
-    ap = DLCArenaPose('front', is_use_db=False)
+    ap = DLCArenaPose('front', is_use_db=False, model_path=model_path)
     for vid_path in all_videos:
         pred_path = ap.get_predicted_cache_path(vid_path)
         if pred_path.exists() or \
@@ -664,15 +665,15 @@ def get_videos_to_predict(animal_id=None, experiments_dir=None):
     return videos
 
 
-def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None):
-    videos = get_videos_to_predict(animal_id, experiments_dir)
+def predict_all_videos(animal_id=None, max_videos=None, experiments_dir=None, model_path=None):
+    videos = get_videos_to_predict(animal_id, experiments_dir, model_path)
     if not videos:
         return
     print(f'found {len(videos)}/{len(videos)} to predict')
     success_count = 0
+    ap = DLCArenaPose('front', is_use_db=False, model_path=model_path)
     for i, video_path in enumerate(videos):
         try:
-            ap = DLCArenaPose('front', is_use_db=False)
             if ap.get_predicted_cache_path(video_path).exists():
                 continue
             ap.predict_video(video_path=video_path, is_create_example_video=False, prefix=f'({i+1}/{len(videos)}) ')
@@ -709,7 +710,9 @@ if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # print(get_videos_to_predict('PV148'))
     # commit_pose_estimation_to_db('PV91')
-    predict_all_videos(max_videos=1)
+    predict_all_videos(experiments_dir='/media/reptilearn4/experiments',
+                       model_path='/media/reptilearn4/models/deeplabcut/front_head_only_resnet_152',
+                       animal_id='PV91')
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()

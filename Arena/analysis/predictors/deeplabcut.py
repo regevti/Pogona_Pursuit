@@ -18,8 +18,8 @@ COLORS = list(TABLEAU_COLORS.values()) + list(CSS4_COLORS.values())
 
 
 class DLCPose(Predictor):
-    def __init__(self, cam_name):
-        super().__init__()
+    def __init__(self, cam_name, model_path=None):
+        super().__init__(model_path)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
             from dlclive import DLCLive, Processor

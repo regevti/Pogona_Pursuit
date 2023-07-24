@@ -29,8 +29,8 @@ TONGUE_CLASS = 'tongues'
 
 class TongueOutAnalyzer(Predictor):
     def __init__(self, td=None, action_callback=None, identifier=None, is_write_detected_image=False,
-                 is_debug=True):
-        super(TongueOutAnalyzer, self).__init__()
+                 is_debug=True, model_path=None):
+        super(TongueOutAnalyzer, self).__init__(model_path)
         self.check_pred_config()
         self.tr = TongueTrainer(model_path=self.model_path, is_debug=is_debug,
                                 cropped_shape=self.pred_config['image_size'],

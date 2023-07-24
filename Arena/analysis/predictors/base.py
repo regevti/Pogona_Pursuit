@@ -3,11 +3,11 @@ from pathlib import Path
 
 
 class Predictor:
-    def __init__(self):
+    def __init__(self, model_path=None):
         self.pred_config = dict()
         self.load_pred_config()
         self.threshold = self.pred_config['threshold']
-        self.model_path = self.pred_config['model_path']
+        self.model_path = model_path or self.pred_config['model_path']
         self.model_name = Path(self.model_path).name
 
     def predict(self, frame, timestamp):
