@@ -216,13 +216,13 @@ class ArenaPose:
             with self.orm.session() as s:
                 vid = s.query(Video).filter_by(id=db_video_id).first()
                 if vid.frames is None:
-                    raise Exception(f'unable to find frames_timestamps in DB for video_id: {db_video_id}')
+                    raise MissingFile(f'unable to find frames_timestamps in DB for video_id: {db_video_id}')
                 frames_ts = pd.DataFrame(vid.frames.items(), columns=['frame_id', 'time']).set_index('frame_id')
         else:
             frames_output_dir = Path(video_path).parent / config.frames_timestamps_dir
             csv_path = frames_output_dir / Path(video_path).with_suffix('.csv').name
             if not csv_path.exists():
-                raise Exception(f'unable to find frames_timestamps in {csv_path}')
+                raise MissingFile(f'unable to find frames_timestamps in {csv_path}')
             frames_ts = pd.read_csv(csv_path, names=['frame_id', 'time'], header=0).set_index('frame_id')
 
         frames_ts['time'] = pd.to_datetime(frames_ts.time, unit='s', utc=True).dt.tz_convert(
@@ -711,8 +711,7 @@ if __name__ == '__main__':
     # print(get_videos_to_predict('PV148'))
     # commit_pose_estimation_to_db('PV91')
     predict_all_videos(experiments_dir='/media/reptilearn4/experiments',
-                       model_path='/media/reptilearn4/models/deeplabcut/front_head_only_resnet_152',
-                       animal_id='PV91')
+                       model_path='/media/reptilearn4/models/deeplabcut/front_head_only_resnet_152')
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
