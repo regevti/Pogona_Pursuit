@@ -222,6 +222,8 @@ class PoseEstimation(Base):
     start_time = Column(DateTime)
     x = Column(Float)
     y = Column(Float)
+    prob = Column(Float, nullable=True)
+    bodypart = Column(String, nullable=True)
     model = Column(String, nullable=True)
     animal_id = Column(String, nullable=True)
     angle = Column(Float, nullable=True)
@@ -406,10 +408,10 @@ class ORM:
 
     @commit_func
     def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model,
-                               animal_id=None, block_id=None):
+                               bodypart, prob, animal_id=None, block_id=None):
         animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle, animal_id=animal_id,
-                            engagement=engagement, video_id=video_id, model=model,
+                            engagement=engagement, video_id=video_id, model=model, bodypart=bodypart, prob=prob,
                             block_id=block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         )
         with self.session() as s:
@@ -621,8 +623,8 @@ def get_engine():
 
 
 if __name__ == '__main__':
-    DWH().commit()
-    # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
+    # DWH().commit()
+    DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
     sys.exit(0)
 
     # create all models

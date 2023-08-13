@@ -9,6 +9,7 @@ import numpy as np
 from pathlib import Path
 from tqdm.auto import tqdm
 import config
+from calibration import CharucoEstimator
 from analysis.predictors.base import Predictor
 from analysis.predictors.yolov5.models.common import DetectMultiBackend
 from analysis.predictors.yolov5.utils.torch_utils import select_device
@@ -114,16 +115,20 @@ class YOLOv5Detector:
         return pred.cpu().numpy().flatten()[:5], image
 
 
-def predict_tracking(max_videos=None):
-    ph = PogonaHead('top')
+def predict_tracking(max_videos=None, cam_name='top', is_override=False, days=None):
+    ph = PogonaHead(cam_name)
+    caliber = CharucoEstimator(cam_name, is_debug=False)
+    is_calib_initialized = False
     ph.init(None)
 
     vids = []
     for p in Path(config.EXPERIMENTS_DIR).rglob('*/tracking/*.mp4'):
+        if days and p.parts[-3] not in days:
+            continue
         output_dir = p.parent / 'predictions'
         output_dir.mkdir(exist_ok=True)
         out_path = output_dir / p.with_suffix('.csv').name
-        if out_path.exists():
+        if not is_override and out_path.exists():
             continue
         vids.append((p, out_path))
         if max_videos and len(vids) >= max_videos:
@@ -135,8 +140,15 @@ def predict_tracking(max_videos=None):
         res = []
         for frame_id in tqdm(range(n_frames), desc=f'({i+1}/{len(vids)}) {p.name}'):
             ret, frame = cap.read()
-            x, y = ph.predict(frame, is_draw_pred=False)
-            res.append({'frame_id': frame_id, 'x': x, 'y': y})
+            if not is_calib_initialized:
+                caliber.init(frame)
+                is_calib_initialized = True
+            cam_x, cam_y = ph.predict(frame, is_draw_pred=False)
+            if cam_x:
+                x, y = caliber.get_location(cam_x, cam_y)
+            else:
+                x, y = np.nan, np.nan
+            res.append({'frame_id': frame_id, 'x': x, 'y': y, 'cam_x': cam_x, 'cam_y': cam_y})
 
         res = pd.DataFrame(res)
         res.to_csv(out_path)
@@ -144,4 +156,4 @@ def predict_tracking(max_videos=None):
 
 
 if __name__ == '__main__':
-    predict_tracking()
+    predict_tracking(is_override=True, days=['20230618','20230619','20230620','20230621','20230622'])

@@ -5,6 +5,7 @@ import pickle
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from scipy.spatial import distance
 import config
 import utils
@@ -136,7 +137,7 @@ class Calibrator:
 
 SIGN_MASKS = {
     'front': [-1, -1],
-    'top': [1, -1]
+    'top': [-1, -1]
 }
 
 
@@ -232,10 +233,11 @@ class CharucoEstimator:
             i = ids.astype(int).ravel().tolist().index(marker_id)
             corners = marker_corners[i]
             top_right, top_left, bottom_right, bottom_left = self.flatten_corners(corners)
-            row, col = marker_id // CHARUCO_COLS, marker_id % CHARUCO_COLS
+            charuco_df = self.create_charuco()
+            # row, col = marker_id // CHARUCO_COLS, marker_id % CHARUCO_COLS
             self.markers[marker_id] = {
-                'x': round((2*col + 1 if row % 2 else 2*col) * config.ARUCO_MARKER_SIZE),
-                'y': round(row * config.ARUCO_MARKER_SIZE),
+                'x': charuco_df.loc[marker_id, 'x'],
+                'y': charuco_df.loc[marker_id, 'y'],
                 # 'x': round(tVec[i][0][0], 1),
                 # 'y': round(tVec[i][0][1], 1),
                 'cam_distance': np.sqrt(tVec[i][0][2] ** 2 + tVec[i][0][0] ** 2 + tVec[i][0][1] ** 2),
@@ -271,6 +273,24 @@ class CharucoEstimator:
         if y_real < 0:
             self.sign_mask[1] = -1
 
+    @staticmethod
+    def create_charuco(n=1000):
+        df = []
+        is_even_row = True
+        col = 0
+        row = 0
+        for i in range(n):
+            df.append({'marker_id': i, 'row': row, 'col': col,
+                       'x': round((2 * col + 1 if row % 2 else 2 * col) * config.ARUCO_MARKER_SIZE),
+                       'y': round(row * config.ARUCO_MARKER_SIZE)})
+            col += 1
+            if (is_even_row and not (col % CHARUCO_COLS)) or (not is_even_row and not (col % (CHARUCO_COLS - 1))):
+                row += 1
+                is_even_row = not is_even_row
+                col = 0
+        df = pd.DataFrame(df).set_index('marker_id')
+        return df
+
     def align_coords_to_center_marker(self):
         if CENTER_ID not in self.markers:
             return
@@ -288,18 +308,19 @@ class CharucoEstimator:
             if marker_id == self.id_key:
                 continue
             cv2.polylines(frame, [d['corners'].astype(np.int32)], True, (0, 255, 255), 4, line_type)
+            # cv2.putText(frame, str(marker_id), d['top_right'], font, font_size, (0, 255, 255), 1, line_type)
             # Draw the pose of the marker
             # mtx, dist = self.calibrator.calib_params['mtx'], self.calibrator.calib_params['dist']
             # cv2.drawFrameAxes(frame, mtx, dist, d['rVec'], d['tVec'], 4, 4)
-            if d['y'] == 0 or d['x'] == 0:
-                x_, y_ = d['top_left']
-                cv2.circle(frame, (x_, y_), 2, (255, 0, 255), 3)
-                if d['y'] == 0:  # screen axis
-                    pos = (x_ - self.sign_mask[0] * 50, y_) if self.is_swap_xy else (x_, y_ - self.sign_mask[1] * 50)
-                    cv2.putText(frame, f"{d['x']}", pos, font, font_size, (255, 0, 255), 2, line_type)
-                if d['x'] == 0:
-                    pos = (x_, y_ - self.sign_mask[1] * 50) if self.is_swap_xy else (x_ - self.sign_mask[0] * 50, y_)
-                    cv2.putText(frame, f"{d['y']}", pos, font, font_size, (255, 0, 255), 2, line_type)
+            # if d['y'] == 0 or d['x'] == 0:
+            x_, y_ = d['top_left']
+            cv2.circle(frame, (x_, y_), 2, (255, 0, 255), 3)
+                # if d['y'] == 0:  # screen axis
+            # pos = (x_ - self.sign_mask[0] * 50, y_) if self.is_swap_xy else (x_, y_ - self.sign_mask[1] * 50)
+            cv2.putText(frame, f"{(d['x'],d['y'])}", d['top_right'], font, 1.5, (255, 0, 255), 2, line_type)
+                # if d['x'] == 0:
+            # pos = (x_, y_ - self.sign_mask[1] * 50) if self.is_swap_xy else (x_ - self.sign_mask[0] * 50, y_)
+            # cv2.putText(frame, f"{d['y']}", pos, font, font_size, (255, 0, 255), 2, line_type)
         frame = self.plot_calibrated_line(frame)
         return frame
 
@@ -362,6 +383,6 @@ def main(img, cam='top'):
 
 
 if __name__ == "__main__":
-    # cam_, image_ = 'top', cv2.imread('/data/Pogona_Pursuit/output/captures/20230221T131003_top.png')
-    cam_, image_ = 'front', cv2.imread('/data/Pogona_Pursuit/output/captures/20230221T131133_front.png')
+    cam_, image_ = 'top', cv2.imread('/data/Pogona_Pursuit/output/captures/20230508T141100_top.png')
+    # cam_, image_ = 'front', cv2.imread('/data/Pogona_Pursuit/output/captures/20230508T141111_front.png')
     main(image_, cam=cam_)

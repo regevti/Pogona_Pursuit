@@ -16,11 +16,12 @@ class MissingStrikeData(Exception):
 
 
 class Loader:
-    def __init__(self, strike_db_id, cam_name, is_load_pose=True, is_debug=True, orm=None,
+    def __init__(self, strike_db_id, cam_name, is_load_pose=True, is_use_db=True, is_debug=True, orm=None,
                  sec_before=3, sec_after=2):
         self.strike_db_id = strike_db_id
         self.cam_name = cam_name
         self.is_load_pose = is_load_pose
+        self.is_use_db = is_use_db
         self.is_debug = is_debug
         self.sec_before = sec_before
         self.sec_after = sec_after
@@ -34,7 +35,7 @@ class Loader:
         self.video_path = None
         self.avg_temperature = None
         if self.is_load_pose:
-            self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_use_db=False, orm=orm)
+            self.dlc_pose = ArenaPose(cam_name, 'deeplabcut', is_use_db=is_use_db, orm=orm)
         self.frames_df: pd.DataFrame = pd.DataFrame()
         self.traj_df: pd.DataFrame = pd.DataFrame(columns=['time', 'x', 'y'])
         self.info = {}
@@ -80,40 +81,57 @@ class Loader:
     def load_frames_data(self, s, trial, strk):
         block = s.query(Block).filter_by(id=trial.block_id).first()
         self.update_info_with_block_data(block)
-        for vid in block.videos:
-            if vid.cam_name != self.cam_name:
-                continue
-            video_path = Path(vid.path).resolve()
-            # fix for cases in which the analysis runs from other servers
-            if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
-                video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
-            if not video_path.exists():
-                if self.is_debug:
-                    print(f'Video path does not exist: {video_path}')
-                continue
-            frames_times = self.load_frames_times(vid)
-            # check whether strike's time is in the loaded frames_times
-            if not frames_times.empty and \
-                    (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time):
-                # if load pose isn't needed finish here
-                self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
-                if not self.is_load_pose:
-                    self.frames_df = frames_times
-                # otherwise, load all pose data around strike frame
+        if self.is_use_db:
+            pass
+        else:
+            for vid in block.videos:
+                if vid.cam_name != self.cam_name:
+                    continue
+
+                frames_times = self.load_frames_times(vid)
+                # check whether strike's time is in the loaded frames_times
+                if not frames_times.empty and \
+                        (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time):
+                    # if load pose isn't needed finish here
+                    self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
+                    if not self.is_load_pose:
+                        self.frames_df = frames_times
+                    # otherwise, load all pose data around strike frame
+                    else:
+                        try:
+                            self.load_pose(vid)
+                        except Exception as exc:
+                            raise MissingStrikeData(str(exc))
+                    # break since the relevant video was found
+                    break
+                # if strike's time not in frames_times continue to the next video
                 else:
-                    try:
-                        self.load_pose(video_path)
-                    except Exception as exc:
-                        raise MissingStrikeData(str(exc))
-                # break since the relevant video was found
-                self.video_path = video_path
-                break
-            # if strike's time not in frames_times continue to the next video
-            else:
-                continue
+                    continue
 
         if self.frames_df.empty:
             raise MissingStrikeData('frames_df is empty after loading')
+
+    def load_pose(self, vid):
+        if not self.is_use_db:
+            self.set_video_path(vid)
+            pose_df = self.dlc_pose.load(self.video_path, only_load=True)
+        else:
+            pose_df = self.dlc_pose.load()
+        first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
+        last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
+        self.frames_df = pose_df.loc[first_frame:last_frame].copy()
+        self.frames_df['time'] = pd.to_datetime(self.frames_df.time, unit='s')
+
+    def set_video_path(self, vid):
+        video_path = Path(vid.path).resolve()
+        # fix for cases in which the analysis runs from other servers
+        if DEFAULT_OUTPUT_DIR != config.OUTPUT_DIR and video_path.as_posix().startswith(DEFAULT_OUTPUT_DIR):
+            video_path = Path(video_path.as_posix().replace(DEFAULT_OUTPUT_DIR, config.OUTPUT_DIR))
+        if not video_path.exists():
+            if self.is_debug:
+                print(f'Video path does not exist: {video_path}')
+            raise Exception(f'Video path {video_path} does not exist')
+        self.video_path = video_path
 
     def update_info_with_block_data(self, blk: Block):
         fields = ['movement_type', 'exit_hole', 'bug_speed']
@@ -156,13 +174,6 @@ class Loader:
         start_frame = center_frame - (n_frames_back * step)
         frame_ids = [i for i in range(start_frame, start_frame + step * (n_frames_back + n_frames_forward), step)]
         return self.gen_frames(frame_ids)
-
-    def load_pose(self, video_path):
-        pose_df = self.dlc_pose.load(video_path, only_load=True)
-        first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
-        last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
-        self.frames_df = pose_df.loc[first_frame:last_frame].copy()
-        self.frames_df['time'] = pd.to_datetime(self.frames_df.time, unit='s')
 
     def get_bodypart_pose(self, bodypart):
         return pd.concat([pd.to_datetime(self.frames_df['time'], unit='s'), self.frames_df[bodypart]], axis=1)

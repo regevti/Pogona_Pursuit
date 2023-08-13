@@ -52,15 +52,21 @@ class TongueOutAnalyzer(Predictor):
         is_action = self.tongue_detected(orig_frame, timestamp) if is_tongue else False
         return is_action, frame, prob
 
-    def predict_strike(self, strike_db_id, n_before=30, n_after=10, cols=8, save_frames_above=None):
-        ld = Loader(strike_db_id, 'front', is_debug=False, is_load_pose=False)
+    def predict_strike(self, strike_db_id, sec_before=2, sec_after=2, cols=8, save_frames_above=None, is_plot=True):
+        ld = Loader(strike_db_id, 'front', is_debug=False, sec_after=sec_after, sec_before=sec_before)
         frame_ids = []
-        n = n_before + n_after - 1
-        rows = int(np.ceil(n/cols))
-        fig, axes = plt.subplots(rows, cols, figsize=(30, 3*rows))
-        axes = axes.flatten()
-        for i, (frame_id, frame) in enumerate(ld.gen_frames_around_strike(n_before, n_after)):
+        n = ld.n_frames_back + ld.n_frames_forward - 1
+        if is_plot:
+            rows = int(np.ceil(n/cols))
+            fig, axes = plt.subplots(rows, cols, figsize=(30, 3*rows))
+            axes = axes.flatten()
+
+        preds = []
+        for i, (frame_id, frame) in enumerate(ld.gen_frames_around_strike()):
             label, prob = self.tr.predict(frame)
+            preds.append({'frame_id': frame_id, 'label': label, 'prob': prob})
+            if not is_plot:
+                continue
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
             if save_frames_above and prob > save_frames_above:
                 cv2.imwrite(f'{self.pred_config["save_predicted_path"]}/{strike_db_id}_{frame_id}.jpg', frame)
@@ -79,7 +85,10 @@ class TongueOutAnalyzer(Predictor):
             if frame_id == ld.strike_frame_id:
                 axes[i].text(30, curr_y, 'Strike Frame', color='red')
             frame_ids.append(frame_id)
-        plt.show()
+        if is_plot:
+            plt.show()
+        preds = pd.DataFrame(preds)
+        return preds
 
     def push_to_predictions_stack(self, label, timestamp):
         self.predictions_stack.append((label, timestamp))
