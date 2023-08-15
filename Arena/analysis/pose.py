@@ -99,17 +99,18 @@ class ArenaPose:
                                                                  model=self.predictor.model_name).all()
         dfs = {}
         for pe in pose_estimations:
-            row = {('time', ''): pe.start_time, (pe.bodypart, 'x'): pe.x, (pe.bodypart, 'y'): pe.y,
+            row = {('time', ''): datetime.datetime.timestamp(pe.start_time), (pe.bodypart, 'x'): pe.x, (pe.bodypart, 'y'): pe.y,
                    (pe.bodypart, 'prob'): pe.prob}
             if pe.bodypart == 'nose':
                 row.update({('angle', ''): pe.angle})
-            dfs.setdefault(pe.bp, []).append(row)
+            dfs.setdefault(pe.bodypart, []).append(row)
 
         df = pd.DataFrame(dfs['nose'])
         for bp in COMMIT_DB_BODYPARTS[1:]:
-            df = df.merge(pd.DataFrame(dfs[bp]), on=('time', ''), how='outer')
+            df = df.merge(pd.DataFrame(dfs[bp]), on=[('time', '')], how='outer')
 
         df.columns = pd.MultiIndex.from_tuples(df.columns)
+        df = df.sort_values(by='time')
         return df
 
     def _load_from_local_files(self, video_path: Path, only_load=False, prefix=''):
@@ -132,9 +133,17 @@ class ArenaPose:
             video_path = s.query(Video).filter_by(id=db_video_id).first().path
             assert video_path and Path(video_path).exists()
 
-        pose_df = self._load_from_local_files(video_path, only_load=True)
-        pose = self._load_from_db(db_video_id)
+        pose_df_local = self._load_from_local_files(video_path, only_load=True)
+        pose_df_db = self._load_from_db(db_video_id)
+        # pose_df_db[('time', '')] = pose_df_db['time'].map(lambda x: datetime.datetime.timestamp(x))
 
+        fig, axes = plt.subplots(1, 3, figsize=(25, 8))
+        for i, bp in enumerate(COMMIT_DB_BODYPARTS):
+            axes[i].plot(pose_df_local['time']-pose_df_local['time'].iloc[0], pose_df_local[bp]['y'], '-o', label='local')
+            axes[i].plot(pose_df_db['time']-pose_df_db['time'].iloc[0], pose_df_db[bp]['y'], '-o', label='db')
+            axes[i].legend()
+        fig.tight_layout()
+        plt.show()
 
     def start_new_session(self, fps):
         self.kalman = Kalman(dt=1/fps)
@@ -876,7 +885,7 @@ def print_cache(exc, errors_cache):
         errors_cache.append(str(exc))
 
 
-def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1):
+def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1, min_prob=0.4):
     orm = ORM()
     sa = SpatialAnalyzer(animal_id=animal_id, bodypart='mid_ears', orm=orm, cam_name=cam_name)
     vids = sa.get_videos_paths(is_add_block_video_id=True)
@@ -884,17 +893,25 @@ def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1)
     for video_path, block_id, video_id in tqdm(vids['']):
         try:
             pose_df = sa.dlc.load(video_path=video_path, only_load=True).dropna(subset=[('nose', 'x')])
-            pose_df['distance'] = np.sqrt((pose_df['nose'][['x', 'y']].diff() ** 2).sum(axis=1))
-            pose_df = pose_df[pose_df[('distance', '')] >= min_dist]
+            pose_df = pose_df[(pose_df[[(bp, 'prob') for bp in COMMIT_DB_BODYPARTS]] >= min_prob).any(axis=1)]
+            if pose_df.empty:
+                continue
+            # pose_df['distance'] = np.sqrt((pose_df['nose'][['x', 'y']].diff() ** 2).sum(axis=1))
+            # pose_df = pose_df[pose_df[('distance', '')] >= min_dist]
+            last_pos = pose_df['nose'][['x', 'y']].iloc[0].values.tolist()
             for i, row in pose_df.iterrows():
+                cur_pos = pose_df['nose'][['x', 'y']].loc[i].values.tolist()
+                if i != pose_df.index[0] and distance.euclidean(last_pos, cur_pos) < min_dist:
+                    continue
+                last_pos = cur_pos
                 angle = sa.dlc.calc_head_angle(row)
-                start_time = pd.to_datetime(row[('time', '')], unit='s')
-                for bp in ['nose', 'left_ear', 'right_ear']:
+                start_time = datetime.datetime.fromtimestamp(row[('time', '')])
+                for bp in COMMIT_DB_BODYPARTS:
                     if np.isnan(row[bp, 'x']):
                         continue
                     orm.commit_pose_estimation(cam_name, start_time, row[(bp, 'x')], row[(bp, 'y')], angle,
                                                None, video_id, sa.dlc.predictor.model_name,
-                                               bp, row[(bp, 'prob')], animal_id=animal_id, block_id=block_id)
+                                               bp, row[(bp, 'prob')], i, animal_id=animal_id, block_id=block_id)
         except Exception as exc:
             print(f'Error: {exc}; {video_path}')
 
