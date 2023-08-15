@@ -139,8 +139,8 @@ class ArenaPose:
 
         fig, axes = plt.subplots(1, 3, figsize=(25, 8))
         for i, bp in enumerate(COMMIT_DB_BODYPARTS):
-            axes[i].plot(pose_df_local['time']-pose_df_local['time'].iloc[0], pose_df_local[bp]['y'], '-o', label='local')
-            axes[i].plot(pose_df_db['time']-pose_df_db['time'].iloc[0], pose_df_db[bp]['y'], '-o', label='db')
+            axes[i].plot(pose_df_local['time'], pose_df_local[bp]['y'], '-o', label='local')
+            axes[i].plot(pose_df_db['time'], pose_df_db[bp]['y'], '-', label='db')
             axes[i].legend()
         fig.tight_layout()
         plt.show()
@@ -434,7 +434,7 @@ class SpatialAnalyzer:
             if self.animal_id:
                 exps = exps.filter_by(animal_id=self.animal_id)
             else:
-                exps = exps.filter(Experiment.animal_id.not_in(['test']))
+                exps = exps.filter(Experiment.animal_id.not_in(['test', '']))
             if self.day:
                 exps = exps.filter(cast(Experiment.start_time, Date) == self.day)
             for exp in exps.all():
@@ -892,6 +892,7 @@ def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1,
     print(f'Start commit pose of model: {sa.dlc.predictor.model_name}')
     for video_path, block_id, video_id in tqdm(vids['']):
         try:
+            animal_id = Path(video_path).parts[-5]
             pose_df = sa.dlc.load(video_path=video_path, only_load=True).dropna(subset=[('nose', 'x')])
             pose_df = pose_df[(pose_df[[(bp, 'prob') for bp in COMMIT_DB_BODYPARTS]] >= min_prob).any(axis=1)]
             if pose_df.empty:
@@ -918,7 +919,7 @@ def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1,
 
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
-    # DLCArenaPose('front').test_loaders(1482)
+    # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     commit_pose_estimation_to_db()
     # predict_all_videos()
