@@ -81,32 +81,29 @@ class Loader:
     def load_frames_data(self, s, trial, strk):
         block = s.query(Block).filter_by(id=trial.block_id).first()
         self.update_info_with_block_data(block)
-        if self.is_use_db:
-            pass
-        else:
-            for vid in block.videos:
-                if vid.cam_name != self.cam_name:
-                    continue
+        for vid in block.videos:
+            if vid.cam_name != self.cam_name:
+                continue
 
-                frames_times = self.load_frames_times(vid)
-                # check whether strike's time is in the loaded frames_times
-                if not frames_times.empty and \
-                        (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time):
-                    # if load pose isn't needed finish here
-                    self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
-                    if not self.is_load_pose:
-                        self.frames_df = frames_times
-                    # otherwise, load all pose data around strike frame
-                    else:
-                        try:
-                            self.load_pose(vid)
-                        except Exception as exc:
-                            raise MissingStrikeData(str(exc))
-                    # break since the relevant video was found
-                    break
-                # if strike's time not in frames_times continue to the next video
+            frames_times = self.load_frames_times(vid)
+            # check whether strike's time is in the loaded frames_times
+            if not frames_times.empty and \
+                    (frames_times.iloc[0].time <= strk.time <= frames_times.iloc[-1].time):
+                # if load pose isn't needed finish here
+                self.strike_frame_id = (strk.time - frames_times.time).dt.total_seconds().abs().idxmin()
+                if not self.is_load_pose:
+                    self.frames_df = frames_times
+                # otherwise, load all pose data around strike frame
                 else:
-                    continue
+                    try:
+                        self.load_pose(vid)
+                    except Exception as exc:
+                        raise MissingStrikeData(str(exc))
+                # break since the relevant video was found
+                break
+            # if strike's time not in frames_times continue to the next video
+            else:
+                continue
 
         if self.frames_df.empty:
             raise MissingStrikeData('frames_df is empty after loading')
@@ -114,9 +111,9 @@ class Loader:
     def load_pose(self, vid):
         if not self.is_use_db:
             self.set_video_path(vid)
-            pose_df = self.dlc_pose.load(self.video_path, only_load=True)
+            pose_df = self.dlc_pose.load(video_path=self.video_path, only_load=True)
         else:
-            pose_df = self.dlc_pose.load()
+            pose_df = self.dlc_pose.load(video_db_id=vid.id)
         first_frame = max(self.strike_frame_id - self.n_frames_back, pose_df.index[0])
         last_frame = min(self.strike_frame_id + self.n_frames_forward, pose_df.index[-1])
         self.frames_df = pose_df.loc[first_frame:last_frame].copy()

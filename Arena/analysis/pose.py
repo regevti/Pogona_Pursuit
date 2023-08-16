@@ -99,16 +99,17 @@ class ArenaPose:
                                                                  model=self.predictor.model_name).all()
         dfs = {}
         for pe in pose_estimations:
-            row = {('time', ''): datetime.datetime.timestamp(pe.start_time), (pe.bodypart, 'x'): pe.x, (pe.bodypart, 'y'): pe.y,
-                   (pe.bodypart, 'prob'): pe.prob}
+            row = {('time', ''): datetime.datetime.timestamp(pe.start_time),
+                   (pe.bodypart, 'x'): pe.x, (pe.bodypart, 'y'): pe.y, (pe.bodypart, 'prob'): pe.prob}
             if pe.bodypart == 'nose':
-                row.update({('angle', ''): pe.angle})
+                row.update({('angle', ''): pe.angle, 'frame_id': pe.frame_id})
             dfs.setdefault(pe.bodypart, []).append(row)
 
         df = pd.DataFrame(dfs['nose'])
         for bp in COMMIT_DB_BODYPARTS[1:]:
             df = df.merge(pd.DataFrame(dfs[bp]), on=[('time', '')], how='outer')
 
+        df = df.set_index('frame_id')
         df.columns = pd.MultiIndex.from_tuples(df.columns)
         df = df.sort_values(by='time')
         return df
