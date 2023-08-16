@@ -202,6 +202,7 @@ class Video(Base):
     compression_status = Column(Integer, default=0)  # 0: no compression, 1: compressed, 2: error
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     predictions = relationship('VideoPrediction')
+    dwh_key = Column(Integer, nullable=True)
 
 
 class VideoPrediction(Base):
@@ -560,7 +561,7 @@ class ORM:
 
 
 class DWH:
-    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, PoseEstimation]
+    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, Video, PoseEstimation]
 
     def __init__(self):
         self.logger = get_logger('dwh')
@@ -624,8 +625,8 @@ def get_engine():
 
 
 if __name__ == '__main__':
-    # DWH().commit()
-    DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
+    DWH().commit()
+    # DWH().update_model(Strike, ['prediction_distance', 'calc_speed', 'projected_strike_coords', 'projected_leap_coords'])
     sys.exit(0)
 
     # create all models
