@@ -1,6 +1,8 @@
 import json
 import sys
 import time
+
+import pandas as pd
 from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
@@ -209,10 +211,13 @@ class VideoPrediction(Base):
     __tablename__ = 'video_predictions'
 
     id = Column(Integer, primary_key=True)
-    predictor_name = Column(String)
+    model = Column(String, nullable=True)
+    animal_id = Column(String, nullable=True)
     start_time = Column(DateTime)
+    arena = Column(String)
     data = Column(JSON)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
+    dwh_key = Column(Integer, nullable=True)
 
 
 class PoseEstimation(Base):
@@ -401,8 +406,9 @@ class ORM:
             s.commit()
 
     @commit_func
-    def commit_video_predictions(self, predictor_name: str, data: list, video_id: int, start_time: datetime):
-        vid_pred = VideoPrediction(predictor_name=predictor_name, data={i: x for i, x in enumerate(data)},
+    def commit_video_predictions(self, model: str, data: pd.DataFrame, video_id: int, start_time: datetime,
+                                 animal_id=None, arena=config.ARENA_NAME):
+        vid_pred = VideoPrediction(model=model, data=data.to_json(), animal_id=animal_id, arena=arena,
                                    video_id=video_id, start_time=start_time)
         with self.session() as s:
             s.add(vid_pred)
@@ -574,7 +580,7 @@ class DWH:
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
                 for model in self.commit_models:
-                    mappings = []
+                    mappings = {'dwh': [], 'local': []}
                     j = 0
                     recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
                     for rec in tqdm(recs, desc=model.__name__):
@@ -594,11 +600,8 @@ class DWH:
                                 kwargs[c.name] = value
 
                         r = model(**kwargs)
-                        dwh_s.add(r)
-                        dwh_s.commit()
-                        self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
-
                         if model == PoseEstimation:
+
                             mappings.append({'id': rec.id, 'dwh_key': r.id})
                             j += 1
                             if j % 10000 == 0:
@@ -607,8 +610,12 @@ class DWH:
                                 local_s.commit()
                                 mappings[:] = []
                         else:
+                            dwh_s.add(r)
+                            dwh_s.commit()
                             rec.dwh_key = r.id
                             local_s.commit()
+
+                        self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
 
                     if model == PoseEstimation:
                         local_s.bulk_update_mappings(model, mappings)
