@@ -574,6 +574,8 @@ class DWH:
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
                 for model in self.commit_models:
+                    mappings = []
+                    j = 0
                     recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
                     for rec in tqdm(recs, desc=model.__name__):
                         kwargs = {}
@@ -595,8 +597,22 @@ class DWH:
                         dwh_s.add(r)
                         dwh_s.commit()
                         self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
-                        rec.dwh_key = r.id
-                        local_s.commit()
+
+                        if model == PoseEstimation:
+                            mappings.append({'id': rec.id, 'dwh_key': r.id})
+                            j += 1
+                            if j % 10000 == 0:
+                                local_s.bulk_update_mappings(model, mappings)
+                                local_s.flush()
+                                local_s.commit()
+                                mappings[:] = []
+                        else:
+                            rec.dwh_key = r.id
+                            local_s.commit()
+
+                    if model == PoseEstimation:
+                        local_s.bulk_update_mappings(model, mappings)
+
         self.logger.info('Finished DWH commit')
 
     def update_model(self, model, columns=()):
