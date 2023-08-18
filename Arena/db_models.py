@@ -567,7 +567,7 @@ class ORM:
 
 
 class DWH:
-    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, Video, PoseEstimation]
+    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, Video, VideoPrediction]
 
     def __init__(self):
         self.logger = get_logger('dwh')
@@ -580,7 +580,7 @@ class DWH:
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
                 for model in self.commit_models:
-                    mappings = {'dwh': [], 'local': []}
+                    mappings = []
                     j = 0
                     recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
                     for rec in tqdm(recs, desc=model.__name__):
@@ -600,8 +600,11 @@ class DWH:
                                 kwargs[c.name] = value
 
                         r = model(**kwargs)
-                        if model == PoseEstimation:
+                        dwh_s.add(r)
+                        dwh_s.commit()
+                        self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
 
+                        if model == PoseEstimation:
                             mappings.append({'id': rec.id, 'dwh_key': r.id})
                             j += 1
                             if j % 10000 == 0:
@@ -610,12 +613,8 @@ class DWH:
                                 local_s.commit()
                                 mappings[:] = []
                         else:
-                            dwh_s.add(r)
-                            dwh_s.commit()
                             rec.dwh_key = r.id
                             local_s.commit()
-
-                        self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
 
                     if model == PoseEstimation:
                         local_s.bulk_update_mappings(model, mappings)
