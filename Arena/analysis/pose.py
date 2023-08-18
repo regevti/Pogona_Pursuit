@@ -918,11 +918,25 @@ def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1,
             print(f'Error: {exc}; {video_path}')
 
 
+def commit_video_pred_to_db(animal_id=None, cam_name='front'):
+    orm = ORM()
+    sa = SpatialAnalyzer(animal_id=animal_id, bodypart='nose', orm=orm, cam_name=cam_name)
+    vids = sa.get_videos_paths(is_add_block_video_id=True)
+    print(f'Start commit pose of model: {sa.dlc.predictor.model_name}')
+    for video_path, block_id, video_id in tqdm(vids['']):
+        try:
+            animal_id = Path(video_path).parts[-5]
+            pose_df = sa.dlc.load(video_path=video_path, only_load=True).dropna(subset=[('nose', 'x')])
+            start_time = datetime.datetime.fromtimestamp(pose_df.iloc[0][('time', '')])
+            orm.commit_video_predictions(sa.dlc.predictor.model_name, pose_df, video_id, start_time, animal_id)
+        except Exception as exc:
+            print(f'Error: {exc}; {video_path}')
+
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
-    commit_pose_estimation_to_db()
+    commit_video_pred_to_db()
     # predict_all_videos()
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
