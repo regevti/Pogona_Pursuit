@@ -537,7 +537,7 @@ class SpatialAnalyzer:
             axes[i].set_xlim([0, 50])
         plt.show()
 
-    def plot_spatial(self, single_animal, pose_dict=None, cols=4, axes=None, is_title=True, animal_colors=None):
+    def plot_spatial_hist(self, single_animal, pose_dict=None, cols=4, axes=None, is_title=True, animal_colors=None):
         if pose_dict is None:
             pose_dict = self.pose_dict
 
@@ -546,7 +546,8 @@ class SpatialAnalyzer:
             cbar_ax = None
             if i == len(pose_dict) - 1:
                 cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
-            self.plot_hist2d(pose_df, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
+            df_ = pose_df.query('0 <= x <= 40 and y<10')
+            self.plot_hist2d(df_, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
             self.plot_arena(axes_[i], is_close_to_screen_only=True)
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
                 group_name = r'Left $\rightarrow$ Right' if 'bottomRight' in group_name else r'Left $\leftarrow$ Right'
@@ -556,9 +557,27 @@ class SpatialAnalyzer:
             plt.tight_layout()
             plt.show()
 
+    def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None):
+        if pose_dict is None:
+            pose_dict = self.pose_dict
+
+        axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
+        for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+            df = pose_df.query('0 <= x <= 40 and y<10')
+            for animal_id, df_ in df.groupby('animal_id'):
+                color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
+                sns.kdeplot(data=df_, x='x', ax=axes_[i], clip=[0, 40], label=animal_id, **color_kwargs)
+            # inner_ax.legend()
+            axes_[i].axvline(20, linestyle='--', color='tab:orange')
+            axes_[i].set_xticks([0, 20, 40])
+            # inner_ax.set_ylim([0, 0.15])
+            axes_[i].set_yticks([0.1])
+            axes_[i].tick_params(axis="y", direction="in", pad=-20)
+            axes_[i].set_ylabel(None)
+            axes_[i].set_xlabel(None)
+
     @staticmethod
     def plot_hist2d(df, ax, single_animal, animal_colors=None, cbar_ax=None):
-        df = df.query('0 <= x <= 40 and y<10')
         df_ = df.query(f'animal_id == "{single_animal}"')
         sns.histplot(data=df_, x='x', y='y', ax=ax,
                      bins=(30, 20), cmap='Greens', stat='probability',
@@ -568,18 +587,18 @@ class SpatialAnalyzer:
         ax.set_ylabel(None)
         ax.set_xlabel(None)
 
-        inner_ax = inset_axes(ax, width="90%", height="40%", loc='upper right', borderpad=1)
-        for animal_id, df_ in df.groupby('animal_id'):
-            color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-            sns.kdeplot(data=df_, x='x', ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
-        # inner_ax.legend()
-        inner_ax.axvline(20, linestyle='--', color='tab:orange')
-        inner_ax.set_xticks([0, 20, 40])
-        # inner_ax.set_ylim([0, 0.15])
-        inner_ax.set_yticks([0.1])
-        inner_ax.tick_params(axis="y", direction="in", pad=-20)
-        inner_ax.set_ylabel(None)
-        inner_ax.set_xlabel(None)
+        # inner_ax = inset_axes(ax, width="90%", height="40%", loc='upper right', borderpad=1)
+        # for animal_id, df_ in df.groupby('animal_id'):
+        #     color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
+        #     sns.kdeplot(data=df_, x='x', ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
+        # # inner_ax.legend()
+        # inner_ax.axvline(20, linestyle='--', color='tab:orange')
+        # inner_ax.set_xticks([0, 20, 40])
+        # # inner_ax.set_ylim([0, 0.15])
+        # inner_ax.set_yticks([0.1])
+        # inner_ax.tick_params(axis="y", direction="in", pad=-20)
+        # inner_ax.set_ylabel(None)
+        # inner_ax.set_xlabel(None)
 
     def plot_arena(self, ax, is_close_to_screen_only=False):
         for name, c in self.coords.items():
@@ -900,7 +919,7 @@ def compare_sides(animal_id='PV80'):
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
     sa = SpatialAnalyzer(animal_id)
     for i, (k, v) in enumerate(res.items()):
-        sa.plot_spatial(v, axes[i])
+        sa.plot_spatial_hist(v, axes[i])
         axes[i].set_title(k)
     fig.tight_layout()
     plt.show()
