@@ -22,7 +22,7 @@ NUM_POSE_FRAMES_PER_STRIKE = 30
 
 class StrikeAnalyzer:
     def __init__(self, loader: Loader = None, payload: dict = None, pose_df: pd.DataFrame = None,
-                 bug_traj: pd.DataFrame = None):
+                 bug_traj: pd.DataFrame = None, is_y_pd=False):
         """
         Payload fields:
         - time: datetime
@@ -51,6 +51,7 @@ class StrikeAnalyzer:
         self.payload = payload
         self.pose_df = pose_df
         self.bug_traj = bug_traj
+        self.is_y_pd = is_y_pd  # if True, prediction distance is calculated by dy and not euclidean
         self.check_arguments()
         self.strike_position = (self.payload.get('x'), self.payload.get('y'))
 
@@ -397,7 +398,10 @@ class StrikeAnalyzer:
         if not traj_id:
             return
         bug_pos = self.bug_traj.loc[traj_id, ['x', 'y']].values.tolist()
-        d = distance(*bug_pos, *self.strike_position)
+        if not self.is_y_pd:
+            d = distance(*bug_pos, *self.strike_position)
+        else:
+            d = bug_pos[1] - self.strike_position[1]
         return pixels2cm(d)
 
     @cached_property

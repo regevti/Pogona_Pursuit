@@ -165,7 +165,7 @@ class PoseAnalyzer:
         if is_plot:
             if ax is None:
                 _, ax = plt.subplots(figsize=(10, 10))
-                ax.set_title(f'Arena Trajectories for animal_id: {self.loader.animal_id} - {self.loader}')
+                ax.set_title(f'Arena Trajectories for animal_id: {self.loader.animal_ids} - {self.loader}')
             for i, traj in enumerate(arena_trajs):
                 cmap = color or config.COLORS[i]
                 cl = colorline(ax, traj.x.to_numpy(), traj.y.to_numpy(), alpha=1, cmap=cmap, set_ax_lim=False)

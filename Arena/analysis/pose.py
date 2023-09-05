@@ -97,20 +97,14 @@ class ArenaPose:
         with self.orm.session() as s:
             vp = s.query(VideoPrediction).filter_by(video_id=video_db_id,
                                                     model=self.predictor.model_name).first()
-        # dfs = {}
-        # for pe in pose_estimations:
-        #     row = {('time', ''): datetime.datetime.timestamp(pe.start_time),
-        #            (pe.bodypart, 'x'): pe.x, (pe.bodypart, 'y'): pe.y, (pe.bodypart, 'prob'): pe.prob}
-        #     if pe.bodypart == 'nose':
-        #         row.update({('angle', ''): pe.angle, 'frame_id': pe.frame_id})
-        #     dfs.setdefault(pe.bodypart, []).append(row)
-        #
-        # df = pd.DataFrame(dfs['nose'])
-        # for bp in COMMIT_DB_BODYPARTS[1:]:
-        #     df = df.merge(pd.DataFrame(dfs[bp]), on=[('time', '')], how='outer')
-        #
-        # df = df.set_index('frame_id')
+            vid = s.query(Video).filter_by(id=video_db_id).first()
+            block_id = vid.block_id
+
+        if vp is None:
+            raise MissingFile(f'Video prediction was not found for video db id: {video_db_id}')
         df = pd.read_json(vp.data)
+        df["('block_id', '')"] = block_id
+        df["('animal_id', '')"] = vp.animal_id
         df.columns = pd.MultiIndex.from_tuples([eval(c) for c in df.columns])
         df = df.sort_values(by='time')
         return df
@@ -384,8 +378,16 @@ class DLCArenaPose(ArenaPose):
 
 
 class SpatialAnalyzer:
-    def __init__(self, animal_id=None, day=None, cam_name='front', bodypart='mid_ears', split_by=None, orm=None,
-                 is_use_db=False, **block_kwargs):
+    splits_table = {
+        'animal_id': 'experiment',
+        'arena': 'experiment',
+        'exit_hole': 'block',
+        'bug_speed': 'block',
+        'movement_type': 'block'
+    }
+
+    def __init__(self, animal_ids=None, day=None, start_date=None, cam_name='front', bodypart='mid_ears', split_by=None,
+                 orm=None, is_use_db=False, arena_name=None, excluded_animals=None, **block_kwargs):
         """
         Spatial analysis and visualization
         @param animal_id:
@@ -394,13 +396,19 @@ class SpatialAnalyzer:
         @param cam_name:
         @param bodypart: The body part from which the pose coordinates will be taken
         """
-        self.animal_id = animal_id
+        if animal_ids and not isinstance(animal_ids, list):
+            animal_ids = [animal_ids]
+        self.animal_ids = animal_ids
         self.day = day
+        self.start_date = start_date
         self.cam_name = cam_name
         self.bodypart = bodypart
+        self.arena_name = arena_name
+        self.excluded_animals = excluded_animals or []
         assert split_by is None or isinstance(split_by, list), 'split_by must be a list of strings'
         self.split_by = split_by
         self.block_kwargs = block_kwargs
+        self.is_use_db = is_use_db
         self.orm = orm if orm is not None else ORM()
         self.dlc = DLCArenaPose('front', is_use_db=is_use_db, orm=self.orm)
         self.coords = {
@@ -408,57 +416,95 @@ class SpatialAnalyzer:
             'arena_close': np.array([(-3, -2), (42, 15)]),
             'screen': np.array([(-1, -3), (39, -1)])
         }
+        self.pose_dict = self.get_pose()
 
-    def get_pose(self):
+    def get_pose(self) -> dict:
         res = {}
-        for group_name, vids in self.get_videos_paths().items():
+        for group_name, vids in self.get_videos_to_load().items():
             for video_path in vids:
-                pose_df = self._load_pose(video_path)
-                res.setdefault(group_name, []).append(pose_df)
+                try:
+                    pose_df = self._load_pose(video_path)
+                    res.setdefault(group_name, []).append(pose_df)
+                except MissingFile:
+                    continue
+                except Exception as exc:
+                    ident = f'video DB ID: {video_path}' if self.is_use_db else f'video path: {video_path}'
+                    print(f'Error loading {ident}; {exc}')
 
         for group_name in res.copy().keys():
             res[group_name] = pd.concat(res[group_name])
+
+        # sort results by first split value
+        if len(self.split_by) == 2:
+            res = dict(sorted(res.items(), key=lambda x: (x[0].split(',')[0].split('=')[1], x[0].split(',')[1].split('=')[1])))
+        elif len(self.split_by) == 1:
+            res = dict(sorted(res.items(), key=lambda x: x[0].split(',')[0].split('=')[1]))
         return res
 
     def _load_pose(self, video_path):
-        pose_df = self.dlc.load(video_path, only_load=True)
+        load_key = 'video_db_id' if self.is_use_db else 'video_path'
+        pose_df = self.dlc.load(only_load=True, **{load_key: video_path})
+        if pose_df is None:
+            raise MissingFile('')
         if self.bodypart == 'mid_ears':
             for c in ['x', 'y']:
                 pose_df[('mid_ears', c)] = pose_df[[('right_ear', c), ('left_ear', c)]].mean(axis=1)
             pose_df[('mid_ears', 'prob')] = pose_df[[('right_ear', 'prob'), ('left_ear', 'prob')]].min(axis=1)
-        return pd.concat([pd.to_datetime(pose_df['time'], unit='s'), pose_df[self.bodypart]], axis=1)
+        return pd.concat([
+            pd.to_datetime(pose_df['time'], unit='s'),
+            pose_df[self.bodypart],
+            pose_df['block_id'],
+            pose_df['animal_id']
+        ], axis=1)
 
-    def get_videos_paths(self, is_add_block_video_id=False) -> dict:
+    def get_videos_to_load(self, is_add_block_video_id=False) -> dict:
         """return list of lists of groups of video paths that are split using 'split_by'"""
         video_paths = {}
         with self.orm.session() as s:
-            exps = s.query(Experiment)
-            if self.animal_id:
-                exps = exps.filter_by(animal_id=self.animal_id)
-            else:
-                exps = exps.filter(Experiment.animal_id.not_in(['test', '']))
+            exps = s.query(Experiment).filter(Experiment.animal_id.not_in(['test', '']))
+            if self.animal_ids:
+                exps = exps.filter(Experiment.animal_id.in_(self.animal_ids))
+            if self.excluded_animals:
+                exps = exps.filter(Experiment.animal_id.not_in(self.excluded_animals))
+            if self.arena_name:
+                exps = exps.filter_by(arena=self.arena_name)
             if self.day:
                 exps = exps.filter(cast(Experiment.start_time, Date) == self.day)
+            elif self.start_date:
+                exps = exps.filter(Experiment.start_time >= self.start_date)
             for exp in exps.all():
                 for blk in exp.blocks:
                     if self.block_kwargs and any(getattr(blk, k) != v for k, v in self.block_kwargs.items()):
                         continue
 
-                    if self.split_by:
-                        group_name = ','.join([f"{c}={getattr(blk, c, None)}" for c in self.split_by])
-                    else:
-                        group_name = ''
-
+                    group_name = self._get_split_values(exp, blk)
                     for vid in blk.videos:
                         if self.cam_name and vid.cam_name != self.cam_name:
                             continue
+
                         if not is_add_block_video_id:
-                            v = vid.path
+                            v = vid.id if self.is_use_db else vid.path
                         else:
                             v = (vid.path, blk.id, vid.id)
                         video_paths.setdefault(group_name, []).append(v)
 
         return video_paths
+
+    def _get_split_values(self, exp, blk):
+        if not self.split_by:
+            return ''
+
+        s = []
+        for c in self.split_by:
+            assert c in self.splits_table, f'unknown split: {c}; possible splits: {",".join(self.splits_table.keys())}'
+            if self.splits_table[c] == 'block':
+                val = getattr(blk, c, None)
+            elif self.splits_table[c] == 'experiment':
+                val = getattr(exp, c, None)
+            else:
+                raise Exception(f'bad target for {c}: {self.splits_table[c]}')
+            s.append(f"{c}={val}")
+        return ','.join(s)
 
     def drop_out_of_arena_coords(self, df):
         xmin, xmax = self.coords['arena'][:, 0].flatten().tolist()
@@ -467,7 +513,7 @@ class SpatialAnalyzer:
 
     def get_out_of_experiment_pose(self):
         groups_pose = {}
-        for group_name, vids in self.get_videos_paths().items():
+        for group_name, vids in self.get_videos_to_load().items():
             day_paths = list(set([Path(*Path(v).parts[:-3]) for v in vids]))
             pose_ = []
             for day_p in day_paths:
@@ -491,41 +537,49 @@ class SpatialAnalyzer:
             axes[i].set_xlim([0, 50])
         plt.show()
 
-    def plot_spatial(self, pose_dict=None, cols=4, axes=None):
+    def plot_spatial(self, single_animal, pose_dict=None, cols=4, axes=None, is_title=True, animal_colors=None):
         if pose_dict is None:
-            pose_dict = self.get_pose()
+            pose_dict = self.pose_dict
 
         axes_ = self.get_axes(cols, len(pose_dict), axes=axes)
-        cbar_ax = None
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+            cbar_ax = None
             if i == len(pose_dict) - 1:
-                cbar_ax = axes_[-1]
-            self.plot_hist2d(pose_df, axes_[i], cbar_ax=cbar_ax)
-            self.plot_arena(axes_[i])
+                cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
+            self.plot_hist2d(pose_df, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
+            self.plot_arena(axes_[i], is_close_to_screen_only=True)
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
-                group_name = 'Left --> Right' if 'bottomRight' in group_name else 'Right --> Left'
-            axes_[i].set_title(group_name)
+                group_name = r'Left $\rightarrow$ Right' if 'bottomRight' in group_name else r'Left $\leftarrow$ Right'
+            if is_title:
+                axes_[i].set_title(group_name)
         if axes is None:
             plt.tight_layout()
             plt.show()
 
     @staticmethod
-    def plot_hist2d(df, ax, cbar_ax=None):
-        df_ = df.query('0 <= x <= 40 and y<10')
+    def plot_hist2d(df, ax, single_animal, animal_colors=None, cbar_ax=None):
+        df = df.query('0 <= x <= 40 and y<10')
+        df_ = df.query(f'animal_id == "{single_animal}"')
         sns.histplot(data=df_, x='x', y='y', ax=ax,
-                     bins=(30, 10), cmap='Greens', stat='probability',
+                     bins=(30, 20), cmap='Greens', stat='probability',
                      cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability'), cbar_ax=cbar_ax)
-        ax.set_yticks([0, 10])
+        ax.set_yticks([0, 5, 10])
         ax.set_xticks([0, 20, 40])
         ax.set_ylabel(None)
+        ax.set_xlabel(None)
 
-        inner_ax = inset_axes(ax, width="70%", height="60%", loc='upper right', borderpad=1)
-        sns.kdeplot(data=df_, x='x', ax=inner_ax, clip=[0, 40])
+        inner_ax = inset_axes(ax, width="90%", height="40%", loc='upper right', borderpad=1)
+        for animal_id, df_ in df.groupby('animal_id'):
+            color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
+            sns.kdeplot(data=df_, x='x', ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
+        # inner_ax.legend()
         inner_ax.axvline(20, linestyle='--', color='tab:orange')
         inner_ax.set_xticks([0, 20, 40])
-        inner_ax.set_ylim([0, 0.15])
-        inner_ax.set_yticks([0, 0.05, 0.1])
+        # inner_ax.set_ylim([0, 0.15])
+        inner_ax.set_yticks([0.1])
+        inner_ax.tick_params(axis="y", direction="in", pad=-20)
         inner_ax.set_ylabel(None)
+        inner_ax.set_xlabel(None)
 
     def plot_arena(self, ax, is_close_to_screen_only=False):
         for name, c in self.coords.items():
@@ -536,13 +590,29 @@ class SpatialAnalyzer:
         ax.set_xlim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 0])
         ax.set_ylim(self.coords['arena' if not is_close_to_screen_only else 'arena_close'][:, 1])
 
-    def plot_trajectories(self, cols=4, axes=None, only_to_screen=False):
-        pose_dict = self.get_pose()
-        axes = self.get_axes(cols, len(pose_dict), axes, is_cbar=False)
+    def plot_trajectories(self, single_animal, cols=2, axes=None, only_to_screen=False, is_title=True,
+                          cbar_indices=None, animal_colors=None):
+        axes_ = self.get_axes(cols, len(self.pose_dict), axes, is_cbar=False)
 
-        for i, (group_name, pose_df) in enumerate(pose_dict.items()):
+        for i, (group_name, pose_df) in enumerate(self.pose_dict.items()):
             trajs = self.cluster_trajectories(pose_df, only_to_screen=only_to_screen)
-            for j, traj in trajs.items():
+            if is_title:
+                axes_[i].set_title(group_name.replace(',', '\n'))
+            if not trajs:
+                continue
+
+            blocks_ids = sorted(set([t[0] for t in trajs.keys() if t[2] == single_animal]))
+            x = np.linspace(0, 1, len(blocks_ids))
+            cmap = matplotlib.colormaps['coolwarm']
+            cmap_mat = cmap(x)[:, :3] #.astype(int)
+
+            x_values = {}
+            for (block_id, frame_id, animal_id), traj in trajs.items():
+                x_values.setdefault(animal_id, []).append(traj.x.values[-1])
+                if animal_id != single_animal:
+                    continue
+
+                # plot single animal trajectories
                 traj = np.array(traj)
                 # remove NaNs
                 traj = traj[~np.isnan(traj).any(axis=1), :]
@@ -550,26 +620,36 @@ class SpatialAnalyzer:
                 if total_distance < 5:
                     continue
 
-                # axes[i].plot(traj[:, 0], traj[:, 1], label=f'traj{j}')
-                axes[i].plot([traj[0, 0], traj[-1, 0]], [traj[0, 1], traj[-1, 1]], label=f'traj{j}')
-                axes[i].scatter(traj[-1, 0], traj[-1, 1], marker='*')
-                axes[i].set_title(group_name)
+                color = cmap_mat[blocks_ids.index(block_id), :].tolist()
+                axes_[i].plot([traj[0, 0], traj[-1, 0]], [traj[0, 1], traj[-1, 1]], color=color)
+                axes_[i].scatter(traj[-1, 0], traj[-1, 1], marker='*', color=color)
 
-            x_values = np.concatenate([t.x.values for t in trajs.values()])
-            inner_ax = inset_axes(axes[i], width="70%", height="40%", loc='upper left', borderpad=1)
-            sns.kdeplot(x=x_values, ax=inner_ax, clip=[0, 40])
+            axes_[i].set_xticks([0, 20, 40])
+            axes_[i].set_yticks([0, 5, 10])
+            if not cbar_indices or i in cbar_indices:
+                cbaxes = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
+                blocks_ids = [b - blocks_ids[0] for b in blocks_ids]
+                matplotlib.colorbar.ColorbarBase(cbaxes, cmap=cmap,
+                                                 norm=matplotlib.colors.Normalize(vmin=blocks_ids[0], vmax=blocks_ids[-1]),
+                                                 orientation='vertical', label='Block Number')
+
+            inner_ax = inset_axes(axes_[i], width="90%", height="40%", loc='upper right', borderpad=1)
+            for animal_id, x_ in x_values.items():
+                color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
+                sns.kdeplot(x=x_, ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
+            # inner_ax.legend()
             inner_ax.axvline(20, linestyle='--', color='tab:orange')
             inner_ax.set_xticks([0, 20, 40])
-            inner_ax.set_ylim([0, 0.15])
-            inner_ax.set_yticks([0, 0.05, 0.1])
+            # inner_ax.set_ylim([0, 0.15])
+            inner_ax.set_yticks([0.1])
+            inner_ax.tick_params(axis="y", direction="in", pad=-20)
             inner_ax.set_ylabel(None)
+            self.plot_arena(axes_[i], is_close_to_screen_only=True)
+            # axes[i].legend()
 
-
-
-            self.plot_arena(axes[i], is_close_to_screen_only=True)
-            axes[i].legend()
-
-        plt.show()
+        if axes is None:
+            plt.tight_layout()
+            plt.show()
 
     def play_trajectories(self, video_path: str, only_to_screen=False):
         pose_df = self._load_pose(video_path)
@@ -599,7 +679,7 @@ class SpatialAnalyzer:
         cv2.destroyAllWindows()
 
     @staticmethod
-    def get_cross_limit(cross_id: int, s: pd.Series, grace=5, dist_threshold=0.1):
+    def get_cross_limit(cross_id: int, s: pd.Series, grace=10, dist_threshold=0.01):
         assert s.index[0] == cross_id or s.index[-1] == cross_id, 'cross_id must be the last or first element of the series'
         if len(s) < 2:
             return cross_id
@@ -615,39 +695,51 @@ class SpatialAnalyzer:
             i += 1
         return s.index[i]
 
-    def cluster_trajectories(self, pose: pd.DataFrame, cross_y_val=4, frames_around_cross=200, window_length=31,
-                             min_traj_len=3, only_to_screen=False):
+    def cluster_trajectories(self, pose: pd.DataFrame, cross_y_val=20, frames_around_cross=300, window_length=31,
+                             min_traj_len=2, only_to_screen=False, is_plot=False):
         trajs = {}
-        dist_df = pose[['time', 'x', 'y', 'prob']].reset_index().copy().rename(columns={'index': 'frame_id'})
+        dist_df = pose[['time', 'x', 'y', 'prob', 'block_id', 'animal_id'
+                        ]].reset_index().copy().rename(columns={'index': 'frame_id'})
         dist_df = dist_df.drop(index=dist_df[(dist_df.prob < 0.5) | (dist_df.x.isna())].index, errors='ignore')
         if len(dist_df) < window_length:
             return trajs
         dist_df['time_diff'] = dist_df.time.diff().dt.total_seconds()
-        dists = dist_df.y.diff()
+        dists = dist_df.y.diff().abs()
         dist_df['distance'] = savgol_filter(dists.values, window_length=window_length, polyorder=0, mode='interp')
-        g = dist_df.groupby(dist_df['time_diff'].ge(1).cumsum())
+        # g = dist_df.groupby(dist_df['time_diff'].ge(1).cumsum())
+        blocks_groups = dist_df.groupby('block_id')
 
-        # cols = 5
-        # rows = int(np.ceil(len(g)/cols))
-        # fig, axes = plt.subplots(rows, cols, figsize=(25, 3*rows))
-        # axes = axes.flatten()
-        for i, (group_id, xf) in enumerate(g):
+        if is_plot:
+            cols = 5
+            rows = int(np.ceil(len(blocks_groups)/cols))
+            fig, axes = plt.subplots(rows, cols, figsize=(25, 3*rows))
+            axes = axes.flatten()
+        for i, (block_id, xf) in enumerate(blocks_groups):
             xf = xf.query('y>-1')
             df = xf.query(f'{cross_y_val - 1}<=y<={cross_y_val + 1}')
             g2 = df.groupby(df.index.to_series().diff().ge(60).cumsum())
             crosses = []
-            # axes[i].plot(xf.y)
+            if is_plot:
+                axes[i].plot(xf.y, color='k')
+                axes[i].set_ylim([-1, 85])
             for n, gf in g2:
                 cross_id = (gf.y - cross_y_val).abs().idxmin()
                 lower_lim = self.get_cross_limit(cross_id, xf.loc[cross_id-frames_around_cross:cross_id, 'distance'])
                 upper_lim = self.get_cross_limit(cross_id, xf.loc[cross_id:cross_id+frames_around_cross, 'distance'])
                 dy_traj = np.abs(xf.loc[upper_lim, 'y'] - xf.loc[lower_lim, 'y'])
-                if dy_traj < min_traj_len or (only_to_screen and xf.loc[upper_lim, 'y'] > 3):
+                if dy_traj < min_traj_len or (only_to_screen and xf.loc[upper_lim, 'y'] > 8):
                     continue
                 crosses.append(cross_id)
                 frame_id = xf.loc[lower_lim, 'frame_id']
-                trajs[frame_id] = xf.loc[lower_lim:upper_lim, ['x', 'y']].copy()
+                animal_id = gf.animal_id.unique()[0]
+                trajs[(block_id, frame_id, animal_id)] = xf.loc[lower_lim:upper_lim, ['x', 'y']].copy()
+                if is_plot:
+                    axes[i].plot(xf.y.loc[lower_lim:upper_lim])
+            if is_plot:
+                axes[i].set_title(f'# crosses: {len(crosses)}')
 
+        if is_plot:
+            fig.tight_layout()
         #     axes[i].scatter(x=crosses, y=xf.loc[crosses, 'y'], c='red')
         #     axes[i].set_title(f'#Crosses={len(crosses)}')
         # fig.tight_layout()
@@ -890,7 +982,7 @@ def print_cache(exc, errors_cache):
 def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1, min_prob=0.4):
     orm = ORM()
     sa = SpatialAnalyzer(animal_id=animal_id, bodypart='mid_ears', orm=orm, cam_name=cam_name)
-    vids = sa.get_videos_paths(is_add_block_video_id=True)
+    vids = sa.get_videos_to_load(is_add_block_video_id=True)
     print(f'Start commit pose of model: {sa.dlc.predictor.model_name}')
     for video_path, block_id, video_id in tqdm(vids['']):
         try:
@@ -922,7 +1014,7 @@ def commit_pose_estimation_to_db(animal_id=None, cam_name='front', min_dist=0.1,
 def commit_video_pred_to_db(animal_id=None, cam_name='front'):
     orm = ORM()
     sa = SpatialAnalyzer(animal_id=animal_id, bodypart='nose', orm=orm, cam_name=cam_name)
-    vids = sa.get_videos_paths(is_add_block_video_id=True)
+    vids = sa.get_videos_to_load(is_add_block_video_id=True)
     print(f'Start commit pose of model: {sa.dlc.predictor.model_name}')
     for video_path, block_id, video_id in tqdm(vids['']):
         try:
@@ -933,9 +1025,10 @@ def commit_video_pred_to_db(animal_id=None, cam_name='front'):
         except Exception as exc:
             print(f'Error: {exc}; {video_path}')
 
+
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
-    DLCArenaPose('front').test_loaders(19)
+    # DLCArenaPose('front').test_loaders(19)
     # print(get_videos_to_predict('PV148'))
     # commit_video_pred_to_db()
     # predict_all_videos()
@@ -943,9 +1036,11 @@ if __name__ == '__main__':
     # plt.imshow(img)
     # plt.show()
     # load_pose_from_videos('PV80', 'front', is_exit_agg=True) #, day='20221211')h
-    # SpatialAnalyzer(animal_id='PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').plot_spatial()
+    # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose', is_use_db=True).plot_spatial()
     # SpatialAnalyzer(movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').find_crosses(y_value=5)
-    # SpatialAnalyzer(animal_id='PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').plot_trajectories(only_to_screen=True)
+    # SpatialAnalyzer(animal_ids=['PV42', 'PV91'], movement_type='low_horizontal',
+    #                 split_by=['animal_id', 'exit_hole'], bodypart='nose',
+    #                 is_use_db=True).plot_trajectories(only_to_screen=True)
     # SpatialAnalyzer(animal_id='PV91', movement_type='low_horizontal', split_by=['exit_hole'], bodypart='nose').plot_out_of_experiment_pose()
     # fix_calibrations()
     # for vid in sa.get_videos_paths()['exit_hole=bottomLeft']:
