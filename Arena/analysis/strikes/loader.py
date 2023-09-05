@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import cv2
 import config
+import math
 from analysis.pose import ArenaPose
 from analysis.pose_utils import put_text
 from db_models import ORM, Block, Strike, Trial, Temperature
@@ -222,8 +223,10 @@ class Loader:
                 self.dlc_pose.predictor.plot_predictions(frame, i, self.frames_df)
 
             if i in nose_df.index and not np.isnan(nose_df['cam_x'][i]):
-                put_text(f'({nose_df["cam_x"][i]:.0f}, {nose_df["cam_y"][i]:.0f})', frame, 1000, 30)
-                put_text(f'({nose_df["x"][i]:.0f}, {nose_df["y"][i]:.0f})', frame, 1000, 70)
+                # put_text(f'({nose_df["cam_x"][i]:.0f}, {nose_df["cam_y"][i]:.0f})', frame, 1000, 30)
+                # put_text(f'({nose_df["x"][i]:.0f}, {nose_df["y"][i]:.0f})', frame, 1000, 70)
+                angle = self.frames_df.loc[i, [("angle", "")]]
+                put_text(f'Angle={math.degrees(angle):.0f}', frame, 1000, 30)
 
             frame = cv2.resize(frame, None, None, fx=0.5, fy=0.5)
             cv2.imshow(str(self), frame)
