@@ -572,9 +572,10 @@ class SpatialAnalyzer:
             axes_[i].set_xticks([0, 20, 40])
             # inner_ax.set_ylim([0, 0.15])
             axes_[i].set_yticks([0.1])
-            axes_[i].tick_params(axis="y", direction="in", pad=-20)
+            # axes_[i].tick_params(axis="y", direction="in", pad=-20)
             axes_[i].set_ylabel(None)
             axes_[i].set_xlabel(None)
+            axes_[i].set_ylim([0, 0.25])
 
     @staticmethod
     def plot_hist2d(df, ax, single_animal, animal_colors=None, cbar_ax=None):
@@ -628,31 +629,32 @@ class SpatialAnalyzer:
             x_values = {}
             for (block_id, frame_id, animal_id), traj in trajs.items():
                 x_values.setdefault(animal_id, []).append(traj.x.values[-1])
-                if animal_id != single_animal:
-                    continue
+               #  if animal_id != single_animal:
+               #      continue
+               #
+               # # plot single animal trajectories
+               #  traj = np.array(traj)
+               #  # remove NaNs
+               #  traj = traj[~np.isnan(traj).any(axis=1), :]
+               #  total_distance = np.sum(np.sqrt(np.sum(np.diff(traj, axis=0) ** 2, axis=1)))
+               #  if total_distance < 5:
+               #      continue
 
-                # plot single animal trajectories
-                traj = np.array(traj)
-                # remove NaNs
-                traj = traj[~np.isnan(traj).any(axis=1), :]
-                total_distance = np.sum(np.sqrt(np.sum(np.diff(traj, axis=0) ** 2, axis=1)))
-                if total_distance < 5:
-                    continue
+            #     color = cmap_mat[blocks_ids.index(block_id), :].tolist()
+            #     axes_[i].plot([traj[0, 0], traj[-1, 0]], [traj[0, 1], traj[-1, 1]], color=color)
+            #     axes_[i].scatter(traj[-1, 0], traj[-1, 1], marker='*', color=color)
+            #
+            # axes_[i].set_xticks([0, 20, 40])
+            # axes_[i].set_yticks([0, 5, 10])
+            # if not cbar_indices or i in cbar_indices:
+            #     cbaxes = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
+            #     blocks_ids = [b - blocks_ids[0] for b in blocks_ids]
+            #     matplotlib.colorbar.ColorbarBase(cbaxes, cmap=cmap,
+            #                                      norm=matplotlib.colors.Normalize(vmin=blocks_ids[0], vmax=blocks_ids[-1]),
+            #                                      orientation='vertical', label='Block Number')
 
-                color = cmap_mat[blocks_ids.index(block_id), :].tolist()
-                axes_[i].plot([traj[0, 0], traj[-1, 0]], [traj[0, 1], traj[-1, 1]], color=color)
-                axes_[i].scatter(traj[-1, 0], traj[-1, 1], marker='*', color=color)
-
-            axes_[i].set_xticks([0, 20, 40])
-            axes_[i].set_yticks([0, 5, 10])
-            if not cbar_indices or i in cbar_indices:
-                cbaxes = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
-                blocks_ids = [b - blocks_ids[0] for b in blocks_ids]
-                matplotlib.colorbar.ColorbarBase(cbaxes, cmap=cmap,
-                                                 norm=matplotlib.colors.Normalize(vmin=blocks_ids[0], vmax=blocks_ids[-1]),
-                                                 orientation='vertical', label='Block Number')
-
-            inner_ax = inset_axes(axes_[i], width="90%", height="40%", loc='upper right', borderpad=1)
+            # inner_ax = inset_axes(axes_[i], width="90%", height="40%", loc='upper right', borderpad=1)
+            inner_ax = axes_[i]
             for animal_id, x_ in x_values.items():
                 color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
                 sns.kdeplot(x=x_, ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
@@ -661,9 +663,10 @@ class SpatialAnalyzer:
             inner_ax.set_xticks([0, 20, 40])
             # inner_ax.set_ylim([0, 0.15])
             inner_ax.set_yticks([0.1])
-            inner_ax.tick_params(axis="y", direction="in", pad=-20)
+            # inner_ax.tick_params(axis="y", direction="in", pad=-20)
             inner_ax.set_ylabel(None)
-            self.plot_arena(axes_[i], is_close_to_screen_only=True)
+            inner_ax.set_ylim([0, 0.2])
+            # self.plot_arena(axes_[i], is_close_to_screen_only=True)
             # axes[i].legend()
 
         if axes is None:
