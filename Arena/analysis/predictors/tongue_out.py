@@ -53,7 +53,7 @@ class TongueOutAnalyzer(Predictor):
         return is_action, frame, prob
 
     def predict_strike(self, strike_db_id, sec_before=2, sec_after=2, cols=8, save_frames_above=None, is_plot=True):
-        ld = Loader(strike_db_id, 'front', is_debug=False, sec_after=sec_after, sec_before=sec_before)
+        ld = Loader(strike_db_id, 'front', is_debug=False, sec_after=sec_after, sec_before=sec_before, is_use_db=False)
         frame_ids = []
         n = ld.n_frames_back + ld.n_frames_forward - 1
         if is_plot:
