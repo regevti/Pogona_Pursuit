@@ -1,5 +1,7 @@
 import datetime
 import math
+import pickle
+
 import yaml
 import cv2
 import traceback
@@ -387,7 +389,7 @@ class SpatialAnalyzer:
     }
 
     def __init__(self, animal_ids=None, day=None, start_date=None, cam_name='front', bodypart='mid_ears', split_by=None,
-                 orm=None, is_use_db=False, arena_name=None, excluded_animals=None, **block_kwargs):
+                 orm=None, is_use_db=False, cache_dir=None, arena_name=None, excluded_animals=None, **block_kwargs):
         """
         Spatial analysis and visualization
         @param animal_id:
@@ -409,6 +411,7 @@ class SpatialAnalyzer:
         self.split_by = split_by
         self.block_kwargs = block_kwargs
         self.is_use_db = is_use_db
+        self.cache_dir = cache_dir
         self.orm = orm if orm is not None else ORM()
         self.dlc = DLCArenaPose('front', is_use_db=is_use_db, orm=self.orm)
         self.coords = {
@@ -419,6 +422,14 @@ class SpatialAnalyzer:
         self.pose_dict = self.get_pose()
 
     def get_pose(self) -> dict:
+        cache_path = f'{self.cache_dir}/spatial_{"_".join(self.animal_ids) if self.animal_ids else "all"}.pkl'
+        if self.cache_dir:
+            cache_path = Path(cache_path)
+            if cache_path.exists():
+                with cache_path.open('rb') as f:
+                    res = pickle.load(f)
+                    return res
+
         res = {}
         for group_name, vids in self.get_videos_to_load().items():
             for video_path in vids:
@@ -439,6 +450,10 @@ class SpatialAnalyzer:
             res = dict(sorted(res.items(), key=lambda x: (x[0].split(',')[0].split('=')[1], x[0].split(',')[1].split('=')[1])))
         elif len(self.split_by) == 1:
             res = dict(sorted(res.items(), key=lambda x: x[0].split(',')[0].split('=')[1]))
+
+        if self.cache_dir:
+            with Path(cache_path).open('wb') as f:
+                pickle.dump(res, f)
         return res
 
     def _load_pose(self, video_path):
@@ -545,7 +560,8 @@ class SpatialAnalyzer:
         for i, (group_name, pose_df) in enumerate(pose_dict.items()):
             cbar_ax = None
             if i == len(pose_dict) - 1:
-                cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
+                # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
+                cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
             df_ = pose_df.query('0 <= x <= 40 and y<10')
             self.plot_hist2d(df_, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
             self.plot_arena(axes_[i], is_close_to_screen_only=True)
@@ -582,7 +598,8 @@ class SpatialAnalyzer:
         df_ = df.query(f'animal_id == "{single_animal}"')
         sns.histplot(data=df_, x='x', y='y', ax=ax,
                      bins=(30, 20), cmap='Greens', stat='probability',
-                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability'), cbar_ax=cbar_ax)
+                     cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability', orientation='horizontal'),
+                     cbar_ax=cbar_ax)
         ax.set_yticks([0, 5, 10])
         ax.set_xticks([0, 20, 40])
         ax.set_ylabel(None)
