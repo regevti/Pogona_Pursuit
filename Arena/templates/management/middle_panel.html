@@ -9,6 +9,9 @@
                 <div class="row ml-4">
                     <input class="form-check-input cam-checkbox" type="checkbox" value="{{cam}}" id="camera-{{cam}}">
                     <label class="form-check-label cams-labels" for="camera-{{cam}}">{{cam}}</label>
+                    <button id="cam-settings-{{cam}}" type="button" class="btn" style="padding: 0">
+                        <i class="fa fa-wrench"></i>
+                    </button>
                     <input id="toggle-{{cam}}" type="checkbox" checked data-toggle="toggle"
                            data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
                 </div>
@@ -69,5 +72,119 @@
     </div>
 </div>
 
+<!-- cam settings -->
+<div class="modal fade" id="camSettingsModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
 
+            <div class="modal-header">
+                <h5 class="modal-title">Camera Settings for: </h5><h5 id="camSettingsCamName" style="padding-left: 1em;"></h5>
+                <button type="button" class="close closeCameraSettings" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+
+            <div class="modal-body" id="cam-settings-modal-body">
+                <form class="col" id="cam-settings-form">
+
+                    <div class="form-group row">
+                        <label for="cam-setting-exposure" class="col col-form-label">Exposure</label>
+                        <div class="col-sm-7">
+                            <input type="number" class="form-control" id="cam-setting-exposure" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group row">
+                        <label for="cam-setting-mode" class="col col-form-label">Mode</label>
+                        <div class="col-sm-7">
+                            <select id="cam-setting-mode">
+                                <option value="trigger">Trigger</option>
+                                <option value="fps">FPS</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group row" id="camSettingsTriggerLineDiv">
+                        <label for="cam-setting-trigger-line" class="col col-form-label">Trigger Line</label>
+                        <div class="col-sm-7">
+                            <select id="cam-setting-trigger-line">
+                                <option value="line1">Line1</option>
+                                <option value="line2">Line2</option>
+                                <option value="line3">Line3</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group row" id="camSettingFPSDiv">
+                        <label for="cam-setting-fps" class="col col-form-label">FPS</label>
+                        <div class="col-sm-7">
+                            <input id="cam-setting-fps" type="number" class="form-control"></input>
+                        </div>
+                    </div>
+
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="cam-settings-modal-save" type="button" class="btn btn-primary">Save</button>
+                <button type="button" class="btn btn-primary closeCameraSettings">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const cameras = "{{ cameras|join(',') }}".split(',')
+
+    $("#cam-settings-modal-save").click((event) => {
+        let camName = $("#camSettingsCamName").text()
+        let data = {exposure: Number($("#cam-setting-exposure").val())}
+        if ($('#cam-setting-mode').val() === "trigger") {
+            data['fps'] = null
+            data['trigger_source'] = $("#cam-setting-trigger-line").val()
+        } else {
+            data['fps'] = Number($("#cam-setting-fps").val())
+            data['trigger_source'] = null
+        }
+        $.ajax({
+            url: `/update_camera/${camName}`,
+            type: "POST",
+            data: JSON.stringify(data),
+            contentType: "application/json",
+            complete: function (res) {
+                console.log(`Saved the following for ${camName}: ${data}`)
+            }
+        })
+        $('#camSettingsModal').modal('hide')
+    })
+
+    $(".closeCameraSettings").click(() => {
+        $('#camSettingsModal').modal('hide');
+    })
+
+    $("#cam-setting-mode").change(() => {
+        let mode = $('#cam-setting-mode').val()
+        if (mode==="trigger") {
+            $("#camSettingsTriggerLineDiv").show()
+            $("#camSettingFPSDiv").hide()
+        } else {
+            $("#camSettingsTriggerLineDiv").hide()
+            $("#camSettingFPSDiv").show()
+        }
+    }).trigger('change')
+
+    cameras.forEach((cam) => {
+        $(`#cam-settings-${cam}`).click(() => {
+            $.get(`/get_camera_settings/${cam}`, function (data) {
+                $("#cam-setting-exposure").val(data.exposure)
+                let mode = data.trigger_source ? 'trigger' : 'fps'
+                $("#cam-setting-mode").val(mode).change()
+                $("#cam-setting-fps").val(data.fps)
+                $("#cam-setting-trigger-line").val(data.trigger_source)
+            })
+            $("#camSettingsModal").modal('toggle')
+            $("#camSettingsCamName").text(cam)
+        })
+    })
+</script>
 

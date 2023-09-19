@@ -318,6 +318,18 @@ def check_cameras():
     return Response(json.dumps(missing_cameras))
 
 
+@app.route('/get_camera_settings/<name>')
+def get_camera_settings(name):
+    return jsonify(arena_mgr.units[name].cam_config)
+
+
+@app.route('/update_camera/<name>', methods=['POST'])
+def update_camera_settings(name):
+    data = request.json
+    arena_mgr.update_camera_unit(name, data)
+    return Response('ok')
+
+
 @app.route('/manual_record_stop')
 def manual_record_stop():
     arena_mgr.stop_recording()

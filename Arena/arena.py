@@ -598,6 +598,20 @@ class ArenaManager(SyncManager):
             self.units[cam_name] = cu
         self.logger.info('Arena started')
 
+    def update_camera_unit(self, cam_name, data):
+        if cam_name not in self.units:
+            self.logger.warning(f'Aborting cam-unit update; {cam_name} does not exist')
+            return
+
+        cam_class, cam_config = self.units[cam_name].cam_cls, self.units[cam_name].cam_config
+        cam_config.update(data)
+        self.units[cam_name].stop()
+        del self.units[cam_name]
+        cu = CameraUnit(cam_name, cam_class, self.global_start_event, self.global_stop_event,
+                        cam_config, self.log_queue)
+        self.units[cam_name] = cu
+        cu.start()
+
     def arena_shutdown(self, *args) -> None:
         self.logger.warning('shutdown start')
         self.logger.debug(f'open threads: {list(self.threads.keys())}')
