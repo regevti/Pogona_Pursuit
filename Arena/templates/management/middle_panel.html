@@ -17,7 +17,10 @@
                 </div>
                 {% endfor %}
                 <div class="row ml-4">
-                    <label class="form-check-label cams-labels" for="toggle-cam-trigger" style="font-weight: bold">Trigger</label>
+                    <label class="form-check-label" for="toggle-cam-trigger" style="font-weight: bold;margin-left: -1.25rem;">Trigger</label>
+                    <button id="trigger-settings" type="button" class="btn" style="padding: 0;margin-left: 0.9rem;">
+                        <i class="fa fa-wrench"></i>
+                    </button>
                     <input id="toggle-cam-trigger" type="checkbox" checked data-toggle="toggle"
                            data-onstyle="success" data-offstyle="danger" data-size="xs" data-height="25">
                 </div>
@@ -109,9 +112,9 @@
                         <label for="cam-setting-trigger-line" class="col col-form-label">Trigger Line</label>
                         <div class="col-sm-7">
                             <select id="cam-setting-trigger-line">
-                                <option value="line1">Line1</option>
-                                <option value="line2">Line2</option>
-                                <option value="line3">Line3</option>
+                                <option value="Line1">Line1</option>
+                                <option value="Line2">Line2</option>
+                                <option value="Line3">Line3</option>
                             </select>
                         </div>
                     </div>
@@ -132,6 +135,50 @@
         </div>
     </div>
 </div>
+
+<!-- trigger settings -->
+<div class="modal fade" id="triggerSettingsModal" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title">Trigger Settings</h5>
+                <button type="button" class="close closeTriggerSettings" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+
+            <div class="modal-body" id="trigger-settings-modal-body">
+                <form class="col" id="trigger-settings-form">
+
+                    <div class="form-group row">
+                        <label for="trigger-setting-fps" class="col col-form-label">FPS</label>
+                        <div class="col-sm-7">
+                            <input type="number" class="form-control" id="trigger-setting-fps" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group row">
+                        <label for="trigger-manual-on" class="col col-form-label">Trigger Switch</label>
+                        <div class="col-sm-2">
+                            <button id="trigger-manual-on" type="button" class="btn btn-primary">ON</button>
+                        </div>
+                        <div class="col-sm-2">
+                            <button id="trigger-manual-off" type="button" class="btn btn-primary">OFF</button>
+                        </div>
+                    </div>
+
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="trigger-settings-modal-save" type="button" class="btn btn-primary">Save</button>
+                <button type="button" class="btn btn-primary closeTriggerSettings">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <script>
     const cameras = "{{ cameras|join(',') }}".split(',')
@@ -162,6 +209,10 @@
         $('#camSettingsModal').modal('hide');
     })
 
+    $(".closeTriggerSettings").click(() => {
+        $('#triggerSettingsModal').modal('hide');
+    })
+
     $("#cam-setting-mode").change(() => {
         let mode = $('#cam-setting-mode').val()
         if (mode==="trigger") {
@@ -186,5 +237,30 @@
             $("#camSettingsCamName").text(cam)
         })
     })
+
+    $("#trigger-settings").click(() => {
+        $("#trigger-setting-fps").val("")
+        $("#triggerSettingsModal").modal('toggle')
+    })
+
+    $("#trigger-settings-modal-save").click((event) => {
+        let data = {fps: Number($("#trigger-setting-fps").val())}
+        $.ajax({
+            url: `/update_trigger_fps`,
+            type: "POST",
+            data: JSON.stringify(data),
+            contentType: "application/json"
+        })
+        $('#triggerSettingsModal').modal('hide')
+    })
+
+    $("#trigger-manual-on").click(() => {
+        $.post('/set_cam_trigger', {state: 1})
+    })
+
+    $("#trigger-manual-off").click(() => {
+        $.post('/set_cam_trigger', {state: 0})
+    })
+
 </script>
 

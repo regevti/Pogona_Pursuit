@@ -230,6 +230,13 @@ def set_cam_trigger():
     return Response('ok')
 
 
+@app.route('/update_trigger_fps', methods=['POST'])
+def update_trigger_fps():
+    data = request.json
+    periphery_mgr.change_trigger_fps(data['fps'])
+    return Response('ok')
+
+
 @app.route('/capture', methods=['POST'])
 def capture():
     cam = request.form['camera']
