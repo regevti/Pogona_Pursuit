@@ -573,7 +573,7 @@ class SpatialAnalyzer:
             plt.tight_layout()
             plt.show()
 
-    def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None):
+    def plot_spatial_x_kde(self, axes=None, cols=4, animal_colors=None, pose_dict=None, is_title=False):
         if pose_dict is None:
             pose_dict = self.pose_dict
 
@@ -587,9 +587,9 @@ class SpatialAnalyzer:
             axes_[i].axvline(20, linestyle='--', color='tab:orange')
             axes_[i].set_xticks([0, 20, 40])
             # inner_ax.set_ylim([0, 0.15])
-            axes_[i].set_yticks([0.1])
+            # axes_[i].set_yticks([0.1])
             # axes_[i].tick_params(axis="y", direction="in", pad=-20)
-            axes_[i].set_ylabel(None)
+            axes_[i].set_ylabel('Probability')
             axes_[i].set_xlabel(None)
             axes_[i].set_ylim([0, 0.25])
 
@@ -679,9 +679,9 @@ class SpatialAnalyzer:
             inner_ax.axvline(20, linestyle='--', color='tab:orange')
             inner_ax.set_xticks([0, 20, 40])
             # inner_ax.set_ylim([0, 0.15])
-            inner_ax.set_yticks([0.1])
+            # inner_ax.set_yticks([0.1])
             # inner_ax.tick_params(axis="y", direction="in", pad=-20)
-            inner_ax.set_ylabel(None)
+            inner_ax.set_ylabel('Probability')
             inner_ax.set_ylim([0, 0.2])
             # self.plot_arena(axes_[i], is_close_to_screen_only=True)
             # axes[i].legend()

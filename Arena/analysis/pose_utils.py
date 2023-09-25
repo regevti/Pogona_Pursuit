@@ -170,7 +170,7 @@ def put_text(text, frame, x, y, font_scale=1, color=(255, 255, 0), thickness=2, 
     return cv2.putText(frame, str(text), (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
 
 
-def plot_regression(ax, x, y, color='deeppink', prefix=''):
+def plot_regression(ax, x, y, color='deeppink', prefix='', linewidth=2, is_legend=True):
     assert isinstance(x, np.ndarray) and isinstance(y, np.ndarray), f'inputs must be numpy arrays'
     exclude_idx = np.concatenate([np.argwhere(np.isnan(x)), np.argwhere(np.isnan(y))])
     x, y = np.delete(x, exclude_idx), np.delete(y, exclude_idx)
@@ -180,5 +180,7 @@ def plot_regression(ax, x, y, color='deeppink', prefix=''):
     label = f'r={r_value:.2f}, {p_val_text}'
     if prefix:
         label = f'{prefix} ({label})'
-    ax.plot(x, y_reg, color=color, label=label)
-    ax.legend()
+    ax.plot(x, y_reg, color=color, label=label, linewidth=linewidth)
+    if is_legend:
+        ax.legend()
+    return r_value, p_value
