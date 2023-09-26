@@ -562,7 +562,7 @@ class SpatialAnalyzer:
             if i == len(pose_dict) - 1:
                 # cbar_ax = axes_[i].inset_axes([1.05, 0.1, 0.03, 0.8])
                 cbar_ax = axes_[i].inset_axes([0.2, -0.3, 0.6, 0.05])
-            df_ = pose_df.query('0 <= x <= 40 and y<10')
+            df_ = pose_df.query('0 <= x <= 40 and y<20')
             self.plot_hist2d(df_, axes_[i], single_animal, animal_colors=animal_colors, cbar_ax=cbar_ax)
             self.plot_arena(axes_[i], is_close_to_screen_only=True)
             if len(self.split_by) == 1 and self.split_by[0] == 'exit_hole':
@@ -597,13 +597,17 @@ class SpatialAnalyzer:
     def plot_hist2d(df, ax, single_animal, animal_colors=None, cbar_ax=None):
         df_ = df.query(f'animal_id == "{single_animal}"')
         sns.histplot(data=df_, x='x', y='y', ax=ax,
-                     bins=(30, 20), cmap='Greens', stat='probability',
+                     bins=(30, 25), cmap='Greens', stat='probability',
                      cbar=cbar_ax is not None, cbar_kws=dict(shrink=.75, label='Probability', orientation='horizontal'),
                      cbar_ax=cbar_ax)
         ax.set_yticks([0, 5, 10])
         ax.set_xticks([0, 20, 40])
         ax.set_ylabel(None)
         ax.set_xlabel(None)
+
+        hist_x_ax = ax.inset_axes([0, 1, 1, 0.3])
+        sns.histplot(data=df_, x='x', ax=hist_x_ax, bins=30)
+        hist_x_ax.axis('off')
 
         # inner_ax = inset_axes(ax, width="90%", height="40%", loc='upper right', borderpad=1)
         # for animal_id, df_ in df.groupby('animal_id'):
@@ -674,7 +678,7 @@ class SpatialAnalyzer:
             inner_ax = axes_[i]
             for animal_id, x_ in x_values.items():
                 color_kwargs = {'color': animal_colors[animal_id] if animal_colors else None}
-                sns.kdeplot(x=x_, ax=inner_ax, clip=[0, 40], label=animal_id, **color_kwargs)
+                sns.kdeplot(x=x_, ax=inner_ax, clip=[0, 40], label=animal_id, bw_adjust=.4, **color_kwargs)
             # inner_ax.legend()
             inner_ax.axvline(20, linestyle='--', color='tab:orange')
             inner_ax.set_xticks([0, 20, 40])
