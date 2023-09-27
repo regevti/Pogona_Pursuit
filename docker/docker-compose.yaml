@@ -56,6 +56,8 @@ services:
     container_name: periphery
     privileged: true
     command: "python main.py --mqtt_host mqtt"
+    volumes:
+      - ../Arena/configurations/periphery_config.json:/Arena/configurations/periphery_config.json
     environment:
       - PYTHONUNBUFFERED=1
 

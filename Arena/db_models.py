@@ -1,6 +1,8 @@
 import json
 import sys
 import time
+
+import pandas as pd
 from tqdm.auto import tqdm
 from functools import wraps
 import numpy as np
@@ -202,16 +204,20 @@ class Video(Base):
     compression_status = Column(Integer, default=0)  # 0: no compression, 1: compressed, 2: error
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     predictions = relationship('VideoPrediction')
+    dwh_key = Column(Integer, nullable=True)
 
 
 class VideoPrediction(Base):
     __tablename__ = 'video_predictions'
 
     id = Column(Integer, primary_key=True)
-    predictor_name = Column(String)
+    model = Column(String, nullable=True)
+    animal_id = Column(String, nullable=True)
     start_time = Column(DateTime)
+    arena = Column(String)
     data = Column(JSON)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
+    dwh_key = Column(Integer, nullable=True)
 
 
 class PoseEstimation(Base):
@@ -222,10 +228,13 @@ class PoseEstimation(Base):
     start_time = Column(DateTime)
     x = Column(Float)
     y = Column(Float)
+    prob = Column(Float, nullable=True)
+    bodypart = Column(String, nullable=True)
     model = Column(String, nullable=True)
     animal_id = Column(String, nullable=True)
     angle = Column(Float, nullable=True)
     engagement = Column(Float, nullable=True)
+    frame_id = Column(Integer, nullable=True)
     video_id = Column(Integer, ForeignKey('videos.id'), nullable=True)
     block_id = Column(Integer, ForeignKey('blocks.id'), nullable=True)
     dwh_key = Column(Integer, nullable=True)
@@ -397,8 +406,9 @@ class ORM:
             s.commit()
 
     @commit_func
-    def commit_video_predictions(self, predictor_name: str, data: list, video_id: int, start_time: datetime):
-        vid_pred = VideoPrediction(predictor_name=predictor_name, data={i: x for i, x in enumerate(data)},
+    def commit_video_predictions(self, model: str, data: pd.DataFrame, video_id: int, start_time: datetime,
+                                 animal_id=None, arena=config.ARENA_NAME):
+        vid_pred = VideoPrediction(model=model, data=data.to_json(), animal_id=animal_id, arena=arena,
                                    video_id=video_id, start_time=start_time)
         with self.session() as s:
             s.add(vid_pred)
@@ -406,11 +416,11 @@ class ORM:
 
     @commit_func
     def commit_pose_estimation(self, cam_name, start_time, x, y, angle, engagement, video_id, model,
-                               animal_id=None, block_id=None):
+                               bodypart, prob, frame_id, animal_id=None, block_id=None):
         animal_id = animal_id or self.cache.get(cc.CURRENT_ANIMAL_ID)
         pe = PoseEstimation(cam_name=cam_name, start_time=start_time, x=x, y=y, angle=angle, animal_id=animal_id,
-                            engagement=engagement, video_id=video_id, model=model,
-                            block_id=block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
+                            engagement=engagement, video_id=video_id, model=model, bodypart=bodypart, prob=prob,
+                            frame_id=frame_id, block_id=block_id or self.cache.get(cc.CURRENT_BLOCK_DB_INDEX)
         )
         with self.session() as s:
             s.add(pe)
@@ -557,7 +567,7 @@ class ORM:
 
 
 class DWH:
-    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, PoseEstimation]
+    commit_models = [Animal, AnimalSettingsHistory, Experiment, Block, Trial, Strike, Video, VideoPrediction]
 
     def __init__(self):
         self.logger = get_logger('dwh')
@@ -570,6 +580,8 @@ class DWH:
         with self.local_session() as local_s:
             with self.dwh_session() as dwh_s:
                 for model in self.commit_models:
+                    mappings = []
+                    j = 0
                     recs = local_s.query(model).filter(model.dwh_key.is_(None)).all()
                     for rec in tqdm(recs, desc=model.__name__):
                         kwargs = {}
@@ -591,8 +603,22 @@ class DWH:
                         dwh_s.add(r)
                         dwh_s.commit()
                         self.keys_table.setdefault(model.__table__.name, {})[rec.id] = r.id
-                        rec.dwh_key = r.id
-                        local_s.commit()
+
+                        if model == PoseEstimation:
+                            mappings.append({'id': rec.id, 'dwh_key': r.id})
+                            j += 1
+                            if j % 10000 == 0:
+                                local_s.bulk_update_mappings(model, mappings)
+                                local_s.flush()
+                                local_s.commit()
+                                mappings[:] = []
+                        else:
+                            rec.dwh_key = r.id
+                            local_s.commit()
+
+                    if model == PoseEstimation:
+                        local_s.bulk_update_mappings(model, mappings)
+
         self.logger.info('Finished DWH commit')
 
     def update_model(self, model, columns=()):

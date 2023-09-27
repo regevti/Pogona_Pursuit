@@ -44,12 +44,16 @@ def index():
         cameras = list(config.cameras.keys())
     else:
         cameras = list(arena_mgr.units.keys())
+    if config.IS_ANALYSIS_ONLY:
+        toggels, feeders = [], []
+    else:
+        toggels, feeders = periphery_mgr.toggles, periphery_mgr.feeders
     return render_template('index.html', cameras=cameras, exposure=config.DEFAULT_EXPOSURE, arena_name=config.ARENA_NAME,
                            config=app_config, log_channel=config.ui_console_channel, reward_types=config.reward_types,
                            experiment_types=config.experiment_types, media_files=list_media(),
                            blank_rec_types=config.blank_rec_types,
-                           max_blocks=config.api_max_blocks_to_show, toggels=periphery_mgr.toggles, psycho_files=get_psycho_files(),
-                           extra_time_recording=config.extra_time_recording, feeders=periphery_mgr.feeders,
+                           max_blocks=config.api_max_blocks_to_show, toggels=toggels, psycho_files=get_psycho_files(),
+                           extra_time_recording=config.extra_time_recording, feeders=feeders,
                            acquire_stop={'num_frames': 'Num Frames', 'rec_time': 'Record Time [sec]'})
 
 
@@ -226,6 +230,13 @@ def set_cam_trigger():
     return Response('ok')
 
 
+@app.route('/update_trigger_fps', methods=['POST'])
+def update_trigger_fps():
+    data = request.json
+    periphery_mgr.change_trigger_fps(data['fps'])
+    return Response('ok')
+
+
 @app.route('/capture', methods=['POST'])
 def capture():
     cam = request.form['camera']
@@ -312,6 +323,18 @@ def check_cameras():
             missing_cameras.append(cam_name)
 
     return Response(json.dumps(missing_cameras))
+
+
+@app.route('/get_camera_settings/<name>')
+def get_camera_settings(name):
+    return jsonify(arena_mgr.units[name].cam_config)
+
+
+@app.route('/update_camera/<name>', methods=['POST'])
+def update_camera_settings(name):
+    data = request.json
+    arena_mgr.update_camera_unit(name, data)
+    return Response('ok')
 
 
 @app.route('/manual_record_stop')

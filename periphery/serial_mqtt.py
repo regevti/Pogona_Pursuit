@@ -109,7 +109,7 @@ class SerialMQTTBridge:
         while not self.mqtt.is_connected():
             time.sleep(0.01)
 
-        self.mqtt.subscribe(self.mqtt_config["command_topic"])
+        self.mqtt.subscribe([(self.mqtt_config["command_topic"], 0), ("change_cam_trigger_duration", 0)])
 
         self.mqtt_listen_thread.start()
 
@@ -304,6 +304,26 @@ class SerialMQTTBridge:
                 self.log.debug(
                     f"(SERIAL) Sending message: {msg.payload.decode('utf-8')}"
                 )
+
+                # change the cams trigger duration, to change cams fps
+                if msg.topic == 'change_cam_trigger_duration':
+                    port_name = self.interface_dispatcher["Camera Trigger"]
+                    port_conf = self.arena_conf[port_name]
+                    inter_conf = port_conf["interfaces"]
+                    inter_conf[0]['pulse_len'] = int(msg.payload.decode('utf-8'))
+
+                    ser = self.serials[port_name]
+                    ser
+                    # ser.write(b'~')
+                    # try:
+                    #     with self.serial_write_locks[ser.name]:
+                    #         ser.write(
+                    #             json.dumps({port_name: inter_conf}).encode("utf-8")
+                    #         )
+                    #     self.log.info(f"(SERIAL) Done sending new trigger duration of {inter_conf} to port {port_name}.")
+                    # except Exception:
+                    #     self.log.exception("(SERIAL) Exception while sending device configuration file due to change of trigger duration.")
+                    continue
 
                 try:
                     command = json.loads(msg.payload)
