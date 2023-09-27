@@ -661,7 +661,7 @@ def get_videos_to_predict(animal_id=None, experiments_dir=None, model_path=None)
                 (len(pred_path.parts) >= 6 and pred_path.parts[-6] == 'test'):
             continue
         videos.append(vid_path)
-    videos = sorted(videos, key=lambda x: x.name, reverse=True)
+    videos = sorted(videos, key=lambda x: x.name, reverse=False)
     return videos
 
 
@@ -710,8 +710,8 @@ if __name__ == '__main__':
     matplotlib.use('TkAgg')
     # print(get_videos_to_predict('PV148'))
     # commit_pose_estimation_to_db('PV91')
-    predict_all_videos(experiments_dir='/media/reptilearn4/experiments',
-                       model_path='/media/reptilearn4/models/deeplabcut/front_head_only_resnet_152')
+    predict_all_videos(experiments_dir='/media/msi_regev/experiments',
+                       model_path='/media/msi_regev/models/deeplabcut/front_head_only_resnet_152')
     # img = cv2.imread('/data/Pogona_Pursuit/output/calibrations/front/20221205T094015_front.png')
     # plt.imshow(img)
     # plt.show()
