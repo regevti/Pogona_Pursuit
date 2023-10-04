@@ -62,8 +62,8 @@ class FLIRCamera(Camera):
                             break
                     else:
                         self.image_handler(image_result)
-        except Exception as exc:
-            self.logger.error(str(exc))
+        except Exception:
+            self.logger.exception('Error in FLIR:')
         finally:
             if cam.IsStreaming():
                 cam.EndAcquisition()

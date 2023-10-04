@@ -1,4 +1,4 @@
-version: '2.3'
+version: '2.4'
 
 services:
   arena:
@@ -8,6 +8,9 @@ services:
     image: pogona_arena:${arena_tag-latest}
     container_name: arena
     privileged: true
+    user: "1000"
+    group_add:
+      - "1001"
     depends_on:
       - cache
       - db
@@ -17,6 +20,10 @@ services:
       - ../Arena:${ROOT_DIR}/Arena
       - ../pogona_hunter:${ROOT_DIR}/pogona_hunter
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - /run/dbus:/run/dbus:rw
+      - /run/user/1000:/run/user/1000:rw
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
       - ${MEDIA_DIR-/tmp}:/arena/media
     restart: "unless-stopped"
     runtime: nvidia
@@ -94,6 +101,7 @@ services:
       - 0.0.0.0:5432:5432
     environment:
       - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=arena
 
   grafana:
     image: grafana/grafana

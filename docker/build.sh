@@ -22,7 +22,7 @@ git_version=`git describe --tags`
 echo "new_version=$git_version"
 sed -i -E 's/('"$service"'_tag=)\S+/\1'"$git_version"'/' .env
 
-docker-compose build $service
+docker-compose build --build-arg ARENA_USER=1000 $service
 docker-compose up -d $service
 
 echo "$(date) - $service - $git_version" >> ./deployments.log

@@ -1,5 +1,6 @@
-FROM arena_base_flir:v1.0
+FROM arena_base_flir:1
 
+ARG ARENA_USER
 RUN apt-get update && apt-get install xinput -y
 
 # Required for nvidia-docker v1
@@ -11,6 +12,7 @@ RUN apt-get -qq update && apt-get -qq install -y lsb-release \
   libusb-1.0.0 libpq-dev udev
 
 ENV DEBIAN_FRONTEND=noninteractive
+COPY ./requirements/ ./requirements
 RUN pip3 install -r requirements/arena.txt
 RUN pip3 install -r requirements/pose.txt
 # Installation of deeplabcut-live
@@ -20,3 +22,5 @@ RUN pip3 install -r requirements/pose.txt
 #RUN cd ./Arena/bin/spinnaker-3.0.0.118-amd64 && (echo "y" && cat) | ./install_spinnaker.sh
 
 RUN mkdir -p /data/Pogona_Pursuit/output
+RUN chown -R ${ARENA_USER}:${ARENA_USER} /data/Pogona_Pursuit
+
