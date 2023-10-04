@@ -1,12 +1,18 @@
 import json
+import threading
 import time
 from datetime import datetime
 import paho.mqtt.client as mqtt
 import paho.mqtt.subscribe as subscribe
+
+import utils
 from cache import RedisCache, CacheColumns as cc
 from loggers import get_logger
 from db_models import ORM
 import config
+
+
+CONFIG_PATH = 'configurations/periphery_config.json'
 
 
 class PeripheryIntegrator:
@@ -17,14 +23,18 @@ class PeripheryIntegrator:
         self.cache = RedisCache()
         self.mqtt_client = mqtt.Client()
         self.orm = ORM()
-        self.devices = self.read_config()
+        self.periphery_config = self.read_config()
+        self.devices = self.periphery_config['arena']['interfaces']
 
     @staticmethod
-    def read_config() -> list:
-        with open('configurations/periphery_config.json', 'r') as f:
+    def read_config() -> dict:
+        with open(CONFIG_PATH, 'r') as f:
             d = json.load(f)
-        devices = d['arena']['interfaces']
-        return devices
+        return d
+
+    def save_config_to_file(self):
+        with open(CONFIG_PATH, 'w') as f:
+            json.dump(self.periphery_config, f, indent=4)
 
     def switch(self, name, state):
         assert state in [0, 1]
@@ -34,6 +44,19 @@ class PeripheryIntegrator:
         assert state in [0, 1]
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",{state}]')
         self.cache.set(cc.CAM_TRIGGER_STATE, state)
+
+    def change_trigger_fps(self, new_fps):
+        new_duration = round(1000 / new_fps)
+        trig_inters = self.periphery_config['camera trigger']['interfaces'][0]
+        trig_inters['pulse_len'] = new_duration
+        self.save_config_to_file()
+        next(utils.run_command('cd ../docker && docker-compose restart periphery'))
+
+        # self.mqtt_publish('change_cam_trigger_duration', new_duration)
+
+        time.sleep(5)
+        self.cam_trigger(1)
+        self.logger.info(f'Published cam trigger FPS change to {new_fps}')
 
     def feed(self, is_manual=False):
         if self.cache.get(cc.IS_REWARD_TIMEOUT):
@@ -149,9 +172,16 @@ if __name__ == "__main__":
     def hc_callback(payload):
         print(payload)
 
-    listener = MQTTListener(topics=['#'], is_debug=True, callback=hc_callback)
+    listener = MQTTListener(topics=['#'], is_debug=True, callback=hc_callback, is_loop_forever=True)
+    t = threading.Thread(target=listener.loop)
+    t.start()
+
+    pi = PeripheryIntegrator()
+    pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
+
+    t.join()
     # listener.loop()
-    while True:
-        listener.loop()
-        time.sleep(0.1)
+    # while True:
+    #     listener.loop()
+    #     time.sleep(0.1)
 

@@ -61,7 +61,7 @@ def turn_display_off(app_only=False):
 
 
 def get_hdmi_xinput_id():
-    out = next(run_command(f'DISPLAY=":0" xinput | grep -i {config.TOUCH_SCREEN_NAME}')).decode()
+    out = next(run_command(f'DISPLAY="{config.ARENA_DISPLAY}" xinput | grep -i "{config.TOUCH_SCREEN_NAME}"')).decode()
     m = re.search(r'id=(\d+)', out)
     if m:
         return m.group(1)

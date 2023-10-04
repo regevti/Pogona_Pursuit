@@ -52,6 +52,7 @@ class Scheduler(threading.Thread):
         self.agent = Agent()
         self.next_experiment_time = None
         self.dlc_on = multiprocessing.Event()
+        self.dlc_errors_cache = []
         self.tracking_pose_on = multiprocessing.Event()
         self.compress_threads = {}
         self.current_animal_id = None
@@ -250,7 +251,7 @@ class Scheduler(threading.Thread):
                 not config.IS_RUN_NIGHTLY_POSE_ESTIMATION:
             return
 
-        multiprocessing.Process(target=_run_pose_callback, args=(self.dlc_on,)).start()
+        multiprocessing.Process(target=_run_pose_callback, args=(self.dlc_on, self.dlc_errors_cache)).start()
         self.dlc_on.set()
 
     @schedule_method
@@ -266,9 +267,9 @@ class Scheduler(threading.Thread):
         return self.current_animal_id in ['test']
 
 
-def _run_pose_callback(dlc_on):
+def _run_pose_callback(dlc_on, errors_cache):
     try:
-        predict_all_videos(max_videos=20)
+        predict_all_videos(max_videos=20, errors_cache=errors_cache)
     finally:
         dlc_on.clear()
 

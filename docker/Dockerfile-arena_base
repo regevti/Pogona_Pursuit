@@ -4,6 +4,7 @@ FROM nvidia/cuda:11.7.1-devel-ubuntu22.04
 
 ARG DEBIAN_FRONTEND
 ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND teletype
 ARG ENV_FILE
 ENV ENV_FILE=${ENV_FILE:-./Arena/configurations/.env.prod}
 ARG ROOT_DIR
@@ -37,7 +38,8 @@ RUN apt-get -qq update && apt-get -qq upgrade -y && apt-get -qq install -y \
       libhdf5-dev \
       python3.8-dev \
       python3.8-tk \
-      python3.8-distutils
+      python3.8-distutils \
+      udev
 
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
 
@@ -47,17 +49,23 @@ RUN apt-get -qq install -y python3-pip && \
     apt-get autoclean && apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+RUN apt-get update && apt-get install ffmpeg libsm6 libxext6 -y
+RUN echo 'alias python="python3.8"' >> ~/.bashrc
+
+ENV TZ=Asia/Jerusalem
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 RUN mkdir -p $ROOT_DIR
 WORKDIR $ROOT_DIR
 COPY ./requirements ./requirements
 COPY ./Arena ./Arena
 
-ENV TZ=Asia/Jerusalem
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-RUN echo 'alias python="python3.8"' >> ~/.bashrc
-
 #RUN cd Arena/bin && tar xvf Vimba64_v6.0_Linux.tgz && cd Vimba_6_0/VimbaUSBTL && ./Install.sh
 #RUN cd Arena/bin/Vimba_6_0/VimbaPython && ./Install.sh
 
-RUN apt-get update && apt-get install ffmpeg libsm6 libxext6 -y
+RUN cd Arena/bin/spinnaker-3.0.0.118-amd64 && yes | ./install_spinnaker.sh
+RUN cd Arena/bin && pip install spinnaker_python-3.0.0.118-cp38-cp38-linux_x86_64.whl
+
+RUN cd Arena/bin && dpkg -i google-chrome-stable_current_amd64.deb || true
+# run this to fix google installation
+RUN apt --fix-broken -y install
