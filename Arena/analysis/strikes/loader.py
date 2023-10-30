@@ -79,6 +79,14 @@ class Loader:
         n = self.sec_before / self.traj_df['time'].diff().dt.total_seconds().mean()
         self.bug_traj_before_strike = self.traj_df.loc[self.bug_traj_strike_id-n:self.bug_traj_strike_id].copy()
 
+    def get_bug_traj_around_strike(self, sec_before=None, sec_after=None):
+        if self.traj_df.empty:
+            return None
+
+        n_before = (sec_before or self.sec_before) / self.traj_df['time'].diff().dt.total_seconds().mean()
+        n_after = (sec_after or self.sec_after) / self.traj_df['time'].diff().dt.total_seconds().mean()
+        return self.traj_df.loc[self.bug_traj_strike_id - n_before:self.bug_traj_strike_id+n_after].copy()
+
     def load_frames_data(self, s, trial, strk):
         block = s.query(Block).filter_by(id=trial.block_id).first()
         self.update_info_with_block_data(block)
