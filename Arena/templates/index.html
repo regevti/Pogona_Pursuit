@@ -103,8 +103,13 @@
                         }
                         // Cam-trigger update
                         let trigTog = $(`#toggle-cam-trigger`)
-                        if (Number(data['cam_trigger_state']) !== Number(trigTog.prop('checked'))) {
+                        if ((Number(data['cam_trigger_state']) !== Number(trigTog.prop('checked'))) && !isToggleTriggerCheckPause) {
+                            isToggleTriggerCheckPause = true
                             trigTog.bootstrapToggle('toggle')
+                            console.log('Trigger state toggled by the check process')
+                            setTimeout(() => {
+                                 isToggleTriggerCheckPause = false
+                             }, apiCheckTimeout)
                         }
 
                         $("#selectStreamCamera option").each(function () {
@@ -239,19 +244,20 @@
         $recordButton.prop('disabled', true)
         $("streamButton").prop('disabled', true)
 
-        // $("#toggle-cam-trigger").change((res) => {
-        //     if (isToggleTriggerCheckPause) {
-        //         return
-        //     }
-        //     isToggleTriggerCheckPause = true
-        //     let requestedState = Number($(`#toggle-cam-trigger`).prop('checked'))
-        //
-        //     $.post('/set_cam_trigger', {state: requestedState}).done(function () {
-        //         setTimeout(() => {
-        //             isToggleTriggerCheckPause = false
-        //         }, apiCheckTimeout)
-        //     })
-        // })
+        $("#toggle-cam-trigger").change((res) => {
+             if (isToggleTriggerCheckPause) {
+                 return
+             }
+             isToggleTriggerCheckPause = true
+             let requestedState = Number($(`#toggle-cam-trigger`).prop('checked'))
+
+             $.post('/set_cam_trigger', {state: requestedState}).done(function () {
+                 console.log(`sent new state for cam trigger: ${requestedState}`)
+                 setTimeout(() => {
+                     isToggleTriggerCheckPause = false
+                 }, apiCheckTimeout)
+             })
+        })
 
         cameras.forEach((cam) => {
             $(`#toggle-${cam}`).change((res) => {

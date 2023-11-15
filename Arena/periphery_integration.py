@@ -45,7 +45,11 @@ class PeripheryIntegrator:
         self.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",{state}]')
         self.cache.set(cc.CAM_TRIGGER_STATE, state)
 
+    def publish_cam_trigger_state(self):
+        self.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
+
     def change_trigger_fps(self, new_fps):
+
         new_duration = round(1000 / new_fps)
         trig_inters = self.periphery_config['camera trigger']['interfaces'][0]
         trig_inters['pulse_len'] = new_duration
@@ -150,36 +154,62 @@ class MQTTListener:
             print(f'received message with topic {msg.topic}: {payload}')
 
 
-class TemperatureListener(MQTTListener):
+class ArenaListener(MQTTListener):
     topics = ['arena/value']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cache = RedisCache()
 
     def parse_payload(self, payload):
         payload = json.loads(payload)
-        res = {}
-        for temp_label in config.mqtt['temperature_sensors']:
-            data = payload.get(temp_label, [])
-            if not data:
-                continue
-            elif len(data) == 1:
-                res[temp_label] = data[0]
-            else:
-                res.update({f'{temp_label}{i}': v for i, v in enumerate(data)})
+        if not isinstance(payload, dict):
+            return payload
 
+        for name, value in payload.items():
+            if name in config.mqtt['temperature_sensors']:
+                payload = self.parse_temperature(name, value)
+            elif name == 'Camera Trigger':
+                payload = self.parse_trigger_state(value)
+        return payload
+
+    @staticmethod
+    def parse_temperature(name, data):
+        res = {}
+        if not data:
+            return
+        elif len(data) == 1:
+            res[name] = data[0]
+        else:
+            res.update({f'{name}{i}': v for i, v in enumerate(data)})
         return res
+
+    def parse_trigger_state(self, value):
+        if value in [0, 1]:
+            self.cache.set(cc.CAM_TRIGGER_STATE, value)
+        return
 
 
 if __name__ == "__main__":
     def hc_callback(payload):
         print(payload)
 
-    listener = MQTTListener(topics=['#'], is_debug=True, callback=hc_callback, is_loop_forever=True)
+
+    e = threading.Event()
+    listener = ArenaListener(is_debug=False, callback=hc_callback, is_loop_forever=True, stop_event=e)
     t = threading.Thread(target=listener.loop)
     t.start()
 
     pi = PeripheryIntegrator()
+    pi.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",1]')
+    time.sleep(1)
     pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
-
-    t.join()
+    time.sleep(1)
+    pi.mqtt_publish(config.mqtt['publish_topic'], f'["set","Camera Trigger",0]')
+    time.sleep(1)
+    pi.mqtt_publish(config.mqtt['publish_topic'], f'["get","Camera Trigger"]')
+    time.sleep(10)
+    e.set()
     # listener.loop()
     # while True:
     #     listener.loop()

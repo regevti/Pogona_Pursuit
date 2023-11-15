@@ -115,7 +115,7 @@ class Scheduler(threading.Thread):
 
     @schedule_method
     def dwh_commit(self):
-        if (self.is_in_range('dwh_commit_time') and config.IS_COMMIT_TO_DWH) or self.dwh_commit_tries > 0:
+        if self.is_in_range('dwh_commit_time') and config.IS_COMMIT_TO_DWH and not cache.get_current_experiment():
             if self.dwh_commit_tries >= config.DWH_N_TRIES:
                 self.dwh_commit_tries = 0
                 utils.send_telegram_message(f'Commit to DWH failed after {config.DWH_N_TRIES} times')
@@ -124,7 +124,7 @@ class Scheduler(threading.Thread):
                 DWH().commit()
             except Exception as exc:
                 self.dwh_commit_tries += 1
-                self.logger.error(f'Failed committing to DWH ({self.dwh_commit_tries}/{config.DWH_N_TRIES}): {exc}')
+                self.logger.warning(f'Failed committing to DWH ({self.dwh_commit_tries}/{config.DWH_N_TRIES}): {exc}')
             else:
                 self.dwh_commit_tries = 0
 

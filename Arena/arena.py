@@ -149,10 +149,16 @@ class ImageSink(ArenaProcess):
         self.logger.debug('Start frame handling in ImageSink')
         self.orm = ORM()
         self.writing_queue = queue.Queue(maxsize=config.writing_video_queue_maxsize)
+        frames_counter = 0
         while not self.stop_signal.is_set():
             try:
                 self.cam_config = cache.get_cam_dict(self.cam_name)
+                t0 = time.time()
                 timestamp, frame = self.frames_queue.get(timeout=config.SINK_QUEUE_TIMEOUT)
+                frames_counter += 1
+                if time.time() - t0 > 1:
+                    self.logger.info(f'got frame in sink after waiting {time.time() - t0:.3f} sec (# frames: {frames_counter})')
+                    frames_counter = 0
                 if self.cam_config.get('crop'):
                     x, y, w, h = [int(c) for c in self.cam_config['crop']]
                     frame = frame[y:y+h, x:x+w]
@@ -164,7 +170,7 @@ class ImageSink(ArenaProcess):
                 self.calc_fps(time.time())
 
             except Empty:
-                self.logger.debug('Empty queue')
+                self.logger.error('Empty queue')
                 self.stop_signal.set()
                 break
 
@@ -185,7 +191,7 @@ class ImageSink(ArenaProcess):
         self.mp_metadata['shm_frame_timestamp'].value = timestamp
 
     def write_to_video_file(self, frame, timestamp):
-        if self.cam_config['writing_fps'] == '0':
+        if self.cam_config.get('writing_fps') == '0':
             return
         output_path = self.cam_config[config.output_dir_key]
         if not output_path or (self.write_output_dir and self.write_output_dir != output_path):
@@ -266,6 +272,9 @@ class ImageSink(ArenaProcess):
         self.mp_metadata['db_video_id'].value = 0
 
     def check_writing_fps(self, timestamp):
+        if not self.cam_config.get('writing_fps'):
+            return True
+
         return not self.write_video_timestamps or \
                (timestamp - self.write_video_timestamps[-1]) >= (1 / float(self.cam_config['writing_fps'])) * 0.9
 
@@ -281,7 +290,8 @@ class ImageSink(ArenaProcess):
 
     @property
     def writing_fps(self):
-        return int(self.cam_config['writing_fps'])
+        wf = self.cam_config.get('writing_fps')
+        return int(wf) if wf is not None else None
 
 
 class ImageHandler(ArenaProcess):

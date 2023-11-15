@@ -15,7 +15,7 @@ import config
 from loggers import get_logger, get_process_logger
 from utils import Serializer, run_in_thread, run_command
 from db_models import ORM
-from periphery_integration import PeripheryIntegrator, TemperatureListener, MQTTListener
+from periphery_integration import PeripheryIntegrator, ArenaListener, MQTTListener
 
 
 class DoubleEvent(Exception):
@@ -228,11 +228,12 @@ class TemperatureLogger(Subscriber):
 
     def run(self):
         def callback(payload):
-            self.commit_to_db(payload)
+            if payload is not None:
+                self.commit_to_db(payload)
             # self.cache.publish(config.subscription_topics['temperature'], payload)
 
         try:
-            listener = TemperatureListener(is_debug=False, stop_event=self.stop_event, callback=callback)
+            listener = ArenaListener(is_debug=False, stop_event=self.stop_event, callback=callback)
         except Exception as exc:
             self.logger.error(f'Error loading temperature listener; {exc}')
             return

@@ -35,20 +35,28 @@ class FLIRCamera(Camera):
         cam.BeginAcquisition()
         image_result = None
         time.sleep(1)
+        last_error_time = None
 
         try:
             while not self.stop_signal.is_set():
                 if image_result is not None:
                     try:
                         image_result.Release()
-                    except PySpin.SpinnakerException:
+                    except PySpin.SpinnakerException as exc:
+                        if not last_error_time or time.time() - last_error_time > 1:
+                            self.logger.warning(f'Camera exception: {exc}')
+                            last_error_time = time.time()
                         pass
                 try:
+                    t0 = time.time()
                     image_result = cam.GetNextImage(config.QUEUE_WAIT_TIME * 1000, 0)
+                    if time.time() - t0 > 1:
+                        self.logger.info(f'got frame from camera after waiting: {time.time()-t0:.3f} sec')
                 except PySpin.SpinnakerException as e:
                     if e.errorcode == -1011:
                         # restart acquisition due to empty buffer bug
                         # "Spinnaker: Failed waiting for EventData on NEW_BUFFER_DATA event. [-1011]"
+                        self.logger.warning('Spinnaker: Failed waiting for EventData on NEW_BUFFER_DATA event. [-1011]')
                         cam.EndAcquisition()
                         cam.BeginAcquisition()
                         time.sleep(0.1)
@@ -111,6 +119,12 @@ class FLIRCamera(Camera):
                 cam.TriggerSource.SetValue(getattr(PySpin, f"TriggerSource_{self.cam_config['trigger_source']}"))
                 cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
                 cam.TriggerActivation.SetValue(PySpin.TriggerActivation_FallingEdge)
+                s_node_map = cam.GetTLStreamNodeMap()
+                buffer_count = PySpin.CIntegerPtr(s_node_map.GetNode('StreamBufferCountManual'))
+                if not PySpin.IsAvailable(buffer_count) or not PySpin.IsWritable(buffer_count):
+                    self.logger.error('Unable to set Buffer Count (Integer node retrieval). Aborting...\n')
+                else:
+                    buffer_count.SetValue(20)
 
             elif self.cam_config.get('fps'):
                 cam.DeviceLinkThroughputLimit.SetValue(self.get_max_throughput(cam))
