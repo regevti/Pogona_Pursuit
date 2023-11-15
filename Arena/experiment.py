@@ -306,26 +306,46 @@ class Block:
         self.cache.set(cc.EXPERIMENT_BLOCK_ID, self.block_id, timeout=self.overall_block_duration)
         self.cache.set(cc.EXPERIMENT_BLOCK_PATH, self.block_path, timeout=self.overall_block_duration + self.iti)
         # start cameras for experiment with their predictors and set the output dir for videos
+        self.periphery.cam_trigger(0)  # turn off trigger
+        t0 = time.time()
+        self.logger.info('trigger is off')
         self.turn_cameras('on')
         # screencast
         if config.IS_RECORD_SCREEN_IN_EXPERIMENT:
             threading.Thread(target=self.record_screen).start()
 
-        self.hold_triggers()
         for cam_name in self.cameras.keys():
             output_dir = mkdir(f'{self.block_path}/videos')
             self.cache.set_cam_output_dir(cam_name, output_dir)
+        while time.time()-t0 < 8:
+            time.sleep(0.05)
+        self.periphery.cam_trigger(1)  # turn trigger on
+        self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
+        time.sleep(1)
+        self.periphery.switch(config.IR_NAME, 1)
+        time.sleep(1)
+        self.periphery.switch(config.IR_NAME, 0)
 
     def end_block(self):
+        self.periphery.switch(config.IR_NAME, 1)
+        time.sleep(1)
+        self.periphery.switch(config.IR_NAME, 0)
+        time.sleep(1)
+        self.periphery.cam_trigger(0)
+        t0 = time.time()
+        self.logger.info('trigger is off')
+        time.sleep(8)
         self.cache.delete(cc.EXPERIMENT_BLOCK_ID)
         for cam_name in self.cameras.keys():
             self.cache.set_cam_output_dir(cam_name, '')
-        self.hold_triggers()
-        time.sleep(8)
+        # self.hold_triggers()
+        # time.sleep(8)
         self.turn_cameras('off')
         self.cache.delete(cc.EXPERIMENT_BLOCK_PATH)
         if self.is_continuous_blank:
             self.cache.delete(cc.IS_BLANK_CONTINUOUS_RECORDING)
+        self.periphery.cam_trigger(1)
+        self.logger.info(f'Trigger was off for {time.time() - t0:.2f} sec')
 
     def turn_cameras(self, required_state):
         """Turn on cameras if needed, and load the experiment predictors"""

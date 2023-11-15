@@ -59,6 +59,7 @@ def index():
 
 @app.route('/check', methods=['GET'])
 def check():
+    # periphery_mgr.publish_cam_trigger_state()
     res = dict()
     res['experiment_name'] = cache.get_current_experiment()
     res['block_id'] = cache.get(cc.EXPERIMENT_BLOCK_ID)
@@ -75,7 +76,7 @@ def check():
     res['schedules'] = arena_mgr.schedules
     res['cached_experiments'] = sorted([c.stem for c in Path(config.experiment_cache_path).glob('*.json')])
     res['cam_trigger_state'] = cache.get(cc.CAM_TRIGGER_STATE)
-    for cam_name, cu in arena_mgr.units.items():
+    for cam_name, cu in arena_mgr.units.copy().items():
         res.setdefault('cam_units_status', {})[cam_name] = cu.is_on()
         res.setdefault('cam_units_fps', {})[cam_name] = {k: cu.mp_metadata.get(k).value for k in ['cam_fps', 'sink_fps', 'pred_fps', 'pred_delay']}
         res.setdefault('cam_units_predictors', {})[cam_name] = ','.join(cu.get_alive_predictors()) or '-'

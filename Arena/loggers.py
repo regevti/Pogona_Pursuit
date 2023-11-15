@@ -11,7 +11,7 @@ from cache import RedisCache, CacheColumns as cc
 import config
 
 cache = RedisCache()
-DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(processName)s - %(message)s'
+DEFAULT_FORMAT = '%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(processName)s - %(message)s'
 DEFAULT_DATEFMT = '%Y-%m-%d %H:%M:%S'
 _loggers = {}
 
