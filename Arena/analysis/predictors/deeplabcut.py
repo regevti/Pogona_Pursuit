@@ -70,21 +70,23 @@ class DLCPose(Predictor):
         s.sort_index(axis=1, level=0, inplace=True)
         return s
 
-    def plot_predictions(self, frame, frame_id, df, parts2plot=None):
+    def plot_predictions(self, frame, frame_id, df, parts2plot=None, colors=None):
         """scatter the body parts prediction dots"""
         x_legend, y_legend = 30, 30
         parts2plot = parts2plot or self.bodyparts
         if frame_id not in df.index:
             return
-        for i, part in enumerate(df.columns.get_level_values(0).unique()):
-            if not part or (parts2plot and part not in parts2plot):
+
+        parts = parts2plot if parts2plot else df.columns.get_level_values(0).unique()
+        for i, part in enumerate(parts):
+            if not part:
                 continue
             elif df[part].loc[frame_id].isnull().values.any() or df[part]['prob'].loc[frame_id] < self.threshold:
                 continue
 
             cX = round(df[part]['cam_x'][frame_id])
             cY = round(df[part]['cam_y'][frame_id])
-            color = tuple(int(COLORS[i][j:j + 2], 16) for j in (1, 3, 5))
+            color = tuple(int(COLORS[i][j:j + 2], 16) for j in (1, 3, 5)) if colors is None else colors[i]
             cv2.circle(frame, (cX, cY), 8, color, -1)
 
             cv2.circle(frame, (x_legend, y_legend), 5, color, -1)
